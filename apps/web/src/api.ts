@@ -9,9 +9,12 @@ export type Readiness = {
   persistence_backend: string;
   run_migrations: boolean;
   object_storage_backend: string;
+  embedding_backend: string;
+  embedding_dimensions: number;
   database_configured: boolean;
   object_store_configured: boolean;
   vector_backend: string;
+  vector_collection: string;
   queue_backend: string;
   model_gateway: string;
   model_gateway_auth: boolean;

@@ -74,6 +74,14 @@ cd C:\path\to\nexus-local\services\api
 go test ./internal/store/postgres
 ```
 
+Qdrant integration tests are also opt-in:
+
+```powershell
+$env:TEST_QDRANT_URL='http://localhost:6333'
+cd C:\path\to\nexus-local\services\api
+go test ./internal/providers/vector/qdrant
+```
+
 ## Project Layout
 
 ```text

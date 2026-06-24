@@ -37,6 +37,21 @@ Implemented object adapters:
 
 The product layer should ask for semantic search by tenant, document, and query vector. It should not know whether Qdrant, pgvector, or another vector store is underneath.
 
+Implemented vector adapters:
+
+- `providers/vector/memory`: local development and tests.
+- `providers/vector/qdrant`: Qdrant REST adapter using collection creation, point upsert, filter delete, and query-points search.
+
+The Qdrant adapter follows the Qdrant REST API for creating collections, upserting points, deleting by filter, and querying points.
+
+## Embeddings
+
+Implemented embedding adapters:
+
+- `providers/embeddings/hash`: deterministic local embeddings for development and tests.
+
+The hash embedder is not a semantic model. It lets the ingestion pipeline run anywhere while we wire the rest of the system. A TEI or OpenAI-compatible embedding adapter should replace it for real retrieval quality.
+
 ## Jobs
 
 Long-running work should use explicit states:

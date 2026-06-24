@@ -91,6 +91,10 @@ export function App() {
                 <dt>Objects</dt>
                 <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
               </div>
+              <div>
+                <dt>Vectors</dt>
+                <dd>{readiness?.vector_backend ?? 'unknown'}</dd>
+              </div>
             </dl>
           </article>
 
