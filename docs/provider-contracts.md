@@ -16,6 +16,8 @@ The app should store target names like `general`, `email-revision`, or `document
 
 The first concrete adapter lives at `services/api/internal/providers/openaicompat`. It posts to `/chat/completions`, supports optional bearer auth, and maps OpenAI-compatible responses into the backend `ModelGateway` contract.
 
+Runtime model routing lives in `services/api/internal/runtime`. Product services call a target such as `general`; runtime resolves that target to an OpenAI-compatible gateway and model ID. The conversation ask flow stores user and assistant messages while keeping provider details outside the app layer.
+
 ## Object Storage
 
 Use S3-compatible operations:

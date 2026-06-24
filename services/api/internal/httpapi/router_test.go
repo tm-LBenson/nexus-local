@@ -234,6 +234,53 @@ func TestSearchEndpointRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestAskConversationEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"owner_id": "user_1",
+		"question": "What is the alpha beta plan?",
+		"limit": 1
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Conversation     conversationPayload `json:"conversation"`
+		AssistantMessage messagePayload      `json:"assistant_message"`
+		Hits             []searchHitPayload  `json:"hits"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Conversation.ID != "conv_http" {
+		t.Fatalf("conversation id = %q, want conv_http", body.Conversation.ID)
+	}
+	if body.AssistantMessage.Content != "Answer from fake model" {
+		t.Fatalf("assistant content = %q", body.AssistantMessage.Content)
+	}
+	if len(body.Hits) != 1 || body.Hits[0].DocumentID != "doc_search" {
+		t.Fatalf("hits = %#v", body.Hits)
+	}
+}
+
+func TestAskConversationEndpointRejectsInvalidInput(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{"tenant_id":"tenant_1"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
 func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	server := newTestServer(t)
 
@@ -274,7 +321,8 @@ func newTestServer(t *testing.T) http.Handler {
 	}
 
 	repos := memory.New()
-	documents := app.NewDocumentService(repos, httpIDs{}, httpClock{}).WithObjectStore(objectmemory.New())
+	ids := &httpIDs{}
+	documents := app.NewDocumentService(repos, ids, httpClock{}).WithObjectStore(objectmemory.New())
 	embedder := embeddinghash.New("test", 16)
 	vectorIndex := vectormemory.New()
 	seed, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
@@ -294,15 +342,19 @@ func newTestServer(t *testing.T) http.Handler {
 		t.Fatalf("seed vectors: %v", err)
 	}
 	search := app.NewSearchService(embedder, vectorIndex)
+	conversations := app.NewConversationService(repos, ids, httpClock{}, search, httpModelGateway{})
 
 	return NewRouter(cfg, Dependencies{
-		ModelRouter: router,
-		Documents:   documents,
-		Search:      search,
+		ModelRouter:   router,
+		Documents:     documents,
+		Search:        search,
+		Conversations: conversations,
 	})
 }
 
-type httpIDs struct{}
+type httpIDs struct {
+	message int
+}
 
 func (httpIDs) NewDocumentID() domain.DocumentID {
 	return domain.DocumentID("doc_http")
@@ -312,8 +364,33 @@ func (httpIDs) NewJobID() domain.JobID {
 	return domain.JobID("job_http")
 }
 
+func (httpIDs) NewConversationID() domain.ConversationID {
+	return domain.ConversationID("conv_http")
+}
+
+func (g *httpIDs) NewMessageID() domain.MessageID {
+	g.message++
+	if g.message == 1 {
+		return domain.MessageID("msg_user_http")
+	}
+	return domain.MessageID("msg_assistant_http")
+}
+
 type httpClock struct{}
 
 func (httpClock) Now() time.Time {
 	return time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+}
+
+type httpModelGateway struct{}
+
+func (httpModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	return providers.ChatCompletion{
+		Model:        "fake-model",
+		Content:      "Answer from fake model",
+		FinishReason: "stop",
+	}, nil
 }

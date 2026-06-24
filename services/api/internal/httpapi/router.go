@@ -12,14 +12,16 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 )
 
 type envelope map[string]any
 
 type Dependencies struct {
-	ModelRouter *providers.ModelRouter
-	Documents   app.DocumentService
-	Search      app.SearchService
+	ModelRouter   *providers.ModelRouter
+	Documents     app.DocumentService
+	Search        app.SearchService
+	Conversations app.ConversationService
 }
 
 func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
@@ -32,6 +34,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search))
+	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations))
 
 	return loggingMiddleware(corsMiddleware(cfg, mux))
 }
@@ -153,6 +156,34 @@ type searchHitPayload struct {
 	Metadata   map[string]string `json:"metadata"`
 }
 
+type askConversationRequest struct {
+	TenantID       string `json:"tenant_id"`
+	OwnerID        string `json:"owner_id"`
+	ConversationID string `json:"conversation_id"`
+	ModelTarget    string `json:"model_target"`
+	Question       string `json:"question"`
+	Limit          int    `json:"limit"`
+}
+
+type conversationPayload struct {
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	OwnerID     string `json:"owner_id"`
+	Title       string `json:"title"`
+	ModelTarget string `json:"model_target"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+type messagePayload struct {
+	ID             string `json:"id"`
+	TenantID       string `json:"tenant_id"`
+	ConversationID string `json:"conversation_id"`
+	Role           string `json:"role"`
+	Content        string `json:"content"`
+	CreatedAt      string `json:"created_at"`
+}
+
 func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerDocumentRequest
@@ -264,6 +295,51 @@ func searchHandler(service app.SearchService) http.HandlerFunc {
 	}
 }
 
+func askConversationHandler(service app.ConversationService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req askConversationRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		result, err := service.Ask(r.Context(), app.AskInput{
+			TenantID:       domain.TenantID(req.TenantID),
+			OwnerID:        domain.UserID(req.OwnerID),
+			ConversationID: domain.ConversationID(req.ConversationID),
+			ModelTarget:    req.ModelTarget,
+			Question:       req.Question,
+			Limit:          req.Limit,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, store.ErrNotFound) || errors.Is(err, providers.ErrUnknownTarget) {
+				status = http.StatusNotFound
+			}
+			if errors.Is(err, app.ErrSearchUnavailable) || errors.Is(err, app.ErrConversationModelUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(w, status, fmt.Sprintf("ask conversation: %v", err))
+			return
+		}
+
+		hits := make([]searchHitPayload, 0, len(result.Hits))
+		for _, hit := range result.Hits {
+			hits = append(hits, encodeSearchHit(hit))
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"conversation":      encodeConversation(result.Conversation),
+			"user_message":      encodeMessage(result.UserMessage),
+			"assistant_message": encodeMessage(result.AssistantMessage),
+			"hits":              hits,
+			"completion":        result.Completion,
+		})
+	}
+}
+
 func encodeDocument(document domain.Document) documentPayload {
 	return documentPayload{
 		ID:         string(document.ID),
@@ -299,6 +375,29 @@ func encodeSearchHit(hit providers.VectorHit) searchHitPayload {
 		Text:       hit.Text,
 		Score:      hit.Score,
 		Metadata:   hit.Metadata,
+	}
+}
+
+func encodeConversation(conversation domain.Conversation) conversationPayload {
+	return conversationPayload{
+		ID:          string(conversation.ID),
+		TenantID:    string(conversation.TenantID),
+		OwnerID:     string(conversation.OwnerID),
+		Title:       conversation.Title,
+		ModelTarget: conversation.ModelTarget,
+		CreatedAt:   conversation.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   conversation.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeMessage(message domain.Message) messagePayload {
+	return messagePayload{
+		ID:             string(message.ID),
+		TenantID:       string(message.TenantID),
+		ConversationID: string(message.ConversationID),
+		Role:           string(message.Role),
+		Content:        message.Content,
+		CreatedAt:      message.CreatedAt.Format(time.RFC3339),
 	}
 }
 

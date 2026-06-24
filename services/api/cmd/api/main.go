@@ -45,15 +45,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{}).WithObjectStore(objectStore)
+	ids := app.NewRandomIDs()
+	clock := app.SystemClock{}
+	modelGateway := runtime.NewRoutedModelGateway(modelRouter, cfg)
+	documentService := app.NewDocumentService(repos, ids, clock).WithObjectStore(objectStore)
 	searchService := app.NewSearchService(embedder, vectorIndex)
+	conversationService := app.NewConversationService(repos, ids, clock, searchService, modelGateway)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(cfg, httpapi.Dependencies{
-			ModelRouter: modelRouter,
-			Documents:   documentService,
-			Search:      searchService,
+			ModelRouter:   modelRouter,
+			Documents:     documentService,
+			Search:        searchService,
+			Conversations: conversationService,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

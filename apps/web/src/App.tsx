@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
 import {
+  AskConversationResponse,
   Health,
   ModelTarget,
   Readiness,
   RegisterDocumentResponse,
   SearchDocumentsResponse,
+  askConversation,
   apiBase,
   getHealth,
   getModelTargets,
@@ -24,18 +26,30 @@ const initialSearch = {
   limit: 5,
 };
 
+const initialAsk = {
+  tenant_id: 'tenant_1',
+  owner_id: 'user_1',
+  conversation_id: '',
+  model_target: 'general',
+  question: '',
+  limit: 5,
+};
+
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
   const [uploadForm, setUploadForm] = useState(initialUpload);
   const [searchForm, setSearchForm] = useState(initialSearch);
+  const [askForm, setAskForm] = useState(initialAsk);
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
+  const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     Promise.all([getHealth(), getReadiness(), getModelTargets()])
@@ -83,6 +97,33 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function submitAsk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!askForm.question.trim()) {
+      setError('Enter a question');
+      return;
+    }
+    setAsking(true);
+    setError(null);
+    try {
+      const result = await askConversation({
+        ...askForm,
+        conversation_id: askForm.conversation_id || undefined,
+        limit: Number(askForm.limit),
+      });
+      setAskResult(result);
+      setAskForm((current) => ({
+        ...current,
+        conversation_id: result.conversation.id,
+        question: '',
+      }));
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setAsking(false);
     }
   }
 
@@ -245,6 +286,83 @@ export function App() {
                   </div>
                 ))}
                 {searchResult.hits.length === 0 && <p className="muted">No matching chunks</p>}
+              </div>
+            )}
+          </article>
+
+          <article className="panel panelWide">
+            <h2>Ask Documents</h2>
+            <form className="documentForm" onSubmit={submitAsk}>
+              <label>
+                Tenant
+                <input
+                  value={askForm.tenant_id}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, tenant_id: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Owner
+                <input
+                  value={askForm.owner_id}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, owner_id: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Target
+                <input
+                  value={askForm.model_target}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, model_target: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Limit
+                <input
+                  min="1"
+                  max="20"
+                  type="number"
+                  value={askForm.limit}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, limit: Number(event.target.value) }))
+                  }
+                />
+              </label>
+              <label className="spanAll">
+                Conversation
+                <input
+                  value={askForm.conversation_id}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, conversation_id: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="spanAll">
+                Question
+                <input
+                  value={askForm.question}
+                  onChange={(event) =>
+                    setAskForm((current) => ({ ...current, question: event.target.value }))
+                  }
+                />
+              </label>
+              <button disabled={asking} type="submit">
+                {asking ? 'Asking' : 'Ask'}
+              </button>
+            </form>
+
+            {askResult && (
+              <div className="answerBox">
+                <div className="searchHitHeader">
+                  <strong>{askResult.conversation.id}</strong>
+                  <span>{askResult.completion.model || askResult.conversation.model_target}</span>
+                </div>
+                <p>{askResult.assistant_message.content}</p>
+                <em>{askResult.hits.length} retrieved chunks</em>
               </div>
             )}
           </article>

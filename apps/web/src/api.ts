@@ -79,6 +79,39 @@ export type SearchDocumentsResponse = {
   hits: SearchHit[];
 };
 
+export type Conversation = {
+  id: string;
+  tenant_id: string;
+  owner_id: string;
+  title: string;
+  model_target: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  tenant_id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  created_at: string;
+};
+
+export type AskConversationResponse = {
+  conversation: Conversation;
+  user_message: ConversationMessage;
+  assistant_message: ConversationMessage;
+  hits: SearchHit[];
+  completion: {
+    model: string;
+    content: string;
+    finish_reason: string;
+    usage?: Record<string, number>;
+    metadata?: Record<string, string>;
+  };
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
 export function apiBase() {
@@ -126,6 +159,20 @@ export async function searchDocuments(input: {
   limit: number;
 }) {
   return request<SearchDocumentsResponse>('/v1/search', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function askConversation(input: {
+  tenant_id: string;
+  owner_id: string;
+  conversation_id?: string;
+  model_target: string;
+  question: string;
+  limit: number;
+}) {
+  return request<AskConversationResponse>('/v1/conversations/ask', {
     method: 'POST',
     body: JSON.stringify(input),
   });

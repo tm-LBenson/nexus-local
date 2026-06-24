@@ -49,6 +49,7 @@ Then open:
 - Readiness: `http://localhost:8080/readyz`
 - Model targets: `http://localhost:8080/v1/model-targets`
 - Document search: `POST http://localhost:8080/v1/search`
+- Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
 
 First workflow endpoint:
 
@@ -74,6 +75,15 @@ Invoke-RestMethod http://localhost:8080/v1/search `
   -Method Post `
   -ContentType 'application/json' `
   -Body '{"tenant_id":"tenant_1","query":"deployment notes","limit":5}'
+```
+
+Conversation ask endpoint:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/conversations/ask `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"tenant_id":"tenant_1","owner_id":"user_1","question":"What do the deployment notes say?","limit":5}'
 ```
 
 Postgres integration tests are opt-in so normal test runs stay fast:
