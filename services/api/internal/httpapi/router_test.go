@@ -6,9 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -85,6 +89,50 @@ func TestModelRouteEndpointRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestRegisterDocumentEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"owner_id": "user_1",
+		"name": "Handbook.md",
+		"storage_key": "tenants/tenant_1/documents/source.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+
+	var body struct {
+		Document documentPayload `json:"document"`
+		Job      jobPayload      `json:"job"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Document.ID != "doc_http" {
+		t.Fatalf("document id = %q, want doc_http", body.Document.ID)
+	}
+	if body.Job.State != string(domain.JobStateQueued) {
+		t.Fatalf("job state = %q, want queued", body.Job.State)
+	}
+}
+
+func TestRegisterDocumentEndpointRejectsInvalidInput(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{"tenant_id":"tenant_1"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
 func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	server := newTestServer(t)
 
@@ -123,5 +171,27 @@ func newTestServer(t *testing.T) http.Handler {
 		ModelGatewayBaseURL: "http://gpu.local:8000/v1",
 	}
 
-	return NewRouter(cfg, router)
+	repos := memory.New()
+	documents := app.NewDocumentService(repos, httpIDs{}, httpClock{})
+
+	return NewRouter(cfg, Dependencies{
+		ModelRouter: router,
+		Documents:   documents,
+	})
+}
+
+type httpIDs struct{}
+
+func (httpIDs) NewDocumentID() domain.DocumentID {
+	return domain.DocumentID("doc_http")
+}
+
+func (httpIDs) NewJobID() domain.JobID {
+	return domain.JobID("job_http")
+}
+
+type httpClock struct{}
+
+func (httpClock) Now() time.Time {
+	return time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 }

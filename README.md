@@ -33,6 +33,15 @@ Then open:
 - Readiness: `http://localhost:8080/readyz`
 - Model targets: `http://localhost:8080/v1/model-targets`
 
+First workflow endpoint:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/documents/register `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"tenant_id":"tenant_1","owner_id":"user_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
+```
+
 ## Project Layout
 
 ```text

@@ -7,19 +7,27 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 )
 
 type envelope map[string]any
 
-func NewRouter(cfg config.Config, modelRouter *providers.ModelRouter) http.Handler {
+type Dependencies struct {
+	ModelRouter *providers.ModelRouter
+	Documents   app.DocumentService
+}
+
+func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler(cfg))
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
-	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(modelRouter))
-	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(modelRouter))
+	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
+	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter))
+	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
 
 	return loggingMiddleware(corsMiddleware(cfg, mux))
 }
@@ -82,6 +90,93 @@ func modelRouteHandler(modelRouter *providers.ModelRouter) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, envelope{"route": route})
+	}
+}
+
+type registerDocumentRequest struct {
+	TenantID   string `json:"tenant_id"`
+	OwnerID    string `json:"owner_id"`
+	Name       string `json:"name"`
+	StorageKey string `json:"storage_key"`
+	SizeBytes  int64  `json:"size_bytes"`
+}
+
+type documentPayload struct {
+	ID         string `json:"id"`
+	TenantID   string `json:"tenant_id"`
+	OwnerID    string `json:"owner_id"`
+	Name       string `json:"name"`
+	StorageKey string `json:"storage_key"`
+	SizeBytes  int64  `json:"size_bytes"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type jobPayload struct {
+	ID        string `json:"id"`
+	TenantID  string `json:"tenant_id"`
+	Type      string `json:"type"`
+	State     string `json:"state"`
+	Attempts  int    `json:"attempts"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req registerDocumentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		result, err := service.RegisterDocument(r.Context(), app.RegisterDocumentInput{
+			TenantID:   domain.TenantID(req.TenantID),
+			OwnerID:    domain.UserID(req.OwnerID),
+			Name:       req.Name,
+			StorageKey: req.StorageKey,
+			SizeBytes:  req.SizeBytes,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, envelope{
+			"document": encodeDocument(result.Document),
+			"job":      encodeJob(result.Job),
+		})
+	}
+}
+
+func encodeDocument(document domain.Document) documentPayload {
+	return documentPayload{
+		ID:         string(document.ID),
+		TenantID:   string(document.TenantID),
+		OwnerID:    string(document.OwnerID),
+		Name:       document.Name,
+		StorageKey: document.StorageKey,
+		SizeBytes:  document.SizeBytes,
+		Status:     string(document.Status),
+		CreatedAt:  document.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:  document.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeJob(job domain.Job) jobPayload {
+	return jobPayload{
+		ID:        string(job.ID),
+		TenantID:  string(job.TenantID),
+		Type:      string(job.Type),
+		State:     string(job.State),
+		Attempts:  job.Attempts,
+		CreatedAt: job.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: job.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/httpapi"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
 func main() {
@@ -25,9 +27,15 @@ func main() {
 		log.Fatalf("model router: %v", err)
 	}
 
+	repos := memory.New()
+	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{})
+
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(cfg, modelRouter),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(cfg, httpapi.Dependencies{
+			ModelRouter: modelRouter,
+			Documents:   documentService,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -39,6 +39,10 @@ Location: `services/api/internal/store`
 
 Repository contracts describe product persistence needs before choosing a database implementation. The current `memory` repository exists for local development and fast contract tests. The next production adapter should implement the same interfaces on Postgres.
 
+## First Workflow
+
+`POST /v1/documents/register` creates a document record and queues a `document_ingestion` job. This is deliberately metadata-only for now; real upload will add object storage and content hashing before registration.
+
 ## Current State Machines
 
 Job states:
