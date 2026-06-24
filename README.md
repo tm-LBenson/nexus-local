@@ -48,6 +48,7 @@ Then open:
 - Health: `http://localhost:8080/healthz`
 - Readiness: `http://localhost:8080/readyz`
 - Model targets: `http://localhost:8080/v1/model-targets`
+- Documents: `GET http://localhost:8080/v1/documents?tenant_id=tenant_1`
 - Document search: `POST http://localhost:8080/v1/search`
 - Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
 

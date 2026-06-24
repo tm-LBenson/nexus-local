@@ -67,6 +67,10 @@ export type RegisterDocumentResponse = {
   job: RegisteredJob;
 };
 
+export type ListDocumentsResponse = {
+  documents: RegisteredDocument[];
+};
+
 export type SearchHit = {
   document_id: string;
   chunk_id: string;
@@ -128,6 +132,11 @@ export async function getReadiness() {
 
 export async function getModelTargets() {
   return request<{ targets: ModelTarget[] }>('/v1/model-targets');
+}
+
+export async function listDocuments(tenantId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
 }
 
 export async function registerDocument(input: DocumentRegistration) {

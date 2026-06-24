@@ -118,6 +118,44 @@ func TestUploadDocumentRequiresObjectStore(t *testing.T) {
 	}
 }
 
+func TestListDocumentsReturnsTenantDocuments(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{})
+
+	if _, err := service.RegisterDocument(ctx, RegisterDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "Handbook.md",
+		StorageKey: "tenants/tenant_1/documents/source.md",
+		SizeBytes:  42,
+	}); err != nil {
+		t.Fatalf("register document: %v", err)
+	}
+
+	result, err := service.ListDocuments(ctx, ListDocumentsInput{
+		TenantID: domain.TenantID("tenant_1"),
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(result.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(result.Documents))
+	}
+	if result.Documents[0].Name != "Handbook.md" {
+		t.Fatalf("document name = %q, want Handbook.md", result.Documents[0].Name)
+	}
+}
+
+func TestListDocumentsRejectsInvalidInput(t *testing.T) {
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{})
+
+	_, err := service.ListDocuments(context.Background(), ListDocumentsInput{})
+	if err == nil {
+		t.Fatal("err = nil, want validation error")
+	}
+}
+
 type fixedIDs struct{}
 
 func (fixedIDs) NewDocumentID() domain.DocumentID {

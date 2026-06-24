@@ -54,6 +54,14 @@ type UploadDocumentInput struct {
 	Body        io.Reader
 }
 
+type ListDocumentsInput struct {
+	TenantID domain.TenantID
+}
+
+type ListDocumentsResult struct {
+	Documents []domain.Document
+}
+
 func NewDocumentService(repos store.RepositorySet, ids DocumentIDs, clock Clock) DocumentService {
 	return DocumentService{
 		repos: repos,
@@ -105,6 +113,20 @@ func (s DocumentService) UploadDocument(ctx context.Context, input UploadDocumen
 		StorageKey: info.Key,
 		SizeBytes:  info.SizeBytes,
 	}, documentID, jobID, s.clock.Now())
+}
+
+func (s DocumentService) ListDocuments(ctx context.Context, input ListDocumentsInput) (ListDocumentsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ListDocumentsResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" {
+		return ListDocumentsResult{}, fmt.Errorf("documents: %w", domain.ErrInvalidEntity)
+	}
+	documents, err := s.repos.ListDocuments(ctx, input.TenantID)
+	if err != nil {
+		return ListDocumentsResult{}, err
+	}
+	return ListDocumentsResult{Documents: documents}, nil
 }
 
 func (s DocumentService) registerDocument(ctx context.Context, input RegisterDocumentInput, documentID domain.DocumentID, jobID domain.JobID, now time.Time) (RegisterDocumentResult, error) {

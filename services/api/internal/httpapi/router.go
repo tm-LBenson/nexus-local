@@ -31,6 +31,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter))
+	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search))
@@ -212,6 +213,28 @@ func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
 			"document": encodeDocument(result.Document),
 			"job":      encodeJob(result.Job),
 		})
+	}
+}
+
+func listDocumentsHandler(service app.DocumentService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		result, err := service.ListDocuments(r.Context(), app.ListDocumentsInput{
+			TenantID: domain.TenantID(r.URL.Query().Get("tenant_id")),
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("list documents: %v", err))
+			return
+		}
+
+		documents := make([]documentPayload, 0, len(result.Documents))
+		for _, document := range result.Documents {
+			documents = append(documents, encodeDocument(document))
+		}
+		writeJSON(w, http.StatusOK, envelope{"documents": documents})
 	}
 }
 

@@ -141,6 +141,56 @@ func TestRegisterDocumentEndpointRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestListDocumentsEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"owner_id": "user_1",
+		"name": "Handbook.md",
+		"storage_key": "tenants/tenant_1/documents/source.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(register, registerReq)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d, body = %s", register.Code, http.StatusCreated, register.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Documents []documentPayload `json:"documents"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(body.Documents))
+	}
+	if body.Documents[0].Name != "Handbook.md" {
+		t.Fatalf("document name = %q, want Handbook.md", body.Documents[0].Name)
+	}
+}
+
+func TestListDocumentsEndpointRejectsInvalidTenant(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
 func TestUploadDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 

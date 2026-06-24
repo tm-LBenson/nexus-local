@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import {
   AskConversationResponse,
   Health,
+  ListDocumentsResponse,
   ModelTarget,
   Readiness,
   RegisterDocumentResponse,
@@ -11,6 +12,7 @@ import {
   getHealth,
   getModelTargets,
   getReadiness,
+  listDocuments,
   searchDocuments,
   uploadDocument,
 } from './api';
@@ -40,10 +42,12 @@ export function App() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
   const [uploadForm, setUploadForm] = useState(initialUpload);
+  const [documentTenant, setDocumentTenant] = useState(initialUpload.tenant_id);
   const [searchForm, setSearchForm] = useState(initialSearch);
   const [askForm, setAskForm] = useState(initialAsk);
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
+  const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,14 +56,25 @@ export function App() {
   const [asking, setAsking] = useState(false);
 
   useEffect(() => {
-    Promise.all([getHealth(), getReadiness(), getModelTargets()])
-      .then(([healthResult, readinessResult, targetsResult]) => {
+    Promise.all([getHealth(), getReadiness(), getModelTargets(), listDocuments(initialUpload.tenant_id)])
+      .then(([healthResult, readinessResult, targetsResult, documentsResult]) => {
         setHealth(healthResult);
         setReadiness(readinessResult);
         setTargets(targetsResult.targets);
+        setDocuments(documentsResult);
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
+
+  async function refreshDocuments(tenantId = documentTenant) {
+    setError(null);
+    try {
+      const result = await listDocuments(tenantId);
+      setDocuments(result);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,6 +87,8 @@ export function App() {
     try {
       const result = await uploadDocument({ ...uploadForm, file });
       setRegistration(result);
+      setDocumentTenant(uploadForm.tenant_id);
+      await refreshDocuments(uploadForm.tenant_id);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -233,6 +250,40 @@ export function App() {
           </article>
 
           <article className="panel panelWide">
+            <h2>Document Library</h2>
+            <form
+              className="documentForm compactForm"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void refreshDocuments();
+              }}
+            >
+              <label>
+                Tenant
+                <input
+                  value={documentTenant}
+                  onChange={(event) => setDocumentTenant(event.target.value)}
+                />
+              </label>
+              <button type="submit">Refresh</button>
+            </form>
+
+            <div className="documentList">
+              {documents?.documents.map((document) => (
+                <div className="documentRow" key={document.id}>
+                  <strong>{document.name}</strong>
+                  <span>{document.status}</span>
+                  <em>{document.id}</em>
+                  <small>{formatBytes(document.size_bytes)}</small>
+                </div>
+              ))}
+              {documents && documents.documents.length === 0 && (
+                <p className="muted">No documents for this tenant</p>
+              )}
+            </div>
+          </article>
+
+          <article className="panel panelWide">
             <h2>Search Documents</h2>
             <form className="documentForm" onSubmit={submitSearch}>
               <label>
@@ -374,4 +425,14 @@ export function App() {
 
 function messageFromError(err: unknown) {
   return err instanceof Error ? err.message : 'Unknown API error';
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
