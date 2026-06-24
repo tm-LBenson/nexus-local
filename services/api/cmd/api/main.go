@@ -4,18 +4,13 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/httpapi"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
-	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
-	minioobject "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/minio"
-	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
-	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
-	"github.com/tm-lbenson/nexus-local/services/api/internal/store/postgres"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/runtime"
 )
 
 func main() {
@@ -33,9 +28,15 @@ func main() {
 		log.Fatalf("model router: %v", err)
 	}
 
-	repos, closeRepos := openRepositories(cfg)
+	repos, closeRepos, err := runtime.OpenRepositories(context.Background(), cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer closeRepos()
-	objectStore := openObjectStore(cfg)
+	objectStore, err := runtime.OpenObjectStore(context.Background(), cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{}).WithObjectStore(objectStore)
 
 	server := &http.Server{
@@ -50,54 +51,5 @@ func main() {
 	log.Printf("api listening on %s", cfg.HTTPAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
-	}
-}
-
-func openObjectStore(cfg config.Config) providers.ObjectStore {
-	switch strings.ToLower(strings.TrimSpace(cfg.ObjectStoreBackend)) {
-	case "", "memory":
-		return objectmemory.New()
-	case "minio":
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		store, err := minioobject.New(ctx, minioobject.Config{
-			Endpoint:  cfg.ObjectStoreEndpoint,
-			AccessKey: cfg.ObjectStoreAccessKey,
-			SecretKey: cfg.ObjectStoreSecretKey,
-			Bucket:    cfg.ObjectStoreBucket,
-		})
-		if err != nil {
-			log.Fatalf("object store: %v", err)
-		}
-		return store
-	default:
-		log.Fatalf("unsupported object storage backend %q", cfg.ObjectStoreBackend)
-		return nil
-	}
-}
-
-func openRepositories(cfg config.Config) (store.RepositorySet, func()) {
-	switch strings.ToLower(strings.TrimSpace(cfg.PersistenceBackend)) {
-	case "", "memory":
-		return memory.New(), func() {}
-	case "postgres":
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		repos, err := postgres.Open(ctx, cfg.DatabaseURL)
-		if err != nil {
-			log.Fatalf("postgres store: %v", err)
-		}
-		if cfg.RunMigrations {
-			if err := repos.Migrate(ctx); err != nil {
-				repos.Close()
-				log.Fatalf("postgres migrations: %v", err)
-			}
-		}
-		return repos, repos.Close
-	default:
-		log.Fatalf("unsupported persistence backend %q", cfg.PersistenceBackend)
-		return nil, func() {}
 	}
 }

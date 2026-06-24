@@ -6,6 +6,10 @@ Workers claim durable jobs and advance product state outside the request path.
 
 Location: `services/api/internal/worker`
 
+Runnable command: `services/api/cmd/worker`
+
+Container entrypoint: `/worker`
+
 Current behavior:
 
 1. Claim the next queued job.
@@ -25,3 +29,4 @@ This is intentionally a state-flow placeholder. The next version should replace 
 
 The state flow is tested now so the future extraction work can focus on content behavior without changing job semantics.
 
+The CPU Compose profile runs the worker beside the API. It shares the same Postgres database and claims jobs through the repository contract.

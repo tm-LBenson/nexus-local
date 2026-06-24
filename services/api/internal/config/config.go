@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -27,6 +28,7 @@ type Config struct {
 	ModelGatewayAPIKey   string
 	DefaultModelTarget   string
 	GeneralModelID       string
+	WorkerPollInterval   time.Duration
 }
 
 func Load() Config {
@@ -52,6 +54,7 @@ func Load() Config {
 		ModelGatewayAPIKey:   env("MODEL_GATEWAY_API_KEY", ""),
 		DefaultModelTarget:   env("DEFAULT_MODEL_TARGET", "general"),
 		GeneralModelID:       env("GENERAL_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct"),
+		WorkerPollInterval:   envDuration("WORKER_POLL_INTERVAL", 2*time.Second),
 	}
 }
 
@@ -69,6 +72,18 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		return fallback
 	}

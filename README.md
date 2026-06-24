@@ -38,6 +38,11 @@ cd C:\path\to\nexus-local\deploy\compose
 docker compose -f compose.cpu.yml up --build
 ```
 
+The API image includes two entrypoints:
+
+- `/api`: HTTP API
+- `/worker`: background document ingestion worker
+
 Then open:
 
 - Health: `http://localhost:8080/healthz`

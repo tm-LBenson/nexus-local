@@ -7,6 +7,7 @@ Runs the app without a local GPU. Useful for NAS-only installs, demos, admin wor
 Core services:
 
 - API
+- Worker
 - Web
 - Postgres
 - MinIO
@@ -23,6 +24,7 @@ Recommended for your current hardware.
 NAS:
 
 - API
+- Worker
 - Web
 - Postgres
 - MinIO
