@@ -43,6 +43,14 @@ scripts               Local helper scripts
 services/api          Go API service
 ```
 
+Key docs:
+
+- [Architecture](docs/architecture.md)
+- [Backend contracts](docs/backend-contracts.md)
+- [Deployment profiles](docs/deployment-profiles.md)
+- [Provider contracts](docs/provider-contracts.md)
+- [Testing strategy](docs/testing-strategy.md)
+
 ## Deployment Profiles
 
 - `cpu-lite`: NAS-only app services, no local GPU runtime.
@@ -51,4 +59,3 @@ services/api          Go API service
 - `prod-single-node`: one serious server, still Docker based.
 - `prod-k3s`: Kubernetes-ready shape for later multi-node installs.
 - `external-ai`: app self-hosted, model provider remote.
-
