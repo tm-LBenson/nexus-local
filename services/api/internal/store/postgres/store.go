@@ -1,0 +1,277 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
+)
+
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+func Open(ctx context.Context, databaseURL string) (*Store, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("open postgres pool: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping postgres: %w", err)
+	}
+	return New(pool), nil
+}
+
+func New(pool *pgxpool.Pool) *Store {
+	return &Store{pool: pool}
+}
+
+func (s *Store) Close() {
+	s.pool.Close()
+}
+
+func (s *Store) SaveTenant(ctx context.Context, tenant domain.Tenant) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO tenants (id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE
+		SET name = EXCLUDED.name,
+		    updated_at = EXCLUDED.updated_at
+	`, tenant.ID, tenant.Name, tenant.CreatedAt, tenant.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetTenant(ctx context.Context, id domain.TenantID) (domain.Tenant, error) {
+	var tenant domain.Tenant
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, name, created_at, updated_at
+		FROM tenants
+		WHERE id = $1
+	`, id).Scan(&tenant.ID, &tenant.Name, &tenant.CreatedAt, &tenant.UpdatedAt)
+	if err != nil {
+		return domain.Tenant{}, translateErr(err)
+	}
+	return tenant, nil
+}
+
+func (s *Store) SaveUser(ctx context.Context, user domain.User) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO users (id, email, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE
+		SET email = EXCLUDED.email,
+		    name = EXCLUDED.name,
+		    updated_at = EXCLUDED.updated_at
+	`, user.ID, user.Email, user.Name, user.CreatedAt, user.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetUser(ctx context.Context, id domain.UserID) (domain.User, error) {
+	var user domain.User
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, email, name, created_at, updated_at
+		FROM users
+		WHERE id = $1
+	`, id).Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		return domain.User{}, translateErr(err)
+	}
+	return user, nil
+}
+
+func (s *Store) SaveMembership(ctx context.Context, membership domain.Membership) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO memberships (tenant_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (tenant_id, user_id) DO UPDATE
+		SET role = EXCLUDED.role
+	`, membership.TenantID, membership.UserID, membership.Role)
+	return err
+}
+
+func (s *Store) ListMembershipsForUser(ctx context.Context, userID domain.UserID) ([]domain.Membership, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT tenant_id, user_id, role
+		FROM memberships
+		WHERE user_id = $1
+		ORDER BY tenant_id
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memberships := make([]domain.Membership, 0)
+	for rows.Next() {
+		var membership domain.Membership
+		if err := rows.Scan(&membership.TenantID, &membership.UserID, &membership.Role); err != nil {
+			return nil, err
+		}
+		memberships = append(memberships, membership)
+	}
+	return memberships, rows.Err()
+}
+
+func (s *Store) SaveDocument(ctx context.Context, document domain.Document) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO documents (
+			tenant_id, id, owner_id, name, storage_key, size_bytes, status, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET owner_id = EXCLUDED.owner_id,
+		    name = EXCLUDED.name,
+		    storage_key = EXCLUDED.storage_key,
+		    size_bytes = EXCLUDED.size_bytes,
+		    status = EXCLUDED.status,
+		    updated_at = EXCLUDED.updated_at
+	`, document.TenantID, document.ID, document.OwnerID, document.Name, document.StorageKey, document.SizeBytes, document.Status, document.CreatedAt, document.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetDocument(ctx context.Context, tenantID domain.TenantID, id domain.DocumentID) (domain.Document, error) {
+	var document domain.Document
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, owner_id, name, storage_key, size_bytes, status, created_at, updated_at
+		FROM documents
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&document.ID,
+		&document.TenantID,
+		&document.OwnerID,
+		&document.Name,
+		&document.StorageKey,
+		&document.SizeBytes,
+		&document.Status,
+		&document.CreatedAt,
+		&document.UpdatedAt,
+	)
+	if err != nil {
+		return domain.Document{}, translateErr(err)
+	}
+	return document, nil
+}
+
+func (s *Store) ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]domain.Document, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, owner_id, name, storage_key, size_bytes, status, created_at, updated_at
+		FROM documents
+		WHERE tenant_id = $1
+		ORDER BY created_at, id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	documents := make([]domain.Document, 0)
+	for rows.Next() {
+		var document domain.Document
+		if err := rows.Scan(
+			&document.ID,
+			&document.TenantID,
+			&document.OwnerID,
+			&document.Name,
+			&document.StorageKey,
+			&document.SizeBytes,
+			&document.Status,
+			&document.CreatedAt,
+			&document.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		documents = append(documents, document)
+	}
+	return documents, rows.Err()
+}
+
+func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO jobs (tenant_id, id, type, state, attempts, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET type = EXCLUDED.type,
+		    state = EXCLUDED.state,
+		    attempts = EXCLUDED.attempts,
+		    updated_at = EXCLUDED.updated_at
+	`, job.TenantID, job.ID, job.Type, job.State, job.Attempts, job.CreatedAt, job.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error) {
+	var job domain.Job
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, type, state, attempts, created_at, updated_at
+		FROM jobs
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&job.ID,
+		&job.TenantID,
+		&job.Type,
+		&job.State,
+		&job.Attempts,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	)
+	if err != nil {
+		return domain.Job{}, translateErr(err)
+	}
+	return job, nil
+}
+
+func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Job{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var job domain.Job
+	err = tx.QueryRow(ctx, `
+		WITH picked AS (
+			SELECT tenant_id, id
+			FROM jobs
+			WHERE state = $1
+			ORDER BY created_at, id
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE jobs
+		SET state = $2,
+		    attempts = jobs.attempts + 1,
+		    updated_at = $3
+		FROM picked
+		WHERE jobs.tenant_id = picked.tenant_id
+		  AND jobs.id = picked.id
+		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.state, jobs.attempts, jobs.created_at, jobs.updated_at
+	`, domain.JobStateQueued, domain.JobStateRunning, now).Scan(
+		&job.ID,
+		&job.TenantID,
+		&job.Type,
+		&job.State,
+		&job.Attempts,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	)
+	if err != nil {
+		return domain.Job{}, translateErr(err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Job{}, err
+	}
+	return job, nil
+}
+
+func translateErr(err error) error {
+	if err == pgx.ErrNoRows {
+		return store.ErrNotFound
+	}
+	return err
+}

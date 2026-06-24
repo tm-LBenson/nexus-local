@@ -14,6 +14,8 @@ Core services:
 - NATS
 - Valkey
 
+The Compose CPU profile uses Postgres persistence by default and runs embedded migrations at API startup.
+
 ## split-nas-gpu
 
 Recommended for your current hardware.
@@ -28,6 +30,8 @@ NAS:
 - NATS
 - Valkey
 - Backups
+
+Postgres data should live on the NAS volume set, with regular backups. The desktop GPU side should be treated as replaceable compute, not the source of truth.
 
 Desktop:
 
@@ -52,4 +56,3 @@ K3s or Kubernetes profile for many users, multiple nodes, GPU scheduling, and cl
 ## external-ai
 
 The application is self-hosted, but model inference is remote. This can point at AWS GPU, a rented inference endpoint, OpenAI-compatible APIs, or a customer-managed model server.
-

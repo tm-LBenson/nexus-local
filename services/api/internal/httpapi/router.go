@@ -47,6 +47,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, envelope{
 			"status":                  "ready",
 			"persistence_backend":     cfg.PersistenceBackend,
+			"run_migrations":          cfg.RunMigrations,
 			"database_configured":     cfg.DatabaseURL != "",
 			"object_store_configured": cfg.ObjectStoreEndpoint != "",
 			"vector_backend":          cfg.VectorBackend,

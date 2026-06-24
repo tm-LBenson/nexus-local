@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 type Config struct {
 	Env                 string
@@ -8,6 +11,7 @@ type Config struct {
 	Version             string
 	CORSAllowedOrigin   string
 	PersistenceBackend  string
+	RunMigrations       bool
 	DatabaseURL         string
 	ObjectStoreEndpoint string
 	ObjectStoreBucket   string
@@ -29,6 +33,7 @@ func Load() Config {
 		Version:             env("APP_VERSION", "dev"),
 		CORSAllowedOrigin:   env("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
 		PersistenceBackend:  env("PERSISTENCE_BACKEND", "memory"),
+		RunMigrations:       envBool("RUN_MIGRATIONS", false),
 		DatabaseURL:         env("DATABASE_URL", "postgres://app:app@localhost:5432/app?sslmode=disable"),
 		ObjectStoreEndpoint: env("OBJECT_STORAGE_ENDPOINT", "http://localhost:9000"),
 		ObjectStoreBucket:   env("OBJECT_STORAGE_BUCKET", "documents"),
@@ -50,4 +55,16 @@ func env(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

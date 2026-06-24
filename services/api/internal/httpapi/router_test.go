@@ -164,6 +164,7 @@ func newTestServer(t *testing.T) http.Handler {
 		Version:             "test",
 		CORSAllowedOrigin:   "http://localhost:5173",
 		PersistenceBackend:  "memory",
+		RunMigrations:       false,
 		DatabaseURL:         "postgres://test",
 		ObjectStoreEndpoint: "http://minio.test",
 		VectorBackend:       "qdrant",

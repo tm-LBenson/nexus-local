@@ -41,6 +41,13 @@ Location: `services/api/internal/store`
 
 Repository contracts describe product persistence needs before choosing a database implementation. The current `memory` repository exists for local development and fast contract tests. The next production adapter should implement the same interfaces on Postgres.
 
+Implemented repository adapters:
+
+- `store/memory`: fast local development and unit tests.
+- `store/postgres`: production-shaped relational persistence with embedded SQL migrations.
+
+Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` applies embedded migrations on boot, which is useful for Compose/self-host installs. Larger production deployments may move this into a dedicated migration job later.
+
 ## First Workflow
 
 `POST /v1/documents/register` creates a document record and queues a `document_ingestion` job. This is deliberately metadata-only for now; real upload will add object storage and content hashing before registration.

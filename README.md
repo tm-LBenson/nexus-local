@@ -21,10 +21,21 @@ The first test surface is model routing: the app should not care whether a reque
 
 ## Quick Start
 
+The API now targets Go 1.25 because the Postgres adapter uses current `pgx`.
+
+Memory-backed local API:
+
 ```powershell
 cd C:\path\to\nexus-local\services\api
 go test ./...
 go run ./cmd/api
+```
+
+Containerized Postgres-backed stack:
+
+```powershell
+cd C:\path\to\nexus-local\deploy\compose
+docker compose -f compose.cpu.yml up --build
 ```
 
 Then open:
@@ -40,6 +51,14 @@ Invoke-RestMethod http://localhost:8080/v1/documents/register `
   -Method Post `
   -ContentType 'application/json' `
   -Body '{"tenant_id":"tenant_1","owner_id":"user_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
+```
+
+Postgres integration tests are opt-in so normal test runs stay fast:
+
+```powershell
+$env:TEST_DATABASE_URL='postgres://app:app@localhost:5432/app?sslmode=disable'
+cd C:\path\to\nexus-local\services\api
+go test ./internal/store/postgres
 ```
 
 ## Project Layout
