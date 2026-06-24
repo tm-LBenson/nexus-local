@@ -30,6 +30,11 @@ HTTP routes use an authenticated principal and then check tenant permissions aga
 
 Product services still receive explicit user and tenant IDs, but HTTP handlers now derive owner IDs from the authenticated principal instead of trusting client-provided owner fields.
 
+Identity bootstrap endpoints:
+
+- `GET /v1/me`: persists/returns the authenticated principal and tenant memberships.
+- `POST /v1/tenants`: creates a generated tenant and grants the authenticated principal `owner`.
+
 ## Provider Package
 
 Location: `services/api/internal/providers`

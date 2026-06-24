@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import {
   AskConversationResponse,
+  CurrentUserResponse,
   Health,
   ListDocumentsResponse,
   ModelTarget,
@@ -9,7 +10,9 @@ import {
   SearchDocumentsResponse,
   askConversation,
   apiBase,
+  createTenant,
   getHealth,
+  getCurrentUser,
   getModelTargets,
   getReadiness,
   listDocuments,
@@ -19,7 +22,6 @@ import {
 
 const initialUpload = {
   tenant_id: 'tenant_1',
-  owner_id: 'user_1',
 };
 
 const initialSearch = {
@@ -30,7 +32,6 @@ const initialSearch = {
 
 const initialAsk = {
   tenant_id: 'tenant_1',
-  owner_id: 'user_1',
   conversation_id: '',
   model_target: 'general',
   question: '',
@@ -40,9 +41,11 @@ const initialAsk = {
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
   const [uploadForm, setUploadForm] = useState(initialUpload);
   const [documentTenant, setDocumentTenant] = useState(initialUpload.tenant_id);
+  const [tenantName, setTenantName] = useState('Personal Workspace');
   const [searchForm, setSearchForm] = useState(initialSearch);
   const [askForm, setAskForm] = useState(initialAsk);
   const [file, setFile] = useState<File | null>(null);
@@ -52,19 +55,31 @@ export function App() {
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [creatingTenant, setCreatingTenant] = useState(false);
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
 
   useEffect(() => {
-    Promise.all([getHealth(), getReadiness(), getModelTargets(), listDocuments(initialUpload.tenant_id)])
-      .then(([healthResult, readinessResult, targetsResult, documentsResult]) => {
+    Promise.all([getHealth(), getReadiness(), getModelTargets(), getCurrentUser()])
+      .then(async ([healthResult, readinessResult, targetsResult, currentUserResult]) => {
         setHealth(healthResult);
         setReadiness(readinessResult);
         setTargets(targetsResult.targets);
+        setCurrentUser(currentUserResult);
+        const tenantId = currentUserResult.memberships[0]?.tenant.id ?? initialUpload.tenant_id;
+        applyTenant(tenantId);
+        const documentsResult = await listDocuments(tenantId);
         setDocuments(documentsResult);
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
+
+  function applyTenant(tenantId: string) {
+    setDocumentTenant(tenantId);
+    setUploadForm((current) => ({ ...current, tenant_id: tenantId }));
+    setSearchForm((current) => ({ ...current, tenant_id: tenantId }));
+    setAskForm((current) => ({ ...current, tenant_id: tenantId }));
+  }
 
   async function refreshDocuments(tenantId = documentTenant) {
     setError(null);
@@ -93,6 +108,27 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function submitTenant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!tenantName.trim()) {
+      setError('Enter a tenant name');
+      return;
+    }
+    setCreatingTenant(true);
+    setError(null);
+    try {
+      const created = await createTenant({ name: tenantName });
+      const result = await getCurrentUser();
+      setCurrentUser(result);
+      applyTenant(created.tenant.id);
+      await refreshDocuments(created.tenant.id);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setCreatingTenant(false);
     }
   }
 
@@ -222,15 +258,6 @@ export function App() {
                 />
               </label>
               <label>
-                Owner
-                <input
-                  value={uploadForm.owner_id}
-                  onChange={(event) =>
-                    setUploadForm((current) => ({ ...current, owner_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="spanAll">
                 File
                 <input
                   type="file"
@@ -251,6 +278,43 @@ export function App() {
             )}
 
             {error && <p className="errorText">{error}</p>}
+          </article>
+
+          <article className="panel panelWide">
+            <h2>Tenant Access</h2>
+            <div className="identityBar">
+              <strong>{currentUser?.user.email ?? 'Unknown user'}</strong>
+              <span>{currentUser?.user.id ?? 'No principal'}</span>
+            </div>
+            <form className="documentForm compactForm" onSubmit={submitTenant}>
+              <label>
+                Name
+                <input value={tenantName} onChange={(event) => setTenantName(event.target.value)} />
+              </label>
+              <button disabled={creatingTenant} type="submit">
+                {creatingTenant ? 'Creating' : 'Create Tenant'}
+              </button>
+            </form>
+            <div className="documentList">
+              {currentUser?.memberships.map((membership) => (
+                <button
+                  className="tenantRow"
+                  key={membership.tenant.id}
+                  onClick={() => {
+                    applyTenant(membership.tenant.id);
+                    void refreshDocuments(membership.tenant.id);
+                  }}
+                  type="button"
+                >
+                  <strong>{membership.tenant.name}</strong>
+                  <span>{membership.role}</span>
+                  <em>{membership.tenant.id}</em>
+                </button>
+              ))}
+              {currentUser && currentUser.memberships.length === 0 && (
+                <p className="muted">Create a tenant to start using membership-scoped access</p>
+              )}
+            </div>
           </article>
 
           <article className="panel panelWide">
@@ -354,15 +418,6 @@ export function App() {
                   value={askForm.tenant_id}
                   onChange={(event) =>
                     setAskForm((current) => ({ ...current, tenant_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Owner
-                <input
-                  value={askForm.owner_id}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, owner_id: event.target.value }))
                   }
                 />
               </label>

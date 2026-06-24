@@ -50,10 +50,21 @@ Then open:
 
 - Health: `http://localhost:8080/healthz`
 - Readiness: `http://localhost:8080/readyz`
+- Current user: `GET http://localhost:8080/v1/me`
+- Create tenant: `POST http://localhost:8080/v1/tenants`
 - Model targets: `http://localhost:8080/v1/model-targets`
 - Documents: `GET http://localhost:8080/v1/documents?tenant_id=tenant_1`
 - Document search: `POST http://localhost:8080/v1/search`
 - Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
+
+Create your first tenant for the authenticated user:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/tenants `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"name":"Personal Workspace"}'
+```
 
 First workflow endpoint:
 
@@ -61,7 +72,7 @@ First workflow endpoint:
 Invoke-RestMethod http://localhost:8080/v1/documents/register `
   -Method Post `
   -ContentType 'application/json' `
-  -Body '{"tenant_id":"tenant_1","owner_id":"user_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
+  -Body '{"tenant_id":"tenant_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
 ```
 
 Object-storage-backed upload endpoint:
@@ -69,7 +80,7 @@ Object-storage-backed upload endpoint:
 ```powershell
 Invoke-RestMethod http://localhost:8080/v1/documents/upload `
   -Method Post `
-  -Form @{ tenant_id = 'tenant_1'; owner_id = 'user_1'; file = Get-Item .\README.md }
+  -Form @{ tenant_id = 'tenant_1'; file = Get-Item .\README.md }
 ```
 
 Tenant-scoped document search endpoint:
@@ -87,7 +98,7 @@ Conversation ask endpoint:
 Invoke-RestMethod http://localhost:8080/v1/conversations/ask `
   -Method Post `
   -ContentType 'application/json' `
-  -Body '{"tenant_id":"tenant_1","owner_id":"user_1","question":"What do the deployment notes say?","limit":5}'
+  -Body '{"tenant_id":"tenant_1","question":"What do the deployment notes say?","limit":5}'
 ```
 
 Postgres integration tests are opt-in so normal test runs stay fast:

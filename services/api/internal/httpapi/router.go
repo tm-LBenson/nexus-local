@@ -21,6 +21,7 @@ type envelope map[string]any
 
 type Dependencies struct {
 	ModelRouter   *providers.ModelRouter
+	Tenants       app.TenantService
 	Documents     app.DocumentService
 	Search        app.SearchService
 	Conversations app.ConversationService
@@ -33,6 +34,8 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 
 	mux.HandleFunc("GET /healthz", healthHandler(cfg))
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
+	mux.HandleFunc("GET /v1/me", currentUserHandler(deps.Tenants))
+	mux.HandleFunc("POST /v1/tenants", createTenantHandler(deps.Tenants))
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
@@ -128,6 +131,28 @@ type registerDocumentRequest struct {
 	SizeBytes  int64  `json:"size_bytes"`
 }
 
+type createTenantRequest struct {
+	Name string `json:"name"`
+}
+
+type userPayload struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+type tenantPayload struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type membershipPayload struct {
+	Tenant tenantPayload `json:"tenant"`
+	Role   string        `json:"role"`
+}
+
 type documentPayload struct {
 	ID         string `json:"id"`
 	TenantID   string `json:"tenant_id"`
@@ -193,6 +218,69 @@ type messagePayload struct {
 	Role           string `json:"role"`
 	Content        string `json:"content"`
 	CreatedAt      string `json:"created_at"`
+}
+
+func currentUserHandler(service app.TenantService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := principalFromRequest(w, r)
+		if !ok {
+			return
+		}
+		result, err := service.CurrentUser(r.Context(), principal)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("current user: %v", err))
+			return
+		}
+
+		memberships := make([]membershipPayload, 0, len(result.Memberships))
+		for _, membership := range result.Memberships {
+			memberships = append(memberships, encodeMembershipSummary(membership))
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"user":        encodeUser(result.User),
+			"memberships": memberships,
+		})
+	}
+}
+
+func createTenantHandler(service app.TenantService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := principalFromRequest(w, r)
+		if !ok {
+			return
+		}
+
+		var req createTenantRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		result, err := service.CreateTenant(r.Context(), app.CreateTenantInput{
+			Principal: principal,
+			Name:      req.Name,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("create tenant: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, envelope{
+			"user":   encodeUser(result.User),
+			"tenant": encodeTenant(result.Tenant),
+			"membership": encodeMembershipSummary(app.MembershipSummary{
+				Tenant:     result.Tenant,
+				Membership: result.Membership,
+			}),
+		})
+	}
 }
 
 func registerDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
@@ -411,6 +499,30 @@ func encodeDocument(document domain.Document) documentPayload {
 	}
 }
 
+func encodeUser(user domain.User) userPayload {
+	return userPayload{
+		ID:    string(user.ID),
+		Email: user.Email,
+		Name:  user.Name,
+	}
+}
+
+func encodeTenant(tenant domain.Tenant) tenantPayload {
+	return tenantPayload{
+		ID:        string(tenant.ID),
+		Name:      tenant.Name,
+		CreatedAt: tenant.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: tenant.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeMembershipSummary(summary app.MembershipSummary) membershipPayload {
+	return membershipPayload{
+		Tenant: encodeTenant(summary.Tenant),
+		Role:   string(summary.Membership.Role),
+	}
+}
+
 func encodeJob(job domain.Job) jobPayload {
 	return jobPayload{
 		ID:           string(job.ID),
@@ -468,6 +580,15 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, envelope{"error": message})
+}
+
+func principalFromRequest(w http.ResponseWriter, r *http.Request) (internalauth.Principal, bool) {
+	principal, ok := internalauth.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, internalauth.ErrUnauthenticated.Error())
+		return internalauth.Principal{}, false
+	}
+	return principal, true
 }
 
 func authMiddleware(authenticator internalauth.Authenticator, next http.Handler) http.Handler {

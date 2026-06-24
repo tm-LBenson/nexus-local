@@ -31,6 +31,35 @@ export type ModelTarget = {
   model: string;
 };
 
+export type CurrentUser = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+export type Tenant = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TenantMembership = {
+  tenant: Tenant;
+  role: string;
+};
+
+export type CurrentUserResponse = {
+  user: CurrentUser;
+  memberships: TenantMembership[];
+};
+
+export type CreateTenantResponse = {
+  user: CurrentUser;
+  tenant: Tenant;
+  membership: TenantMembership;
+};
+
 export type DocumentRegistration = {
   tenant_id: string;
   owner_id: string;
@@ -135,6 +164,17 @@ export async function getModelTargets() {
   return request<{ targets: ModelTarget[] }>('/v1/model-targets');
 }
 
+export async function getCurrentUser() {
+  return request<CurrentUserResponse>('/v1/me');
+}
+
+export async function createTenant(input: { name: string }) {
+  return request<CreateTenantResponse>('/v1/tenants', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function listDocuments(tenantId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
@@ -149,12 +189,10 @@ export async function registerDocument(input: DocumentRegistration) {
 
 export async function uploadDocument(input: {
   tenant_id: string;
-  owner_id: string;
   file: File;
 }) {
   const form = new FormData();
   form.set('tenant_id', input.tenant_id);
-  form.set('owner_id', input.owner_id);
   form.set('file', input.file);
 
   return requestForm<RegisterDocumentResponse>('/v1/documents/upload', {
@@ -176,7 +214,6 @@ export async function searchDocuments(input: {
 
 export async function askConversation(input: {
   tenant_id: string;
-  owner_id: string;
   conversation_id?: string;
   model_target: string;
   question: string;

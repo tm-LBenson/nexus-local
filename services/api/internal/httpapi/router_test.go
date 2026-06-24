@@ -95,6 +95,58 @@ func TestModelRouteEndpointRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestCurrentUserEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		User        userPayload         `json:"user"`
+		Memberships []membershipPayload `json:"memberships"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.User.ID != "user_1" {
+		t.Fatalf("user id = %q, want user_1", body.User.ID)
+	}
+	if len(body.Memberships) != 0 {
+		t.Fatalf("memberships len = %d, want 0", len(body.Memberships))
+	}
+}
+
+func TestCreateTenantEndpointCreatesOwnerMembership(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenants", bytes.NewBufferString(`{"name":"Research Lab"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+
+	var body struct {
+		Tenant     tenantPayload     `json:"tenant"`
+		Membership membershipPayload `json:"membership"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Tenant.ID != "tenant_http" {
+		t.Fatalf("tenant id = %q, want tenant_http", body.Tenant.ID)
+	}
+	if body.Membership.Role != string(domain.RoleOwner) {
+		t.Fatalf("role = %q, want owner", body.Membership.Role)
+	}
+}
+
 func TestRegisterDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -434,9 +486,11 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 	}
 	search := app.NewSearchService(embedder, vectorIndex)
 	conversations := app.NewConversationService(repos, ids, httpClock{}, search, httpModelGateway{})
+	tenants := app.NewTenantService(repos, ids, httpClock{})
 
 	return NewRouter(cfg, Dependencies{
 		ModelRouter:   router,
+		Tenants:       tenants,
 		Documents:     documents,
 		Search:        search,
 		Conversations: conversations,
@@ -451,6 +505,10 @@ type httpIDs struct {
 
 func (httpIDs) NewDocumentID() domain.DocumentID {
 	return domain.DocumentID("doc_http")
+}
+
+func (httpIDs) NewTenantID() domain.TenantID {
+	return domain.TenantID("tenant_http")
 }
 
 func (httpIDs) NewJobID() domain.JobID {
