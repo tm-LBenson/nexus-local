@@ -13,11 +13,13 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
-	tenants     map[domain.TenantID]domain.Tenant
-	users       map[domain.UserID]domain.User
-	memberships map[membershipKey]domain.Membership
-	documents   map[tenantDocumentKey]domain.Document
-	jobs        map[tenantJobKey]domain.Job
+	tenants       map[domain.TenantID]domain.Tenant
+	users         map[domain.UserID]domain.User
+	memberships   map[membershipKey]domain.Membership
+	documents     map[tenantDocumentKey]domain.Document
+	jobs          map[tenantJobKey]domain.Job
+	conversations map[tenantConversationKey]domain.Conversation
+	messages      map[tenantMessageKey]domain.Message
 }
 
 type membershipKey struct {
@@ -35,13 +37,26 @@ type tenantJobKey struct {
 	jobID    domain.JobID
 }
 
+type tenantConversationKey struct {
+	tenantID       domain.TenantID
+	conversationID domain.ConversationID
+}
+
+type tenantMessageKey struct {
+	tenantID       domain.TenantID
+	conversationID domain.ConversationID
+	messageID      domain.MessageID
+}
+
 func New() *Store {
 	return &Store{
-		tenants:     map[domain.TenantID]domain.Tenant{},
-		users:       map[domain.UserID]domain.User{},
-		memberships: map[membershipKey]domain.Membership{},
-		documents:   map[tenantDocumentKey]domain.Document{},
-		jobs:        map[tenantJobKey]domain.Job{},
+		tenants:       map[domain.TenantID]domain.Tenant{},
+		users:         map[domain.UserID]domain.User{},
+		memberships:   map[membershipKey]domain.Membership{},
+		documents:     map[tenantDocumentKey]domain.Document{},
+		jobs:          map[tenantJobKey]domain.Job{},
+		conversations: map[tenantConversationKey]domain.Conversation{},
+		messages:      map[tenantMessageKey]domain.Message{},
 	}
 }
 
@@ -227,4 +242,88 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.J
 	}
 	s.jobs[tenantJobKey{tenantID: job.TenantID, jobID: job.ID}] = job
 	return job, nil
+}
+
+func (s *Store) SaveConversation(ctx context.Context, conversation domain.Conversation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conversations[tenantConversationKey{
+		tenantID:       conversation.TenantID,
+		conversationID: conversation.ID,
+	}] = conversation
+	return nil
+}
+
+func (s *Store) GetConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) (domain.Conversation, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Conversation{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conversation, ok := s.conversations[tenantConversationKey{tenantID: tenantID, conversationID: id}]
+	if !ok {
+		return domain.Conversation{}, store.ErrNotFound
+	}
+	return conversation, nil
+}
+
+func (s *Store) ListConversations(ctx context.Context, tenantID domain.TenantID) ([]domain.Conversation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conversations := make([]domain.Conversation, 0)
+	for _, conversation := range s.conversations {
+		if conversation.TenantID == tenantID {
+			conversations = append(conversations, conversation)
+		}
+	}
+	sort.Slice(conversations, func(i, j int) bool {
+		if conversations[i].UpdatedAt.Equal(conversations[j].UpdatedAt) {
+			return conversations[i].ID < conversations[j].ID
+		}
+		return conversations[i].UpdatedAt.After(conversations[j].UpdatedAt)
+	})
+	return conversations, nil
+}
+
+func (s *Store) SaveMessage(ctx context.Context, message domain.Message) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages[tenantMessageKey{
+		tenantID:       message.TenantID,
+		conversationID: message.ConversationID,
+		messageID:      message.ID,
+	}] = message
+	return nil
+}
+
+func (s *Store) ListMessages(ctx context.Context, tenantID domain.TenantID, conversationID domain.ConversationID) ([]domain.Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	messages := make([]domain.Message, 0)
+	for _, message := range s.messages {
+		if message.TenantID == tenantID && message.ConversationID == conversationID {
+			messages = append(messages, message)
+		}
+	}
+	sort.Slice(messages, func(i, j int) bool {
+		if messages[i].CreatedAt.Equal(messages[j].CreatedAt) {
+			return messages[i].ID < messages[j].ID
+		}
+		return messages[i].CreatedAt.Before(messages[j].CreatedAt)
+	})
+	return messages, nil
 }

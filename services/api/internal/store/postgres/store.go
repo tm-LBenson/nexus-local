@@ -277,6 +277,118 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.J
 	return job, nil
 }
 
+func (s *Store) SaveConversation(ctx context.Context, conversation domain.Conversation) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO conversations (
+			tenant_id, id, owner_id, title, model_target, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET owner_id = EXCLUDED.owner_id,
+		    title = EXCLUDED.title,
+		    model_target = EXCLUDED.model_target,
+		    updated_at = EXCLUDED.updated_at
+	`, conversation.TenantID, conversation.ID, conversation.OwnerID, conversation.Title, conversation.ModelTarget, conversation.CreatedAt, conversation.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) (domain.Conversation, error) {
+	var conversation domain.Conversation
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, owner_id, title, model_target, created_at, updated_at
+		FROM conversations
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&conversation.ID,
+		&conversation.TenantID,
+		&conversation.OwnerID,
+		&conversation.Title,
+		&conversation.ModelTarget,
+		&conversation.CreatedAt,
+		&conversation.UpdatedAt,
+	)
+	if err != nil {
+		return domain.Conversation{}, translateErr(err)
+	}
+	return conversation, nil
+}
+
+func (s *Store) ListConversations(ctx context.Context, tenantID domain.TenantID) ([]domain.Conversation, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, owner_id, title, model_target, created_at, updated_at
+		FROM conversations
+		WHERE tenant_id = $1
+		ORDER BY updated_at DESC, id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	conversations := make([]domain.Conversation, 0)
+	for rows.Next() {
+		var conversation domain.Conversation
+		if err := rows.Scan(
+			&conversation.ID,
+			&conversation.TenantID,
+			&conversation.OwnerID,
+			&conversation.Title,
+			&conversation.ModelTarget,
+			&conversation.CreatedAt,
+			&conversation.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		conversations = append(conversations, conversation)
+	}
+	return conversations, rows.Err()
+}
+
+func (s *Store) SaveMessage(ctx context.Context, message domain.Message) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO messages (
+			tenant_id, id, conversation_id, role, content, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET conversation_id = EXCLUDED.conversation_id,
+		    role = EXCLUDED.role,
+		    content = EXCLUDED.content,
+		    created_at = EXCLUDED.created_at
+	`, message.TenantID, message.ID, message.ConversationID, message.Role, message.Content, message.CreatedAt)
+	return err
+}
+
+func (s *Store) ListMessages(ctx context.Context, tenantID domain.TenantID, conversationID domain.ConversationID) ([]domain.Message, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, conversation_id, role, content, created_at
+		FROM messages
+		WHERE tenant_id = $1 AND conversation_id = $2
+		ORDER BY created_at, id
+	`, tenantID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := make([]domain.Message, 0)
+	for rows.Next() {
+		var message domain.Message
+		if err := rows.Scan(
+			&message.ID,
+			&message.TenantID,
+			&message.ConversationID,
+			&message.Role,
+			&message.Content,
+			&message.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, rows.Err()
+}
+
 func translateErr(err error) error {
 	if err == pgx.ErrNoRows {
 		return store.ErrNotFound

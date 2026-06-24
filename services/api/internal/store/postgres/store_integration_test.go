@@ -75,6 +75,47 @@ func TestStoreIntegrationClaimNextQueuedJob(t *testing.T) {
 	}
 }
 
+func TestStoreIntegrationConversationsAndMessages(t *testing.T) {
+	ctx := context.Background()
+	repo := newIntegrationStore(t, ctx)
+
+	conversationA := newTestConversation(t, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"), fixedTime())
+	conversationB := newTestConversation(t, domain.TenantID("tenant_b"), domain.ConversationID("conv_1"), fixedTime().Add(time.Minute))
+	if err := repo.SaveConversation(ctx, conversationA); err != nil {
+		t.Fatalf("save conversationA: %v", err)
+	}
+	if err := repo.SaveConversation(ctx, conversationB); err != nil {
+		t.Fatalf("save conversationB: %v", err)
+	}
+
+	conversations, err := repo.ListConversations(ctx, domain.TenantID("tenant_a"))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if len(conversations) != 1 || conversations[0].TenantID != domain.TenantID("tenant_a") {
+		t.Fatalf("conversations = %#v", conversations)
+	}
+
+	second := newTestMessage(t, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"), domain.MessageID("msg_2"), domain.MessageRoleAssistant, "second", fixedTime().Add(time.Minute))
+	first := newTestMessage(t, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"), domain.MessageID("msg_1"), domain.MessageRoleUser, "first", fixedTime())
+	for _, message := range []domain.Message{second, first} {
+		if err := repo.SaveMessage(ctx, message); err != nil {
+			t.Fatalf("save message %s: %v", message.ID, err)
+		}
+	}
+
+	messages, err := repo.ListMessages(ctx, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"))
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages))
+	}
+	if messages[0].ID != domain.MessageID("msg_1") || messages[1].ID != domain.MessageID("msg_2") {
+		t.Fatalf("message order = %s, %s; want msg_1, msg_2", messages[0].ID, messages[1].ID)
+	}
+}
+
 func newIntegrationStore(t *testing.T, ctx context.Context) *Store {
 	t.Helper()
 
@@ -93,7 +134,7 @@ func newIntegrationStore(t *testing.T, ctx context.Context) *Store {
 		t.Fatalf("migrate: %v", err)
 	}
 	if _, err := repo.pool.Exec(ctx, `
-		TRUNCATE tenants, users, memberships, documents, jobs
+		TRUNCATE tenants, users, memberships, documents, jobs, messages, conversations
 	`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -116,6 +157,40 @@ func newTestDocument(t *testing.T, tenantID domain.TenantID, documentID domain.D
 		t.Fatalf("new document: %v", err)
 	}
 	return doc
+}
+
+func newTestConversation(t *testing.T, tenantID domain.TenantID, conversationID domain.ConversationID, now time.Time) domain.Conversation {
+	t.Helper()
+
+	conversation, err := domain.NewConversation(domain.ConversationCreate{
+		ID:          conversationID,
+		TenantID:    tenantID,
+		OwnerID:     domain.UserID("user_1"),
+		Title:       "Research",
+		ModelTarget: "general",
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("new conversation: %v", err)
+	}
+	return conversation
+}
+
+func newTestMessage(t *testing.T, tenantID domain.TenantID, conversationID domain.ConversationID, messageID domain.MessageID, role domain.MessageRole, content string, now time.Time) domain.Message {
+	t.Helper()
+
+	message, err := domain.NewMessage(domain.MessageCreate{
+		ID:             messageID,
+		TenantID:       tenantID,
+		ConversationID: conversationID,
+		Role:           role,
+		Content:        content,
+		Now:            now,
+	})
+	if err != nil {
+		t.Fatalf("new message: %v", err)
+	}
+	return message
 }
 
 func fixedTime() time.Time {
