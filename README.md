@@ -86,6 +86,7 @@ Key docs:
 - [Deployment profiles](docs/deployment-profiles.md)
 - [Provider contracts](docs/provider-contracts.md)
 - [Testing strategy](docs/testing-strategy.md)
+- [Workers](docs/workers.md)
 
 ## Deployment Profiles
 
