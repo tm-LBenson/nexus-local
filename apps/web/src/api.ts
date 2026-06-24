@@ -6,6 +6,7 @@ export type Health = {
 
 export type Readiness = {
   status: string;
+  auth_mode: string;
   persistence_backend: string;
   run_migrations: boolean;
   object_storage_backend: string;

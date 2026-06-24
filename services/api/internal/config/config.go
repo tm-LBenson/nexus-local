@@ -11,6 +11,11 @@ type Config struct {
 	HTTPAddr             string
 	Version              string
 	CORSAllowedOrigin    string
+	AuthMode             string
+	DevUserID            string
+	DevUserEmail         string
+	TrustedUserIDHeader  string
+	TrustedEmailHeader   string
 	PersistenceBackend   string
 	RunMigrations        bool
 	DatabaseURL          string
@@ -44,6 +49,11 @@ func Load() Config {
 		HTTPAddr:             env("HTTP_ADDR", ":8080"),
 		Version:              env("APP_VERSION", "dev"),
 		CORSAllowedOrigin:    env("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
+		AuthMode:             env("AUTH_MODE", "dev"),
+		DevUserID:            env("DEV_USER_ID", "user_1"),
+		DevUserEmail:         env("DEV_USER_EMAIL", "dev@example.local"),
+		TrustedUserIDHeader:  env("TRUSTED_USER_ID_HEADER", "X-User-ID"),
+		TrustedEmailHeader:   env("TRUSTED_EMAIL_HEADER", "X-User-Email"),
 		PersistenceBackend:   env("PERSISTENCE_BACKEND", "memory"),
 		RunMigrations:        envBool("RUN_MIGRATIONS", false),
 		DatabaseURL:          env("DATABASE_URL", "postgres://app:app@localhost:5432/app?sslmode=disable"),

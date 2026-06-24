@@ -11,6 +11,7 @@ This is the new portable foundation for a self-hosted AI application built for p
 - Jobs/events: NATS JetStream for durable work queues and event streams.
 - Cache/rate limits: Valkey.
 - Inference: OpenAI-compatible model gateway, backed by local vLLM/Ollama, rented GPU, or external API.
+- Auth: provider-neutral API auth boundary with local `dev` mode and `trusted-header` mode for reverse-proxy/OIDC setups.
 - Observability: OpenTelemetry-first, with Prometheus/Grafana/Langfuse planned as separate deployment services.
 
 ## TDD Stance
@@ -42,6 +43,8 @@ The API image includes two entrypoints:
 
 - `/api`: HTTP API
 - `/worker`: background document ingestion worker
+
+Local development defaults to `AUTH_MODE=dev`, which injects `DEV_USER_ID=user_1`. For a production self-hosted deployment, put the API behind a trusted identity-aware proxy and set `AUTH_MODE=trusted-header`; tenant permissions are then checked against stored memberships.
 
 Then open:
 

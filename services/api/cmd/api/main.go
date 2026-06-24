@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
+	internalauth "github.com/tm-lbenson/nexus-local/services/api/internal/auth"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/httpapi"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -48,6 +49,8 @@ func main() {
 	ids := app.NewRandomIDs()
 	clock := app.SystemClock{}
 	modelGateway := runtime.NewRoutedModelGateway(modelRouter, cfg)
+	authenticator := internalauth.NewAuthenticator(cfg)
+	authorizer := internalauth.NewAuthorizer(cfg, repos)
 	documentService := app.NewDocumentService(repos, ids, clock).WithObjectStore(objectStore)
 	searchService := app.NewSearchService(embedder, vectorIndex)
 	conversationService := app.NewConversationService(repos, ids, clock, searchService, modelGateway)
@@ -59,6 +62,8 @@ func main() {
 			Documents:     documentService,
 			Search:        searchService,
 			Conversations: conversationService,
+			Authenticator: authenticator,
+			Authorizer:    authorizer,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

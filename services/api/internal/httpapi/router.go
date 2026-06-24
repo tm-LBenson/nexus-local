@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
+	internalauth "github.com/tm-lbenson/nexus-local/services/api/internal/auth"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -22,6 +24,8 @@ type Dependencies struct {
 	Documents     app.DocumentService
 	Search        app.SearchService
 	Conversations app.ConversationService
+	Authenticator internalauth.Authenticator
+	Authorizer    internalauth.Authorizer
 }
 
 func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
@@ -30,14 +34,14 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /healthz", healthHandler(cfg))
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
-	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter))
-	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents))
-	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
-	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents))
-	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search))
-	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations))
+	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
+	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
+	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
 
-	return loggingMiddleware(corsMiddleware(cfg, mux))
+	return loggingMiddleware(corsMiddleware(cfg, authMiddleware(deps.Authenticator, mux)))
 }
 
 func healthHandler(cfg config.Config) http.HandlerFunc {
@@ -54,6 +58,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, envelope{
 			"status":                  "ready",
+			"auth_mode":               cfg.AuthMode,
 			"persistence_backend":     cfg.PersistenceBackend,
 			"run_migrations":          cfg.RunMigrations,
 			"object_storage_backend":  cfg.ObjectStoreBackend,
@@ -83,7 +88,7 @@ func modelTargetsHandler(modelRouter *providers.ModelRouter) http.HandlerFunc {
 	}
 }
 
-func modelRouteHandler(modelRouter *providers.ModelRouter) http.HandlerFunc {
+func modelRouteHandler(modelRouter *providers.ModelRouter, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if modelRouter == nil {
 			writeError(w, http.StatusServiceUnavailable, "model router is not configured")
@@ -94,6 +99,11 @@ func modelRouteHandler(modelRouter *providers.ModelRouter) http.HandlerFunc {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
+		}
+		if strings.TrimSpace(req.TenantID) != "" {
+			if _, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionUseAI); !ok {
+				return
+			}
 		}
 
 		route, err := modelRouter.Route(r.Context(), req)
@@ -185,17 +195,21 @@ type messagePayload struct {
 	CreatedAt      string `json:"created_at"`
 }
 
-func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
+func registerDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerDocumentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		principal, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
 
 		result, err := service.RegisterDocument(r.Context(), app.RegisterDocumentInput{
 			TenantID:   domain.TenantID(req.TenantID),
-			OwnerID:    domain.UserID(req.OwnerID),
+			OwnerID:    principal.UserID,
 			Name:       req.Name,
 			StorageKey: req.StorageKey,
 			SizeBytes:  req.SizeBytes,
@@ -216,10 +230,14 @@ func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
 	}
 }
 
-func listDocumentsHandler(service app.DocumentService) http.HandlerFunc {
+func listDocumentsHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
 		result, err := service.ListDocuments(r.Context(), app.ListDocumentsInput{
-			TenantID: domain.TenantID(r.URL.Query().Get("tenant_id")),
+			TenantID: tenantID,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -238,7 +256,7 @@ func listDocumentsHandler(service app.DocumentService) http.HandlerFunc {
 	}
 }
 
-func uploadDocumentHandler(service app.DocumentService) http.HandlerFunc {
+func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(64 << 20); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form")
@@ -256,10 +274,15 @@ func uploadDocumentHandler(service app.DocumentService) http.HandlerFunc {
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
+		tenantID := domain.TenantID(r.FormValue("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
 
 		result, err := service.UploadDocument(r.Context(), app.UploadDocumentInput{
-			TenantID:    domain.TenantID(r.FormValue("tenant_id")),
-			OwnerID:     domain.UserID(r.FormValue("owner_id")),
+			TenantID:    tenantID,
+			OwnerID:     principal.UserID,
 			Name:        header.Filename,
 			ContentType: contentType,
 			SizeBytes:   header.Size,
@@ -284,11 +307,14 @@ func uploadDocumentHandler(service app.DocumentService) http.HandlerFunc {
 	}
 }
 
-func searchHandler(service app.SearchService) http.HandlerFunc {
+func searchHandler(service app.SearchService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req searchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if _, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionReadDocuments); !ok {
 			return
 		}
 
@@ -318,17 +344,25 @@ func searchHandler(service app.SearchService) http.HandlerFunc {
 	}
 }
 
-func askConversationHandler(service app.ConversationService) http.HandlerFunc {
+func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req askConversationRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments)
+		if !ok {
+			return
+		}
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
+			return
+		}
 
 		result, err := service.Ask(r.Context(), app.AskInput{
-			TenantID:       domain.TenantID(req.TenantID),
-			OwnerID:        domain.UserID(req.OwnerID),
+			TenantID:       tenantID,
+			OwnerID:        principal.UserID,
 			ConversationID: domain.ConversationID(req.ConversationID),
 			ModelTarget:    req.ModelTarget,
 			Question:       req.Question,
@@ -436,6 +470,48 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, envelope{"error": message})
 }
 
+func authMiddleware(authenticator internalauth.Authenticator, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		principal, err := authenticator.Authenticate(r)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, internalauth.ErrUnauthenticated) {
+				status = http.StatusUnauthorized
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(internalauth.WithPrincipal(r.Context(), principal)))
+	})
+}
+
+func requireTenantPermission(w http.ResponseWriter, r *http.Request, authorizer internalauth.Authorizer, tenantID domain.TenantID, permission domain.Permission) (internalauth.Principal, bool) {
+	principal, ok := internalauth.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, internalauth.ErrUnauthenticated.Error())
+		return internalauth.Principal{}, false
+	}
+	if err := authorizer.Require(r.Context(), principal, tenantID, permission); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, internalauth.ErrUnauthenticated):
+			status = http.StatusUnauthorized
+		case errors.Is(err, internalauth.ErrForbidden):
+			status = http.StatusForbidden
+		case errors.Is(err, domain.ErrInvalidEntity):
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err.Error())
+		return internalauth.Principal{}, false
+	}
+	return principal, true
+}
+
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
@@ -451,7 +527,7 @@ func corsMiddleware(cfg config.Config, next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-User-Email")
 		}
 
 		if r.Method == http.MethodOptions {

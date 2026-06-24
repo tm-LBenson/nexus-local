@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
+	internalauth "github.com/tm-lbenson/nexus-local/services/api/internal/auth"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -100,7 +101,7 @@ func TestRegisterDocumentEndpoint(t *testing.T) {
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
 		"tenant_id": "tenant_1",
-		"owner_id": "user_1",
+		"owner_id": "spoofed_user",
 		"name": "Handbook.md",
 		"storage_key": "tenants/tenant_1/documents/source.md",
 		"size_bytes": 42
@@ -120,6 +121,9 @@ func TestRegisterDocumentEndpoint(t *testing.T) {
 	}
 	if body.Document.ID != "doc_http" {
 		t.Fatalf("document id = %q, want doc_http", body.Document.ID)
+	}
+	if body.Document.OwnerID != "user_1" {
+		t.Fatalf("owner id = %q, want authenticated user", body.Document.OwnerID)
 	}
 	if body.Job.State != string(domain.JobStateQueued) {
 		t.Fatalf("job state = %q, want queued", body.Job.State)
@@ -199,7 +203,7 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
 		t.Fatalf("tenant field: %v", err)
 	}
-	if err := writer.WriteField("owner_id", "user_1"); err != nil {
+	if err := writer.WriteField("owner_id", "spoofed_user"); err != nil {
 		t.Fatalf("owner field: %v", err)
 	}
 	part, err := writer.CreateFormFile("file", "Handbook.md")
@@ -231,6 +235,9 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 	if response.Document.StorageKey != "tenants/tenant_1/documents/doc_http/Handbook.md" {
 		t.Fatalf("storage key = %q", response.Document.StorageKey)
+	}
+	if response.Document.OwnerID != "user_1" {
+		t.Fatalf("owner id = %q, want authenticated user", response.Document.OwnerID)
 	}
 	if response.Job.State != string(domain.JobStateQueued) {
 		t.Fatalf("job state = %q, want queued", response.Job.State)
@@ -347,7 +354,36 @@ func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderModeRejectsUserWithoutTenantPermission(t *testing.T) {
+	server := newTestServerWithConfig(t, config.Config{
+		AuthMode:            internalauth.ModeTrustedHeader,
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents?tenant_id=tenant_1", nil)
+	req.Header.Set("X-User-ID", "user_without_membership")
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+}
+
 func newTestServer(t *testing.T) http.Handler {
+	t.Helper()
+
+	return newTestServerWithConfig(t, config.Config{
+		AuthMode:            internalauth.ModeDev,
+		DevUserID:           "user_1",
+		DevUserEmail:        "dev@example.local",
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	})
+}
+
+func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 	t.Helper()
 
 	router, err := providers.NewModelRouter([]providers.TargetConfig{
@@ -361,6 +397,11 @@ func newTestServer(t *testing.T) http.Handler {
 		Env:                 "test",
 		Version:             "test",
 		CORSAllowedOrigin:   "http://localhost:5173",
+		AuthMode:            authCfg.AuthMode,
+		DevUserID:           authCfg.DevUserID,
+		DevUserEmail:        authCfg.DevUserEmail,
+		TrustedUserIDHeader: authCfg.TrustedUserIDHeader,
+		TrustedEmailHeader:  authCfg.TrustedEmailHeader,
 		PersistenceBackend:  "memory",
 		RunMigrations:       false,
 		DatabaseURL:         "postgres://test",
@@ -399,6 +440,8 @@ func newTestServer(t *testing.T) http.Handler {
 		Documents:     documents,
 		Search:        search,
 		Conversations: conversations,
+		Authenticator: internalauth.NewAuthenticator(cfg),
+		Authorizer:    internalauth.NewAuthorizer(cfg, repos),
 	})
 }
 

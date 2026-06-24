@@ -170,6 +170,10 @@ export function App() {
                 <dd>{health?.status ?? error ?? 'Checking health'}</dd>
               </div>
               <div>
+                <dt>Auth</dt>
+                <dd>{readiness?.auth_mode ?? 'unknown'}</dd>
+              </div>
+              <div>
                 <dt>Version</dt>
                 <dd>{health?.version ?? 'unknown'}</dd>
               </div>

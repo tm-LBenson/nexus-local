@@ -19,6 +19,17 @@ Stable product concepts:
 
 The domain package should not import Postgres, Qdrant, MinIO, NATS, HTTP clients, or framework code. It owns product rules such as document lifecycle transitions and job state transitions.
 
+## Auth Boundary
+
+Location: `services/api/internal/auth`
+
+HTTP routes use an authenticated principal and then check tenant permissions against memberships. The first implementation supports:
+
+- `AUTH_MODE=dev`: local development fallback principal from `DEV_USER_ID`.
+- `AUTH_MODE=trusted-header`: the API trusts user headers set by a fronting identity-aware proxy, then enforces memberships in the repository.
+
+Product services still receive explicit user and tenant IDs, but HTTP handlers now derive owner IDs from the authenticated principal instead of trusting client-provided owner fields.
+
 ## Provider Package
 
 Location: `services/api/internal/providers`
