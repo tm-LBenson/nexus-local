@@ -1,0 +1,10 @@
+# Use with:
+# docker compose -f compose.cpu.yml -f compose.split-nas-gpu.yml up --build
+#
+# Set MODEL_GATEWAY_BASE_URL to your desktop GPU or rented GPU endpoint.
+
+services:
+  api:
+    environment:
+      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-http://desktop-gpu.local:8000/v1}
+

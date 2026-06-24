@@ -1,0 +1,38 @@
+# Use with:
+# docker compose -f compose.cpu.yml -f compose.gpu.yml --profile gpu up --build
+
+services:
+  model-gateway:
+    image: vllm/vllm-openai:latest
+    profiles: ["gpu"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${GENERAL_MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+
+  api:
+    environment:
+      MODEL_GATEWAY_BASE_URL: http://model-gateway:8000/v1
+    depends_on:
+      model-gateway:
+        condition: service_started
+
+volumes:
+  model-cache:
+
