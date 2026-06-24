@@ -19,8 +19,13 @@ type Config struct {
 	ObjectStoreAccessKey string
 	ObjectStoreSecretKey string
 	ObjectStoreBucket    string
+	EmbeddingBackend     string
+	EmbeddingModel       string
+	EmbeddingDimensions  int
 	VectorBackend        string
 	VectorBaseURL        string
+	VectorCollection     string
+	VectorAPIKey         string
 	QueueBackend         string
 	QueueURL             string
 	CacheURL             string
@@ -45,8 +50,13 @@ func Load() Config {
 		ObjectStoreAccessKey: env("OBJECT_STORAGE_ACCESS_KEY", "minioadmin"),
 		ObjectStoreSecretKey: env("OBJECT_STORAGE_SECRET_KEY", "minioadmin"),
 		ObjectStoreBucket:    env("OBJECT_STORAGE_BUCKET", "documents"),
-		VectorBackend:        env("VECTOR_BACKEND", "qdrant"),
+		EmbeddingBackend:     env("EMBEDDING_BACKEND", "hash"),
+		EmbeddingModel:       env("EMBEDDING_MODEL", "hash-embedding"),
+		EmbeddingDimensions:  envInt("EMBEDDING_DIMENSIONS", 384),
+		VectorBackend:        env("VECTOR_BACKEND", "memory"),
 		VectorBaseURL:        env("VECTOR_BASE_URL", "http://localhost:6333"),
+		VectorCollection:     env("VECTOR_COLLECTION", "documents"),
+		VectorAPIKey:         env("VECTOR_API_KEY", ""),
 		QueueBackend:         env("QUEUE_BACKEND", "nats"),
 		QueueURL:             env("QUEUE_URL", "nats://localhost:4222"),
 		CacheURL:             env("CACHE_URL", "redis://localhost:6379/0"),
@@ -72,6 +82,18 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return fallback
 	}

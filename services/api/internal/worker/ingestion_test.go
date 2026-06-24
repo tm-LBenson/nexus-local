@@ -3,10 +3,15 @@ package worker
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	embeddinghash "github.com/tm-lbenson/nexus-local/services/api/internal/providers/embeddings/hash"
+	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
+	vectormemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/vector/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
@@ -14,9 +19,20 @@ import (
 func TestDocumentIngestionWorkerProcessesQueuedJob(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
+	objects := objectmemory.New()
+	vectors := vectormemory.New()
 	doc := newTestDocument(t)
 	job := newDocumentJob(t, doc)
 
+	if _, err := objects.PutObject(ctx, providers.ObjectPut{
+		TenantID:    doc.TenantID,
+		Key:         doc.StorageKey,
+		Body:        strings.NewReader("alpha beta gamma delta epsilon zeta eta theta"),
+		ContentType: "text/markdown",
+		SizeBytes:   47,
+	}); err != nil {
+		t.Fatalf("put object: %v", err)
+	}
 	if err := repos.SaveDocument(ctx, doc); err != nil {
 		t.Fatalf("save document: %v", err)
 	}
@@ -24,13 +40,17 @@ func TestDocumentIngestionWorkerProcessesQueuedJob(t *testing.T) {
 		t.Fatalf("save job: %v", err)
 	}
 
-	worker := NewDocumentIngestionWorker(repos, fixedClock{})
+	worker := NewDocumentIngestionWorker(repos, fixedClock{}).
+		WithPipeline(objects, embeddinghash.New("test", 16), vectors)
 	result, err := worker.ProcessNext(ctx)
 	if err != nil {
 		t.Fatalf("process next: %v", err)
 	}
 	if result.JobID != job.ID {
 		t.Fatalf("job id = %q, want %q", result.JobID, job.ID)
+	}
+	if result.ChunkCount == 0 {
+		t.Fatal("chunk count = 0, want vectors")
 	}
 
 	updatedDoc, err := repos.GetDocument(ctx, doc.TenantID, doc.ID)
@@ -47,6 +67,22 @@ func TestDocumentIngestionWorkerProcessesQueuedJob(t *testing.T) {
 	}
 	if updatedJob.State != domain.JobStateSucceeded {
 		t.Fatalf("job state = %q, want succeeded", updatedJob.State)
+	}
+
+	query, err := embeddinghash.New("test", 16).Embed(ctx, providers.EmbeddingRequest{Texts: []string{"alpha beta"}})
+	if err != nil {
+		t.Fatalf("embed query: %v", err)
+	}
+	hits, err := vectors.Search(ctx, providers.VectorSearch{
+		TenantID: doc.TenantID,
+		Query:    query.Vectors[0],
+		Limit:    1,
+	})
+	if err != nil {
+		t.Fatalf("search vectors: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits len = %d, want 1", len(hits))
 	}
 }
 

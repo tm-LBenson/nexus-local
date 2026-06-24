@@ -25,7 +25,21 @@ func main() {
 	}
 	defer closeRepos()
 
-	ingestionWorker := worker.NewDocumentIngestionWorker(repos, systemClock{})
+	objectStore, err := runtime.OpenObjectStore(ctx, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	embedder, err := runtime.OpenEmbedder(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	vectorIndex, err := runtime.OpenVectorIndex(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ingestionWorker := worker.NewDocumentIngestionWorker(repos, systemClock{}).
+		WithPipeline(objectStore, embedder, vectorIndex)
 	pollInterval := cfg.WorkerPollInterval
 	if pollInterval <= 0 {
 		pollInterval = 2 * time.Second

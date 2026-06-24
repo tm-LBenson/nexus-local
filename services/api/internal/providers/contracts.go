@@ -67,6 +67,20 @@ type VectorIndex interface {
 	DeleteDocument(ctx context.Context, tenantID domain.TenantID, documentID domain.DocumentID) error
 }
 
+type EmbeddingRequest struct {
+	Texts []string
+	Model string
+}
+
+type EmbeddingResponse struct {
+	Model   string
+	Vectors [][]float32
+}
+
+type Embedder interface {
+	Embed(ctx context.Context, input EmbeddingRequest) (EmbeddingResponse, error)
+}
+
 type JobEnvelope struct {
 	ID       domain.JobID
 	TenantID domain.TenantID
