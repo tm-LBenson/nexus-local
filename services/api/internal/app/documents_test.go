@@ -36,6 +36,9 @@ func TestRegisterDocumentCreatesDocumentAndIngestionJob(t *testing.T) {
 	if result.Job.State != domain.JobStateQueued {
 		t.Fatalf("job state = %q, want queued", result.Job.State)
 	}
+	if result.Job.ResourceType != "document" || result.Job.ResourceID != "doc_fixed" {
+		t.Fatalf("job resource = %s/%s, want document/doc_fixed", result.Job.ResourceType, result.Job.ResourceID)
+	}
 
 	savedDoc, err := repos.GetDocument(ctx, domain.TenantID("tenant_1"), domain.DocumentID("doc_fixed"))
 	if err != nil {
@@ -51,6 +54,9 @@ func TestRegisterDocumentCreatesDocumentAndIngestionJob(t *testing.T) {
 	}
 	if savedJob.State != domain.JobStateQueued {
 		t.Fatalf("saved job state = %q, want queued", savedJob.State)
+	}
+	if savedJob.ResourceID != "doc_fixed" {
+		t.Fatalf("saved job resource id = %q, want doc_fixed", savedJob.ResourceID)
 	}
 }
 

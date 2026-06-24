@@ -26,20 +26,24 @@ const (
 )
 
 type Job struct {
-	ID        JobID
-	TenantID  TenantID
-	Type      JobType
-	State     JobState
-	Attempts  int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           JobID
+	TenantID     TenantID
+	Type         JobType
+	ResourceType string
+	ResourceID   string
+	State        JobState
+	Attempts     int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type JobCreate struct {
-	ID       JobID
-	TenantID TenantID
-	Type     JobType
-	Now      time.Time
+	ID           JobID
+	TenantID     TenantID
+	Type         JobType
+	ResourceType string
+	ResourceID   string
+	Now          time.Time
 }
 
 func NewJob(input JobCreate) (Job, error) {
@@ -52,12 +56,14 @@ func NewJob(input JobCreate) (Job, error) {
 	}
 
 	return Job{
-		ID:        input.ID,
-		TenantID:  input.TenantID,
-		Type:      input.Type,
-		State:     JobStateQueued,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           input.ID,
+		TenantID:     input.TenantID,
+		Type:         input.Type,
+		ResourceType: input.ResourceType,
+		ResourceID:   input.ResourceID,
+		State:        JobStateQueued,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}, nil
 }
 

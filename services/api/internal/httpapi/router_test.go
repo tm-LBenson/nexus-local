@@ -121,6 +121,9 @@ func TestRegisterDocumentEndpoint(t *testing.T) {
 	if body.Job.State != string(domain.JobStateQueued) {
 		t.Fatalf("job state = %q, want queued", body.Job.State)
 	}
+	if body.Job.ResourceType != "document" || body.Job.ResourceID != "doc_http" {
+		t.Fatalf("job resource = %s/%s, want document/doc_http", body.Job.ResourceType, body.Job.ResourceID)
+	}
 }
 
 func TestRegisterDocumentEndpointRejectsInvalidInput(t *testing.T) {
@@ -178,6 +181,9 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 	if response.Job.State != string(domain.JobStateQueued) {
 		t.Fatalf("job state = %q, want queued", response.Job.State)
+	}
+	if response.Job.ResourceType != "document" || response.Job.ResourceID != "doc_http" {
+		t.Fatalf("job resource = %s/%s, want document/doc_http", response.Job.ResourceType, response.Job.ResourceID)
 	}
 }
 

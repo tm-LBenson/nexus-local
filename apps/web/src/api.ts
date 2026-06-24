@@ -48,6 +48,8 @@ export type RegisteredJob = {
   id: string;
   tenant_id: string;
   type: string;
+  resource_type: string;
+  resource_id: string;
   state: string;
   attempts: number;
   created_at: string;

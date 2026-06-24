@@ -75,6 +75,8 @@ failed -> processing | deleted
 
 Terminal states should stay terminal unless we intentionally add a recovery workflow.
 
+Jobs may carry `resource_type` and `resource_id` so a worker can claim work without needing to infer the subject from side effects. Document ingestion jobs use `document/<document_id>`.
+
 ## TDD Boundary
 
 Tests should come first when changing:

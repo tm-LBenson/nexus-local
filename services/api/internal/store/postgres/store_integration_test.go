@@ -41,10 +41,12 @@ func TestStoreIntegrationClaimNextQueuedJob(t *testing.T) {
 	ctx := context.Background()
 	repo := newIntegrationStore(t, ctx)
 	job, err := domain.NewJob(domain.JobCreate{
-		ID:       domain.JobID("job_1"),
-		TenantID: domain.TenantID("tenant_a"),
-		Type:     domain.JobTypeDocumentIngestion,
-		Now:      fixedTime(),
+		ID:           domain.JobID("job_1"),
+		TenantID:     domain.TenantID("tenant_a"),
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   "doc_1",
+		Now:          fixedTime(),
 	})
 	if err != nil {
 		t.Fatalf("new job: %v", err)
@@ -62,6 +64,9 @@ func TestStoreIntegrationClaimNextQueuedJob(t *testing.T) {
 	}
 	if claimed.Attempts != 1 {
 		t.Fatalf("attempts = %d, want 1", claimed.Attempts)
+	}
+	if claimed.ResourceType != "document" || claimed.ResourceID != "doc_1" {
+		t.Fatalf("resource = %s/%s, want document/doc_1", claimed.ResourceType, claimed.ResourceID)
 	}
 
 	_, err = repo.ClaimNextQueuedJob(ctx, fixedTime())

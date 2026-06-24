@@ -122,10 +122,12 @@ func (s DocumentService) registerDocument(ctx context.Context, input RegisterDoc
 	}
 
 	job, err := domain.NewJob(domain.JobCreate{
-		ID:       jobID,
-		TenantID: input.TenantID,
-		Type:     domain.JobTypeDocumentIngestion,
-		Now:      now,
+		ID:           jobID,
+		TenantID:     input.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   string(document.ID),
+		Now:          now,
 	})
 	if err != nil {
 		return RegisterDocumentResult{}, err

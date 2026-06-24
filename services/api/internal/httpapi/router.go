@@ -119,13 +119,15 @@ type documentPayload struct {
 }
 
 type jobPayload struct {
-	ID        string `json:"id"`
-	TenantID  string `json:"tenant_id"`
-	Type      string `json:"type"`
-	State     string `json:"state"`
-	Attempts  int    `json:"attempts"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	Type         string `json:"type"`
+	ResourceType string `json:"resource_type"`
+	ResourceID   string `json:"resource_id"`
+	State        string `json:"state"`
+	Attempts     int    `json:"attempts"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
@@ -221,13 +223,15 @@ func encodeDocument(document domain.Document) documentPayload {
 
 func encodeJob(job domain.Job) jobPayload {
 	return jobPayload{
-		ID:        string(job.ID),
-		TenantID:  string(job.TenantID),
-		Type:      string(job.Type),
-		State:     string(job.State),
-		Attempts:  job.Attempts,
-		CreatedAt: job.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: job.UpdatedAt.Format(time.RFC3339),
+		ID:           string(job.ID),
+		TenantID:     string(job.TenantID),
+		Type:         string(job.Type),
+		ResourceType: job.ResourceType,
+		ResourceID:   job.ResourceID,
+		State:        string(job.State),
+		Attempts:     job.Attempts,
+		CreatedAt:    job.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:    job.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

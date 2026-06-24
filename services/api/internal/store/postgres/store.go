@@ -193,27 +193,33 @@ func (s *Store) ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]
 
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO jobs (tenant_id, id, type, state, attempts, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO jobs (
+			tenant_id, id, type, resource_type, resource_id, state, attempts, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (tenant_id, id) DO UPDATE
 		SET type = EXCLUDED.type,
+		    resource_type = EXCLUDED.resource_type,
+		    resource_id = EXCLUDED.resource_id,
 		    state = EXCLUDED.state,
 		    attempts = EXCLUDED.attempts,
 		    updated_at = EXCLUDED.updated_at
-	`, job.TenantID, job.ID, job.Type, job.State, job.Attempts, job.CreatedAt, job.UpdatedAt)
+	`, job.TenantID, job.ID, job.Type, job.ResourceType, job.ResourceID, job.State, job.Attempts, job.CreatedAt, job.UpdatedAt)
 	return err
 }
 
 func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error) {
 	var job domain.Job
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, type, state, attempts, created_at, updated_at
+		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, created_at, updated_at
 		FROM jobs
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id).Scan(
 		&job.ID,
 		&job.TenantID,
 		&job.Type,
+		&job.ResourceType,
+		&job.ResourceID,
 		&job.State,
 		&job.Attempts,
 		&job.CreatedAt,
@@ -249,11 +255,13 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.J
 		FROM picked
 		WHERE jobs.tenant_id = picked.tenant_id
 		  AND jobs.id = picked.id
-		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.state, jobs.attempts, jobs.created_at, jobs.updated_at
+		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.resource_type, jobs.resource_id, jobs.state, jobs.attempts, jobs.created_at, jobs.updated_at
 	`, domain.JobStateQueued, domain.JobStateRunning, now).Scan(
 		&job.ID,
 		&job.TenantID,
 		&job.Type,
+		&job.ResourceType,
+		&job.ResourceID,
 		&job.State,
 		&job.Attempts,
 		&job.CreatedAt,
