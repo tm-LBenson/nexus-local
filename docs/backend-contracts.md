@@ -33,6 +33,8 @@ Provider contracts describe replaceable infrastructure:
 
 Provider implementations can be swapped by deployment profile. Product code should depend on these contracts, not on concrete cloud SDKs.
 
+The first model adapter is `providers/openaicompat`, which targets vLLM, LiteLLM, Ollama-compatible OpenAI routes, rented GPU endpoints, or hosted OpenAI-compatible APIs.
+
 ## Repository Contracts
 
 Location: `services/api/internal/store`

@@ -17,6 +17,7 @@ type Config struct {
 	QueueURL            string
 	CacheURL            string
 	ModelGatewayBaseURL string
+	ModelGatewayAPIKey  string
 	DefaultModelTarget  string
 	GeneralModelID      string
 }
@@ -37,6 +38,7 @@ func Load() Config {
 		QueueURL:            env("QUEUE_URL", "nats://localhost:4222"),
 		CacheURL:            env("CACHE_URL", "redis://localhost:6379/0"),
 		ModelGatewayBaseURL: env("MODEL_GATEWAY_BASE_URL", "http://localhost:8000/v1"),
+		ModelGatewayAPIKey:  env("MODEL_GATEWAY_API_KEY", ""),
 		DefaultModelTarget:  env("DEFAULT_MODEL_TARGET", "general"),
 		GeneralModelID:      env("GENERAL_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct"),
 	}

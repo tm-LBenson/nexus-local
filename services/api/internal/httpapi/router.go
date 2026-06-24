@@ -52,6 +52,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 			"vector_backend":          cfg.VectorBackend,
 			"queue_backend":           cfg.QueueBackend,
 			"model_gateway":           cfg.ModelGatewayBaseURL,
+			"model_gateway_auth":      cfg.ModelGatewayAPIKey != "",
 		})
 	}
 }

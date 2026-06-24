@@ -14,6 +14,8 @@ The API should call an OpenAI-compatible HTTP interface. The implementation behi
 
 The app should store target names like `general`, `email-revision`, or `document-rag`, not provider-specific model details throughout product code.
 
+The first concrete adapter lives at `services/api/internal/providers/openaicompat`. It posts to `/chat/completions`, supports optional bearer auth, and maps OpenAI-compatible responses into the backend `ModelGateway` contract.
+
 ## Object Storage
 
 Use S3-compatible operations:
@@ -42,4 +44,3 @@ Long-running work should use explicit states:
 - canceled
 
 Progress events should be append-only and safe to stream, poll, or replay.
-
