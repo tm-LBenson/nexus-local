@@ -10,7 +10,10 @@ export type Readiness = {
   run_migrations: boolean;
   object_storage_backend: string;
   embedding_backend: string;
+  embedding_model: string;
   embedding_dimensions: number;
+  embedding_gateway: string;
+  embedding_gateway_auth: boolean;
   database_configured: boolean;
   object_store_configured: boolean;
   vector_backend: string;
@@ -64,6 +67,18 @@ export type RegisterDocumentResponse = {
   job: RegisteredJob;
 };
 
+export type SearchHit = {
+  document_id: string;
+  chunk_id: string;
+  text: string;
+  score: number;
+  metadata: Record<string, string>;
+};
+
+export type SearchDocumentsResponse = {
+  hits: SearchHit[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
 export function apiBase() {
@@ -102,6 +117,17 @@ export async function uploadDocument(input: {
   return requestForm<RegisterDocumentResponse>('/v1/documents/upload', {
     method: 'POST',
     body: form,
+  });
+}
+
+export async function searchDocuments(input: {
+  tenant_id: string;
+  query: string;
+  limit: number;
+}) {
+  return request<SearchDocumentsResponse>('/v1/search', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 

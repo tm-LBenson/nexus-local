@@ -28,3 +28,5 @@ Current behavior:
 Current extraction support is intentionally limited to text-like files: `.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, and `.vtt`. PDF/Office extraction should be added behind the same extractor boundary.
 
 The CPU Compose profile runs the worker beside the API. It shares the same Postgres database and claims jobs through the repository contract.
+
+The API search endpoint reads from the configured vector index. In containerized deployments, API and worker should share Qdrant or another external vector store; otherwise uploaded documents can be registered but their chunks will not be visible to API-side search.

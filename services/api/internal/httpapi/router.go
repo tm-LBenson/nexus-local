@@ -19,6 +19,7 @@ type envelope map[string]any
 type Dependencies struct {
 	ModelRouter *providers.ModelRouter
 	Documents   app.DocumentService
+	Search      app.SearchService
 }
 
 func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
@@ -30,6 +31,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents))
+	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search))
 
 	return loggingMiddleware(corsMiddleware(cfg, mux))
 }
@@ -52,7 +54,10 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 			"run_migrations":          cfg.RunMigrations,
 			"object_storage_backend":  cfg.ObjectStoreBackend,
 			"embedding_backend":       cfg.EmbeddingBackend,
+			"embedding_model":         cfg.EmbeddingModel,
 			"embedding_dimensions":    cfg.EmbeddingDimensions,
+			"embedding_gateway":       cfg.EmbeddingBaseURL,
+			"embedding_gateway_auth":  cfg.EmbeddingAPIKey != "",
 			"database_configured":     cfg.DatabaseURL != "",
 			"object_store_configured": cfg.ObjectStoreEndpoint != "",
 			"vector_backend":          cfg.VectorBackend,
@@ -133,6 +138,21 @@ type jobPayload struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type searchRequest struct {
+	TenantID string            `json:"tenant_id"`
+	Query    string            `json:"query"`
+	Limit    int               `json:"limit"`
+	Filters  map[string]string `json:"filters"`
+}
+
+type searchHitPayload struct {
+	DocumentID string            `json:"document_id"`
+	ChunkID    string            `json:"chunk_id"`
+	Text       string            `json:"text"`
+	Score      float32           `json:"score"`
+	Metadata   map[string]string `json:"metadata"`
+}
+
 func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerDocumentRequest
@@ -210,6 +230,40 @@ func uploadDocumentHandler(service app.DocumentService) http.HandlerFunc {
 	}
 }
 
+func searchHandler(service app.SearchService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req searchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		result, err := service.Search(r.Context(), app.SearchInput{
+			TenantID: domain.TenantID(req.TenantID),
+			Query:    req.Query,
+			Limit:    req.Limit,
+			Filters:  req.Filters,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, app.ErrSearchUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(w, status, fmt.Sprintf("search: %v", err))
+			return
+		}
+
+		hits := make([]searchHitPayload, 0, len(result.Hits))
+		for _, hit := range result.Hits {
+			hits = append(hits, encodeSearchHit(hit))
+		}
+		writeJSON(w, http.StatusOK, envelope{"hits": hits})
+	}
+}
+
 func encodeDocument(document domain.Document) documentPayload {
 	return documentPayload{
 		ID:         string(document.ID),
@@ -235,6 +289,16 @@ func encodeJob(job domain.Job) jobPayload {
 		Attempts:     job.Attempts,
 		CreatedAt:    job.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:    job.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeSearchHit(hit providers.VectorHit) searchHitPayload {
+	return searchHitPayload{
+		DocumentID: string(hit.DocumentID),
+		ChunkID:    hit.ChunkID,
+		Text:       hit.Text,
+		Score:      hit.Score,
+		Metadata:   hit.Metadata,
 	}
 }
 

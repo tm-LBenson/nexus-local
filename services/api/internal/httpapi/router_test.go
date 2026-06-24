@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -13,7 +14,9 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	embeddinghash "github.com/tm-lbenson/nexus-local/services/api/internal/providers/embeddings/hash"
 	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
+	vectormemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/vector/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
@@ -187,6 +190,50 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 }
 
+func TestSearchEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/search", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"query": "alpha beta",
+		"limit": 1
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Hits []searchHitPayload `json:"hits"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(body.Hits))
+	}
+	if body.Hits[0].DocumentID != "doc_search" {
+		t.Fatalf("document id = %q, want doc_search", body.Hits[0].DocumentID)
+	}
+	if body.Hits[0].Metadata["section"] != "planning" {
+		t.Fatalf("metadata = %#v", body.Hits[0].Metadata)
+	}
+}
+
+func TestSearchEndpointRejectsInvalidInput(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/search", bytes.NewBufferString(`{"tenant_id":"tenant_1"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
 func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	server := newTestServer(t)
 
@@ -228,10 +275,30 @@ func newTestServer(t *testing.T) http.Handler {
 
 	repos := memory.New()
 	documents := app.NewDocumentService(repos, httpIDs{}, httpClock{}).WithObjectStore(objectmemory.New())
+	embedder := embeddinghash.New("test", 16)
+	vectorIndex := vectormemory.New()
+	seed, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
+	if err != nil {
+		t.Fatalf("embed seed: %v", err)
+	}
+	if err := vectorIndex.Upsert(context.Background(), []providers.Vector{
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_search"),
+			ChunkID:    "chunk_1",
+			Values:     seed.Vectors[0],
+			Text:       "alpha beta launch plan",
+			Metadata:   map[string]string{"section": "planning"},
+		},
+	}); err != nil {
+		t.Fatalf("seed vectors: %v", err)
+	}
+	search := app.NewSearchService(embedder, vectorIndex)
 
 	return NewRouter(cfg, Dependencies{
 		ModelRouter: router,
 		Documents:   documents,
+		Search:      search,
 	})
 }
 

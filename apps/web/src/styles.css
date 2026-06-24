@@ -205,6 +205,52 @@ button:disabled {
   font-weight: 800;
 }
 
+.searchResults {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.searchHit {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e1e7ea;
+  border-radius: 6px;
+  background: #f8fbfa;
+}
+
+.searchHitHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.searchHitHeader strong,
+.searchHit p {
+  overflow-wrap: anywhere;
+}
+
+.searchHitHeader span {
+  color: #0b6248;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.searchHit p {
+  margin: 0;
+  color: #2c3742;
+  line-height: 1.45;
+}
+
+.searchHit em {
+  color: #53606f;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .muted,
 .errorText {
   margin: 16px 0 0;

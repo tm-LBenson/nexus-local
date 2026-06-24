@@ -49,8 +49,11 @@ The Qdrant adapter follows the Qdrant REST API for creating collections, upserti
 Implemented embedding adapters:
 
 - `providers/embeddings/hash`: deterministic local embeddings for development and tests.
+- `providers/embeddings/openaicompat`: OpenAI-compatible `/embeddings` adapter for TEI, hosted APIs, or a self-hosted gateway that returns indexed float embeddings.
 
-The hash embedder is not a semantic model. It lets the ingestion pipeline run anywhere while we wire the rest of the system. A TEI or OpenAI-compatible embedding adapter should replace it for real retrieval quality.
+The hash embedder is not a semantic model. It lets the ingestion pipeline run anywhere while we wire the rest of the system. Use `EMBEDDING_BACKEND=openai-compatible`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL` for real retrieval quality.
+
+When the API and worker run as separate processes, use a shared vector backend such as Qdrant. The memory vector adapter is useful for unit tests and single-process experiments, but it is not shared across API and worker containers.
 
 ## Jobs
 

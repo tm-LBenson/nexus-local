@@ -37,13 +37,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	embedder, err := runtime.OpenEmbedder(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	vectorIndex, err := runtime.OpenVectorIndex(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{}).WithObjectStore(objectStore)
+	searchService := app.NewSearchService(embedder, vectorIndex)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(cfg, httpapi.Dependencies{
 			ModelRouter: modelRouter,
 			Documents:   documentService,
+			Search:      searchService,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

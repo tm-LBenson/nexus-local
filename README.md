@@ -48,6 +48,7 @@ Then open:
 - Health: `http://localhost:8080/healthz`
 - Readiness: `http://localhost:8080/readyz`
 - Model targets: `http://localhost:8080/v1/model-targets`
+- Document search: `POST http://localhost:8080/v1/search`
 
 First workflow endpoint:
 
@@ -64,6 +65,15 @@ Object-storage-backed upload endpoint:
 Invoke-RestMethod http://localhost:8080/v1/documents/upload `
   -Method Post `
   -Form @{ tenant_id = 'tenant_1'; owner_id = 'user_1'; file = Get-Item .\README.md }
+```
+
+Tenant-scoped document search endpoint:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/search `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"tenant_id":"tenant_1","query":"deployment notes","limit":5}'
 ```
 
 Postgres integration tests are opt-in so normal test runs stay fast:

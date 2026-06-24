@@ -20,6 +20,8 @@ type Config struct {
 	ObjectStoreSecretKey string
 	ObjectStoreBucket    string
 	EmbeddingBackend     string
+	EmbeddingBaseURL     string
+	EmbeddingAPIKey      string
 	EmbeddingModel       string
 	EmbeddingDimensions  int
 	VectorBackend        string
@@ -51,6 +53,8 @@ func Load() Config {
 		ObjectStoreSecretKey: env("OBJECT_STORAGE_SECRET_KEY", "minioadmin"),
 		ObjectStoreBucket:    env("OBJECT_STORAGE_BUCKET", "documents"),
 		EmbeddingBackend:     env("EMBEDDING_BACKEND", "hash"),
+		EmbeddingBaseURL:     env("EMBEDDING_BASE_URL", "http://localhost:8082/v1"),
+		EmbeddingAPIKey:      env("EMBEDDING_API_KEY", ""),
 		EmbeddingModel:       env("EMBEDDING_MODEL", "hash-embedding"),
 		EmbeddingDimensions:  envInt("EMBEDDING_DIMENSIONS", 384),
 		VectorBackend:        env("VECTOR_BACKEND", "memory"),

@@ -67,6 +67,8 @@ services:
       OBJECT_STORAGE_SECRET_KEY: minioadmin
       OBJECT_STORAGE_BUCKET: documents
       EMBEDDING_BACKEND: hash
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8082/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       EMBEDDING_MODEL: hash-embedding
       EMBEDDING_DIMENSIONS: "384"
       VECTOR_BACKEND: qdrant
@@ -109,6 +111,8 @@ services:
       OBJECT_STORAGE_SECRET_KEY: minioadmin
       OBJECT_STORAGE_BUCKET: documents
       EMBEDDING_BACKEND: hash
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8082/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       EMBEDDING_MODEL: hash-embedding
       EMBEDDING_DIMENSIONS: "384"
       VECTOR_BACKEND: qdrant
