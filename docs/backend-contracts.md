@@ -33,6 +33,12 @@ Provider contracts describe replaceable infrastructure:
 
 Provider implementations can be swapped by deployment profile. Product code should depend on these contracts, not on concrete cloud SDKs.
 
+## Repository Contracts
+
+Location: `services/api/internal/store`
+
+Repository contracts describe product persistence needs before choosing a database implementation. The current `memory` repository exists for local development and fast contract tests. The next production adapter should implement the same interfaces on Postgres.
+
 ## Current State Machines
 
 Job states:
@@ -66,4 +72,3 @@ Tests should come first when changing:
 - data migration rules
 
 Fast-moving UI and exploratory admin workflow can stay lighter until behavior stabilizes.
-

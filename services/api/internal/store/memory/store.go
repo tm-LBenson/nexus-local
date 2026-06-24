@@ -1,0 +1,230 @@
+package memory
+
+import (
+	"context"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
+)
+
+type Store struct {
+	mu sync.RWMutex
+
+	tenants     map[domain.TenantID]domain.Tenant
+	users       map[domain.UserID]domain.User
+	memberships map[membershipKey]domain.Membership
+	documents   map[tenantDocumentKey]domain.Document
+	jobs        map[tenantJobKey]domain.Job
+}
+
+type membershipKey struct {
+	tenantID domain.TenantID
+	userID   domain.UserID
+}
+
+type tenantDocumentKey struct {
+	tenantID   domain.TenantID
+	documentID domain.DocumentID
+}
+
+type tenantJobKey struct {
+	tenantID domain.TenantID
+	jobID    domain.JobID
+}
+
+func New() *Store {
+	return &Store{
+		tenants:     map[domain.TenantID]domain.Tenant{},
+		users:       map[domain.UserID]domain.User{},
+		memberships: map[membershipKey]domain.Membership{},
+		documents:   map[tenantDocumentKey]domain.Document{},
+		jobs:        map[tenantJobKey]domain.Job{},
+	}
+}
+
+func (s *Store) SaveTenant(ctx context.Context, tenant domain.Tenant) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tenants[tenant.ID] = tenant
+	return nil
+}
+
+func (s *Store) GetTenant(ctx context.Context, id domain.TenantID) (domain.Tenant, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Tenant{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	tenant, ok := s.tenants[id]
+	if !ok {
+		return domain.Tenant{}, store.ErrNotFound
+	}
+	return tenant, nil
+}
+
+func (s *Store) SaveUser(ctx context.Context, user domain.User) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.users[user.ID] = user
+	return nil
+}
+
+func (s *Store) GetUser(ctx context.Context, id domain.UserID) (domain.User, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.User{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	user, ok := s.users[id]
+	if !ok {
+		return domain.User{}, store.ErrNotFound
+	}
+	return user, nil
+}
+
+func (s *Store) SaveMembership(ctx context.Context, membership domain.Membership) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.memberships[membershipKey{
+		tenantID: membership.TenantID,
+		userID:   membership.UserID,
+	}] = membership
+	return nil
+}
+
+func (s *Store) ListMembershipsForUser(ctx context.Context, userID domain.UserID) ([]domain.Membership, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	memberships := make([]domain.Membership, 0)
+	for _, membership := range s.memberships {
+		if membership.UserID == userID {
+			memberships = append(memberships, membership)
+		}
+	}
+	sort.Slice(memberships, func(i, j int) bool {
+		return memberships[i].TenantID < memberships[j].TenantID
+	})
+	return memberships, nil
+}
+
+func (s *Store) SaveDocument(ctx context.Context, document domain.Document) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.documents[tenantDocumentKey{
+		tenantID:   document.TenantID,
+		documentID: document.ID,
+	}] = document
+	return nil
+}
+
+func (s *Store) GetDocument(ctx context.Context, tenantID domain.TenantID, id domain.DocumentID) (domain.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Document{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	document, ok := s.documents[tenantDocumentKey{tenantID: tenantID, documentID: id}]
+	if !ok {
+		return domain.Document{}, store.ErrNotFound
+	}
+	return document, nil
+}
+
+func (s *Store) ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]domain.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	documents := make([]domain.Document, 0)
+	for _, document := range s.documents {
+		if document.TenantID == tenantID {
+			documents = append(documents, document)
+		}
+	}
+	sort.Slice(documents, func(i, j int) bool {
+		if documents[i].CreatedAt.Equal(documents[j].CreatedAt) {
+			return documents[i].ID < documents[j].ID
+		}
+		return documents[i].CreatedAt.Before(documents[j].CreatedAt)
+	})
+	return documents, nil
+}
+
+func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jobs[tenantJobKey{
+		tenantID: job.TenantID,
+		jobID:    job.ID,
+	}] = job
+	return nil
+}
+
+func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Job{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.jobs[tenantJobKey{tenantID: tenantID, jobID: id}]
+	if !ok {
+		return domain.Job{}, store.ErrNotFound
+	}
+	return job, nil
+}
+
+func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Job{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	queued := make([]domain.Job, 0)
+	for _, job := range s.jobs {
+		if job.State == domain.JobStateQueued {
+			queued = append(queued, job)
+		}
+	}
+	if len(queued) == 0 {
+		return domain.Job{}, store.ErrNotFound
+	}
+
+	sort.Slice(queued, func(i, j int) bool {
+		if queued[i].CreatedAt.Equal(queued[j].CreatedAt) {
+			return queued[i].ID < queued[j].ID
+		}
+		return queued[i].CreatedAt.Before(queued[j].CreatedAt)
+	})
+
+	job := queued[0]
+	if err := job.Transition(domain.JobStateRunning, now); err != nil {
+		return domain.Job{}, err
+	}
+	s.jobs[tenantJobKey{tenantID: job.TenantID, jobID: job.ID}] = job
+	return job, nil
+}

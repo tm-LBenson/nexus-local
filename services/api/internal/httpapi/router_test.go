@@ -31,6 +31,26 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestReadinessIncludesPersistenceBackend(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["persistence_backend"] != "memory" {
+		t.Fatalf("persistence_backend = %v, want memory", body["persistence_backend"])
+	}
+}
+
 func TestModelRouteEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -95,6 +115,7 @@ func newTestServer(t *testing.T) http.Handler {
 		Env:                 "test",
 		Version:             "test",
 		CORSAllowedOrigin:   "http://localhost:5173",
+		PersistenceBackend:  "memory",
 		DatabaseURL:         "postgres://test",
 		ObjectStoreEndpoint: "http://minio.test",
 		VectorBackend:       "qdrant",

@@ -38,6 +38,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, envelope{
 			"status":                  "ready",
+			"persistence_backend":     cfg.PersistenceBackend,
 			"database_configured":     cfg.DatabaseURL != "",
 			"object_store_configured": cfg.ObjectStoreEndpoint != "",
 			"vector_backend":          cfg.VectorBackend,

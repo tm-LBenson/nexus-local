@@ -7,6 +7,7 @@ type Config struct {
 	HTTPAddr            string
 	Version             string
 	CORSAllowedOrigin   string
+	PersistenceBackend  string
 	DatabaseURL         string
 	ObjectStoreEndpoint string
 	ObjectStoreBucket   string
@@ -26,6 +27,7 @@ func Load() Config {
 		HTTPAddr:            env("HTTP_ADDR", ":8080"),
 		Version:             env("APP_VERSION", "dev"),
 		CORSAllowedOrigin:   env("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
+		PersistenceBackend:  env("PERSISTENCE_BACKEND", "memory"),
 		DatabaseURL:         env("DATABASE_URL", "postgres://app:app@localhost:5432/app?sslmode=disable"),
 		ObjectStoreEndpoint: env("OBJECT_STORAGE_ENDPOINT", "http://localhost:9000"),
 		ObjectStoreBucket:   env("OBJECT_STORAGE_BUCKET", "documents"),
