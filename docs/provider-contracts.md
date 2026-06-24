@@ -28,6 +28,11 @@ Use S3-compatible operations:
 
 MinIO is the local default. AWS S3 or another S3-compatible service should require configuration changes, not code changes.
 
+Implemented object adapters:
+
+- `providers/objectstore/memory`: local development and tests.
+- `providers/objectstore/minio`: S3-compatible object storage for MinIO and compatible providers.
+
 ## Vector Search
 
 The product layer should ask for semantic search by tenant, document, and query vector. It should not know whether Qdrant, pgvector, or another vector store is underneath.

@@ -24,6 +24,7 @@ type ObjectInfo struct {
 }
 
 type PresignRequest struct {
+	TenantID  domain.TenantID
 	Key       string
 	TTL       time.Duration
 	Operation string

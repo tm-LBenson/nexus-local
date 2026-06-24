@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
 import {
-  DocumentRegistration,
   Health,
   ModelTarget,
   Readiness,
@@ -9,22 +8,20 @@ import {
   getHealth,
   getModelTargets,
   getReadiness,
-  registerDocument,
+  uploadDocument,
 } from './api';
 
-const initialDocument: DocumentRegistration = {
+const initialUpload = {
   tenant_id: 'tenant_1',
   owner_id: 'user_1',
-  name: 'Handbook.md',
-  storage_key: 'tenants/tenant_1/documents/source.md',
-  size_bytes: 42,
 };
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
-  const [documentForm, setDocumentForm] = useState<DocumentRegistration>(initialDocument);
+  const [uploadForm, setUploadForm] = useState(initialUpload);
+  const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -39,12 +36,16 @@ export function App() {
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
 
-  async function submitDocument(event: FormEvent<HTMLFormElement>) {
+  async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!file) {
+      setError('Choose a file before uploading');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const result = await registerDocument(documentForm);
+      const result = await uploadDocument({ ...uploadForm, file });
       setRegistration(result);
     } catch (err) {
       setError(messageFromError(err));
@@ -86,6 +87,10 @@ export function App() {
                 <dt>Storage</dt>
                 <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
               </div>
+              <div>
+                <dt>Objects</dt>
+                <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
+              </div>
             </dl>
           </article>
 
@@ -103,60 +108,35 @@ export function App() {
           </article>
 
           <article className="panel panelWide">
-            <h2>Register Document</h2>
-            <form className="documentForm" onSubmit={submitDocument}>
+            <h2>Upload Document</h2>
+            <form className="documentForm" onSubmit={submitUpload}>
               <label>
                 Tenant
                 <input
-                  value={documentForm.tenant_id}
+                  value={uploadForm.tenant_id}
                   onChange={(event) =>
-                    setDocumentForm((current) => ({ ...current, tenant_id: event.target.value }))
+                    setUploadForm((current) => ({ ...current, tenant_id: event.target.value }))
                   }
                 />
               </label>
               <label>
                 Owner
                 <input
-                  value={documentForm.owner_id}
+                  value={uploadForm.owner_id}
                   onChange={(event) =>
-                    setDocumentForm((current) => ({ ...current, owner_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Name
-                <input
-                  value={documentForm.name}
-                  onChange={(event) =>
-                    setDocumentForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Size
-                <input
-                  min={0}
-                  type="number"
-                  value={documentForm.size_bytes}
-                  onChange={(event) =>
-                    setDocumentForm((current) => ({
-                      ...current,
-                      size_bytes: Number(event.target.value),
-                    }))
+                    setUploadForm((current) => ({ ...current, owner_id: event.target.value }))
                   }
                 />
               </label>
               <label className="spanAll">
-                Storage key
+                File
                 <input
-                  value={documentForm.storage_key}
-                  onChange={(event) =>
-                    setDocumentForm((current) => ({ ...current, storage_key: event.target.value }))
-                  }
+                  type="file"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                 />
               </label>
               <button disabled={submitting} type="submit">
-                {submitting ? 'Registering' : 'Register'}
+                {submitting ? 'Uploading' : 'Upload'}
               </button>
             </form>
 

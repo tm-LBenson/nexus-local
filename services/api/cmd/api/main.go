@@ -11,6 +11,8 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/httpapi"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
+	minioobject "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/minio"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/postgres"
@@ -33,7 +35,8 @@ func main() {
 
 	repos, closeRepos := openRepositories(cfg)
 	defer closeRepos()
-	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{})
+	objectStore := openObjectStore(cfg)
+	documentService := app.NewDocumentService(repos, app.NewRandomIDs(), app.SystemClock{}).WithObjectStore(objectStore)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
@@ -47,6 +50,30 @@ func main() {
 	log.Printf("api listening on %s", cfg.HTTPAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
+	}
+}
+
+func openObjectStore(cfg config.Config) providers.ObjectStore {
+	switch strings.ToLower(strings.TrimSpace(cfg.ObjectStoreBackend)) {
+	case "", "memory":
+		return objectmemory.New()
+	case "minio":
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		store, err := minioobject.New(ctx, minioobject.Config{
+			Endpoint:  cfg.ObjectStoreEndpoint,
+			AccessKey: cfg.ObjectStoreAccessKey,
+			SecretKey: cfg.ObjectStoreSecretKey,
+			Bucket:    cfg.ObjectStoreBucket,
+		})
+		if err != nil {
+			log.Fatalf("object store: %v", err)
+		}
+		return store
+	default:
+		log.Fatalf("unsupported object storage backend %q", cfg.ObjectStoreBackend)
+		return nil
 	}
 }
 

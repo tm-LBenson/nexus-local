@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
@@ -63,6 +65,50 @@ func TestRegisterDocumentRejectsInvalidInput(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("err = nil, want validation error")
+	}
+}
+
+func TestUploadDocumentStoresObjectAndRegistersDocument(t *testing.T) {
+	ctx := context.Background()
+	objects := objectmemory.New()
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{}).WithObjectStore(objects)
+
+	result, err := service.UploadDocument(ctx, UploadDocumentInput{
+		TenantID:    domain.TenantID("tenant_1"),
+		OwnerID:     domain.UserID("user_1"),
+		Name:        "../Handbook.md",
+		ContentType: "text/markdown",
+		SizeBytes:   11,
+		Body:        strings.NewReader("hello world"),
+	})
+	if err != nil {
+		t.Fatalf("upload document: %v", err)
+	}
+
+	wantKey := "tenants/tenant_1/documents/doc_fixed/Handbook.md"
+	if result.Document.StorageKey != wantKey {
+		t.Fatalf("storage key = %q, want %q", result.Document.StorageKey, wantKey)
+	}
+	if result.Document.SizeBytes != 11 {
+		t.Fatalf("size = %d, want 11", result.Document.SizeBytes)
+	}
+	if keys := objects.Keys(); len(keys) != 1 || keys[0] != wantKey {
+		t.Fatalf("keys = %v, want [%s]", keys, wantKey)
+	}
+}
+
+func TestUploadDocumentRequiresObjectStore(t *testing.T) {
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{})
+
+	_, err := service.UploadDocument(context.Background(), UploadDocumentInput{
+		TenantID:  domain.TenantID("tenant_1"),
+		OwnerID:   domain.UserID("user_1"),
+		Name:      "Handbook.md",
+		SizeBytes: 11,
+		Body:      strings.NewReader("hello world"),
+	})
+	if err == nil {
+		t.Fatal("err = nil, want object store error")
 	}
 }
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
@@ -133,6 +135,52 @@ func TestRegisterDocumentEndpointRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestUploadDocumentEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
+		t.Fatalf("tenant field: %v", err)
+	}
+	if err := writer.WriteField("owner_id", "user_1"); err != nil {
+		t.Fatalf("owner field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "Handbook.md")
+	if err != nil {
+		t.Fatalf("file field: %v", err)
+	}
+	if _, err := part.Write([]byte("hello world")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+
+	var response struct {
+		Document documentPayload `json:"document"`
+		Job      jobPayload      `json:"job"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if response.Document.StorageKey != "tenants/tenant_1/documents/doc_http/Handbook.md" {
+		t.Fatalf("storage key = %q", response.Document.StorageKey)
+	}
+	if response.Job.State != string(domain.JobStateQueued) {
+		t.Fatalf("job state = %q, want queued", response.Job.State)
+	}
+}
+
 func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	server := newTestServer(t)
 
@@ -173,7 +221,7 @@ func newTestServer(t *testing.T) http.Handler {
 	}
 
 	repos := memory.New()
-	documents := app.NewDocumentService(repos, httpIDs{}, httpClock{})
+	documents := app.NewDocumentService(repos, httpIDs{}, httpClock{}).WithObjectStore(objectmemory.New())
 
 	return NewRouter(cfg, Dependencies{
 		ModelRouter: router,

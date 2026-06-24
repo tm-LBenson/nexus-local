@@ -7,6 +7,8 @@ export type Health = {
 export type Readiness = {
   status: string;
   persistence_backend: string;
+  run_migrations: boolean;
+  object_storage_backend: string;
   database_configured: boolean;
   object_store_configured: boolean;
   vector_backend: string;
@@ -82,6 +84,22 @@ export async function registerDocument(input: DocumentRegistration) {
   });
 }
 
+export async function uploadDocument(input: {
+  tenant_id: string;
+  owner_id: string;
+  file: File;
+}) {
+  const form = new FormData();
+  form.set('tenant_id', input.tenant_id);
+  form.set('owner_id', input.owner_id);
+  form.set('file', input.file);
+
+  return requestForm<RegisterDocumentResponse>('/v1/documents/upload', {
+    method: 'POST',
+    body: form,
+  });
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
@@ -99,3 +117,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestForm<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, init);
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `API returned ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}

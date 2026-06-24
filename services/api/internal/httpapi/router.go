@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -28,6 +29,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents))
+	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents))
 
 	return loggingMiddleware(corsMiddleware(cfg, mux))
 }
@@ -48,6 +50,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 			"status":                  "ready",
 			"persistence_backend":     cfg.PersistenceBackend,
 			"run_migrations":          cfg.RunMigrations,
+			"object_storage_backend":  cfg.ObjectStoreBackend,
 			"database_configured":     cfg.DatabaseURL != "",
 			"object_store_configured": cfg.ObjectStoreEndpoint != "",
 			"vector_backend":          cfg.VectorBackend,
@@ -146,6 +149,52 @@ func registerDocumentHandler(service app.DocumentService) http.HandlerFunc {
 				status = http.StatusBadRequest
 			}
 			writeError(w, status, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, envelope{
+			"document": encodeDocument(result.Document),
+			"job":      encodeJob(result.Job),
+		})
+	}
+}
+
+func uploadDocumentHandler(service app.DocumentService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form")
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file is required")
+			return
+		}
+		defer file.Close()
+
+		contentType := header.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		result, err := service.UploadDocument(r.Context(), app.UploadDocumentInput{
+			TenantID:    domain.TenantID(r.FormValue("tenant_id")),
+			OwnerID:     domain.UserID(r.FormValue("owner_id")),
+			Name:        header.Filename,
+			ContentType: contentType,
+			SizeBytes:   header.Size,
+			Body:        file,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, app.ErrObjectStoreUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(w, status, fmt.Sprintf("upload document: %v", err))
 			return
 		}
 

@@ -53,6 +53,14 @@ Invoke-RestMethod http://localhost:8080/v1/documents/register `
   -Body '{"tenant_id":"tenant_1","owner_id":"user_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
 ```
 
+Object-storage-backed upload endpoint:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/documents/upload `
+  -Method Post `
+  -Form @{ tenant_id = 'tenant_1'; owner_id = 'user_1'; file = Get-Item .\README.md }
+```
+
 Postgres integration tests are opt-in so normal test runs stay fast:
 
 ```powershell

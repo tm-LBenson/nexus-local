@@ -50,7 +50,9 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 ## First Workflow
 
-`POST /v1/documents/register` creates a document record and queues a `document_ingestion` job. This is deliberately metadata-only for now; real upload will add object storage and content hashing before registration.
+`POST /v1/documents/register` creates a document record and queues a `document_ingestion` job from already-known object metadata.
+
+`POST /v1/documents/upload` accepts a multipart file, stores it through the configured `ObjectStore`, creates the document record, and queues a `document_ingestion` job.
 
 ## Current State Machines
 

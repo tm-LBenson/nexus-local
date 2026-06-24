@@ -61,7 +61,10 @@ services:
       PERSISTENCE_BACKEND: postgres
       RUN_MIGRATIONS: "true"
       DATABASE_URL: postgres://app:app@postgres:5432/app?sslmode=disable
+      OBJECT_STORAGE_BACKEND: minio
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
       OBJECT_STORAGE_BUCKET: documents
       VECTOR_BACKEND: qdrant
       VECTOR_BASE_URL: http://qdrant:6333
