@@ -45,6 +45,8 @@ Desktop:
 
 The app talks to the desktop through `MODEL_GATEWAY_BASE_URL`.
 
+Use the `starter` provider preset when the desktop only exposes chat completions. Use the `semantic` preset when you also run an OpenAI-compatible embedding service and can set `EMBEDDING_BASE_URL`.
+
 ## gpu-local
 
 One GPU machine runs the whole stack. Good for a lab box, power user desktop, or customer-owned appliance with a large GPU.

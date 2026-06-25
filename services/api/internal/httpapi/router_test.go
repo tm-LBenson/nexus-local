@@ -61,6 +61,9 @@ func TestReadinessIncludesPersistenceBackend(t *testing.T) {
 	if body["persistence_backend"] != "memory" {
 		t.Fatalf("persistence_backend = %v, want memory", body["persistence_backend"])
 	}
+	if body["provider_preset"] != "starter" {
+		t.Fatalf("provider_preset = %v, want starter", body["provider_preset"])
+	}
 }
 
 func TestModelRouteEndpoint(t *testing.T) {
@@ -1080,6 +1083,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		ObjectStoreEndpoint: "http://minio.test",
 		VectorBackend:       "qdrant",
 		QueueBackend:        "nats",
+		ProviderPreset:      "starter",
 		ModelGatewayBaseURL: "http://gpu.local:8000/v1",
 	}
 

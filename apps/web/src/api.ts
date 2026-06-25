@@ -20,6 +20,7 @@ export type Readiness = {
   vector_backend: string;
   vector_collection: string;
   queue_backend: string;
+  provider_preset: string;
   model_gateway: string;
   model_gateway_auth: boolean;
 };

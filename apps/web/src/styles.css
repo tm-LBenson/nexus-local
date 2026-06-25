@@ -855,6 +855,52 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.providerPanel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.providerCard {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8fbfa;
+}
+
+.providerCardWarn {
+  border-color: #d8bf86;
+  background: #fffaf0;
+}
+
+.providerCard span {
+  color: #69777d;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.providerCard strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172026;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.providerCard em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #69777d;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .settingsGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -919,6 +965,7 @@ h3 {
 
   .topbar,
   .settingsGrid,
+  .providerPanel,
   .statusGrid {
     grid-template-columns: 1fr;
   }

@@ -147,6 +147,8 @@ The API is configured through environment variables. Common settings:
 | `OBJECT_STORAGE_BACKEND` | `memory` | `memory` or `minio`. |
 | `VECTOR_BACKEND` | `memory` | `memory` or `qdrant`. |
 | `EMBEDDING_BACKEND` | `hash` | `hash` or OpenAI-compatible embeddings. |
+| `EMBEDDING_BASE_URL` | `http://localhost:8082/v1` | OpenAI-compatible embedding gateway when semantic embeddings are enabled. |
+| `PROVIDER_PRESET` | `starter` | UI/setup label: `starter` for hash embeddings, `semantic` for OpenAI-compatible embeddings. |
 | `MODEL_GATEWAY_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible chat gateway. |
 | `GENERAL_MODEL_ID` | `Qwen/Qwen2.5-7B-Instruct` | Default model ID sent to the gateway. |
 

@@ -2,6 +2,24 @@
 
 Provider contracts are the main defense against cloud lock-in and hardware lock-in.
 
+## Runtime Presets
+
+`PROVIDER_PRESET` is a setup/runtime label for operators and the UI. It does not replace the concrete provider settings.
+
+- `starter`: OpenAI-compatible chat with hash embeddings.
+- `semantic`: OpenAI-compatible chat with OpenAI-compatible embeddings.
+
+The concrete source of truth remains:
+
+- `MODEL_GATEWAY_BASE_URL`
+- `MODEL_GATEWAY_API_KEY`
+- `GENERAL_MODEL_ID`
+- `EMBEDDING_BACKEND`
+- `EMBEDDING_BASE_URL`
+- `EMBEDDING_API_KEY`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIMENSIONS`
+
 ## Model Gateway
 
 The API should call an OpenAI-compatible HTTP interface. The implementation behind that URL can be:
@@ -54,6 +72,8 @@ Implemented embedding adapters:
 - `providers/embeddings/openaicompat`: OpenAI-compatible `/embeddings` adapter for TEI, hosted APIs, or a self-hosted gateway that returns indexed float embeddings.
 
 The hash embedder is not a semantic model. It lets the ingestion pipeline run anywhere while we wire the rest of the system. Use `EMBEDDING_BACKEND=openai-compatible`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL` for real retrieval quality.
+
+For a self-hosted semantic baseline, use a TEI or OpenAI-compatible embedding service with `BAAI/bge-small-en-v1.5` and `EMBEDDING_DIMENSIONS=384`. Hosted embedding providers are fine too; set dimensions to the provider/model output size.
 
 When the API and worker run as separate processes, use a shared vector backend such as Qdrant. The memory vector adapter is useful for unit tests and single-process experiments, but it is not shared across API and worker containers.
 

@@ -72,6 +72,7 @@ services:
       QUEUE_BACKEND: nats
       QUEUE_URL: nats://nats:4222
       CACHE_URL: redis://valkey:6379/0
+      PROVIDER_PRESET: ${PROVIDER_PRESET:-starter}
       MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-http://host.docker.internal:8000/v1}
       MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-}
       DEFAULT_MODEL_TARGET: ${DEFAULT_MODEL_TARGET:-general}

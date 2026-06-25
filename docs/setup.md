@@ -24,6 +24,19 @@ Profile behavior:
 - `gpu-local`: full stack plus local vLLM-compatible gateway through the GPU Compose overlay.
 - `prod-auth`: Caddy entrypoint with trusted-header auth behind an Authelia-compatible gateway.
 
+## Provider Presets
+
+Profiles decide where containers run. Provider presets decide how model and embedding providers are wired.
+
+- `starter`: OpenAI-compatible chat endpoint with local hash embeddings. Best for first boot, demos, and hardware-light installs.
+- `semantic`: OpenAI-compatible chat and OpenAI-compatible embeddings. Best for real retrieval quality.
+
+Interactive setup asks for the preset. Non-interactive setup defaults to `starter`.
+
+```powershell
+.\scripts\setup.ps1 -Profile split-nas-gpu -ProviderPreset semantic
+```
+
 ## Useful Options
 
 Generate without prompts:
@@ -37,7 +50,19 @@ Set a desktop or rented GPU endpoint:
 ```powershell
 .\scripts\setup.ps1 `
   -Profile split-nas-gpu `
-  -ModelGatewayBaseUrl "http://desktop-gpu.local:8000/v1"
+  -ModelGatewayBaseUrl "http://desktop-gpu.local:8000/v1" `
+  -ModelGatewayApiKey "local-or-rented-key"
+```
+
+Use a separate embedding service for semantic retrieval:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile split-nas-gpu `
+  -ProviderPreset semantic `
+  -EmbeddingBaseUrl "http://desktop-gpu.local:8082/v1" `
+  -EmbeddingModel "BAAI/bge-small-en-v1.5" `
+  -EmbeddingDimensions 384
 ```
 
 Generate production auth config:
@@ -64,7 +89,8 @@ The generated `.env` includes:
 - app/auth mode
 - Postgres and MinIO credentials
 - object, vector, queue, and cache settings
-- model gateway URL and model ID
+- provider preset, model gateway URL, API key, and model ID
+- embedding backend, endpoint, key, model, and dimensions
 - production Caddy/auth settings when selected
 
 Secrets are generated locally as random hex strings unless you pass explicit values.

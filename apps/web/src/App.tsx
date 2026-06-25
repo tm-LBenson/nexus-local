@@ -1177,6 +1177,8 @@ export function App() {
               />
             </div>
 
+            <ProviderPanel readiness={readiness} targets={targets} />
+
             <details className="inlineDetails">
               <summary>Endpoints</summary>
               <dl className="runtimeList">
@@ -1340,31 +1342,35 @@ export function App() {
 
             <section className="workSurface">
               <div className="surfaceHeader">
-                <h2>Runtime</h2>
-                <span>{readiness?.auth_mode ?? 'unknown'}</span>
+                <h2>Providers</h2>
+                <span>{readiness?.provider_preset ?? 'unknown'}</span>
               </div>
-              <dl className="runtimeList">
-                <div>
-                  <dt>API</dt>
-                  <dd>{apiBase()}</dd>
-                </div>
-                <div>
-                  <dt>Storage</dt>
-                  <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Objects</dt>
-                  <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Vectors</dt>
-                  <dd>{readiness?.vector_backend ?? 'unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Embeddings</dt>
-                  <dd>{readiness?.embedding_backend ?? 'unknown'}</dd>
-                </div>
-              </dl>
+              <ProviderPanel readiness={readiness} targets={targets} />
+              <details className="inlineDetails">
+                <summary>Runtime</summary>
+                <dl className="runtimeList">
+                  <div>
+                    <dt>API</dt>
+                    <dd>{apiBase()}</dd>
+                  </div>
+                  <div>
+                    <dt>Auth</dt>
+                    <dd>{readiness?.auth_mode ?? 'unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Storage</dt>
+                    <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Objects</dt>
+                    <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Queue</dt>
+                    <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
+                  </div>
+                </dl>
+              </details>
               <details className="inlineDetails">
                 <summary>Model Targets</summary>
                 <div className="tableList">
@@ -1474,6 +1480,79 @@ function StatusTile({
       <em>{detail}</em>
     </div>
   );
+}
+
+function ProviderPanel({
+  readiness,
+  targets,
+}: {
+  readiness: Readiness | null;
+  targets: ModelTarget[];
+}) {
+  const primaryTarget = targets.find((target) => target.name === 'general') ?? targets[0];
+  const embeddingBackend = readiness?.embedding_backend ?? 'unknown';
+  const hashEmbeddings = embeddingBackend.toLowerCase() === 'hash';
+  const embeddingDetail =
+    readiness && readiness.embedding_dimensions > 0
+      ? `${embeddingBackend} / ${readiness.embedding_dimensions} dims`
+      : embeddingBackend;
+
+  return (
+    <div className="providerPanel">
+      <div className="providerCard">
+        <span>Preset</span>
+        <strong>{formatProviderPreset(readiness?.provider_preset)}</strong>
+        <em>{readiness?.auth_mode ?? 'unknown'} auth</em>
+      </div>
+      <div className="providerCard">
+        <span>Chat</span>
+        <strong>{primaryTarget?.model ?? 'No target'}</strong>
+        <em>
+          {compactEndpoint(readiness?.model_gateway)} /{' '}
+          {readiness?.model_gateway_auth ? 'key set' : 'no key'}
+        </em>
+      </div>
+      <div
+        className={hashEmbeddings ? 'providerCard providerCardWarn' : 'providerCard'}
+        title={hashEmbeddings ? 'Hash embeddings are for setup and tests, not semantic retrieval.' : ''}
+      >
+        <span>Embeddings</span>
+        <strong>{readiness?.embedding_model ?? 'unknown'}</strong>
+        <em>
+          {embeddingDetail} / {readiness?.embedding_gateway_auth ? 'key set' : 'no key'}
+        </em>
+      </div>
+      <div className="providerCard">
+        <span>Vectors</span>
+        <strong>{readiness?.vector_collection ?? 'documents'}</strong>
+        <em>{readiness?.vector_backend ?? 'unknown'}</em>
+      </div>
+    </div>
+  );
+}
+
+function formatProviderPreset(value?: string) {
+  switch ((value ?? '').toLowerCase()) {
+    case 'starter':
+      return 'Starter';
+    case 'semantic':
+      return 'Semantic';
+    case '':
+      return 'Unknown';
+    default:
+      return value ?? 'Unknown';
+  }
+}
+
+function compactEndpoint(value?: string) {
+  if (!value) {
+    return 'unknown';
+  }
+  try {
+    return new URL(value).host || value;
+  } catch {
+    return value;
+  }
 }
 
 function titleCase(value: string) {

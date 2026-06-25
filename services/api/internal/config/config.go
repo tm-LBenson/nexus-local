@@ -36,6 +36,7 @@ type Config struct {
 	QueueBackend         string
 	QueueURL             string
 	CacheURL             string
+	ProviderPreset       string
 	ModelGatewayBaseURL  string
 	ModelGatewayAPIKey   string
 	DefaultModelTarget   string
@@ -74,6 +75,7 @@ func Load() Config {
 		QueueBackend:         env("QUEUE_BACKEND", "nats"),
 		QueueURL:             env("QUEUE_URL", "nats://localhost:4222"),
 		CacheURL:             env("CACHE_URL", "redis://localhost:6379/0"),
+		ProviderPreset:       env("PROVIDER_PRESET", "starter"),
 		ModelGatewayBaseURL:  env("MODEL_GATEWAY_BASE_URL", "http://localhost:8000/v1"),
 		ModelGatewayAPIKey:   env("MODEL_GATEWAY_API_KEY", ""),
 		DefaultModelTarget:   env("DEFAULT_MODEL_TARGET", "general"),

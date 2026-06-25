@@ -4,9 +4,15 @@ param(
   [switch]$Force,
   [switch]$NonInteractive,
   [switch]$SkipPortCheck,
+  [string]$ProviderPreset = "",
   [string]$PublicUrl = "",
   [string]$ModelGatewayBaseUrl = "",
+  [string]$ModelGatewayApiKey = "",
   [string]$EmbeddingBaseUrl = "",
+  [string]$EmbeddingBackend = "",
+  [string]$EmbeddingApiKey = "",
+  [string]$EmbeddingModel = "",
+  [string]$EmbeddingDimensions = "",
   [string]$GeneralModelId = "",
   [string]$AutheliaInternalUrl = "",
   [string]$NexusHttpPort = "",
@@ -25,6 +31,11 @@ if (-not $OutputPath) {
 }
 
 $profileNames = @("cpu-lite", "split-nas-gpu", "gpu-local", "prod-auth")
+$providerPresetNames = @("starter", "semantic")
+$providerPresetDescriptions = @{
+  "starter" = "OpenAI-compatible chat plus local hash embeddings"
+  "semantic" = "OpenAI-compatible chat plus OpenAI-compatible embeddings"
+}
 
 function New-RandomToken([int]$ByteLength = 24) {
   $bytes = [byte[]]::new($ByteLength)
@@ -100,6 +111,66 @@ function Select-SetupProfile {
     }
     Write-Host "Use one of: $($profileNames -join ', ')"
   }
+}
+
+function Select-ProviderPreset {
+  $defaultPreset = "starter"
+  if (-not [string]::IsNullOrWhiteSpace($ProviderPreset)) {
+    $normalized = $ProviderPreset.Trim().ToLowerInvariant()
+    if ($providerPresetNames -notcontains $normalized) {
+      throw "Unknown provider preset '$ProviderPreset'. Use one of: $($providerPresetNames -join ', ')"
+    }
+    return $normalized
+  }
+  if ($NonInteractive) {
+    return $defaultPreset
+  }
+
+  Write-Host "Choose a provider preset:"
+  for ($i = 0; $i -lt $providerPresetNames.Count; $i++) {
+    $name = $providerPresetNames[$i]
+    Write-Host "  $($i + 1). $name - $($providerPresetDescriptions[$name])"
+  }
+  while ($true) {
+    $choice = Read-Host "Provider preset [$defaultPreset]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+      return $defaultPreset
+    }
+    $choice = $choice.Trim().ToLowerInvariant()
+    if ($choice -match '^\d+$') {
+      $index = [int]$choice - 1
+      if ($index -ge 0 -and $index -lt $providerPresetNames.Count) {
+        return $providerPresetNames[$index]
+      }
+    }
+    if ($providerPresetNames -contains $choice) {
+      return $choice
+    }
+    Write-Host "Use one of: $($providerPresetNames -join ', ')"
+  }
+}
+
+function Normalize-EmbeddingBackend($backend) {
+  $normalized = $backend.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "" { return "hash" }
+    "hash" { return "hash" }
+    "openai" { return "openai-compatible" }
+    "openai-compatible" { return "openai-compatible" }
+    "openaicompat" { return "openai-compatible" }
+    "tei" { return "tei" }
+    default {
+      throw "Unknown embedding backend '$backend'. Use hash, openai-compatible, or tei."
+    }
+  }
+}
+
+function Assert-PositiveInteger($label, $value) {
+  $parsed = 0
+  if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -le 0) {
+    throw "$label must be a positive integer."
+  }
+  return $parsed.ToString()
 }
 
 function Get-SiteAddress($publicUrl) {
@@ -181,7 +252,7 @@ function Write-EnvFile($path, $values) {
       )
     },
     @{ Title = "Models"; Keys = @(
-        "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_API_KEY",
+        "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_API_KEY",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "HUGGING_FACE_HUB_TOKEN",
         "WORKER_POLL_INTERVAL"
       )
@@ -286,6 +357,7 @@ if (-not (Test-Path $templatePath)) {
 }
 
 $selectedProfile = Select-SetupProfile
+$providerPresetValue = Select-ProviderPreset
 $values = Read-TemplateEnv $templatePath
 
 $postgresUser = Read-SetupValue "Postgres user" "app"
@@ -326,7 +398,21 @@ switch ($selectedProfile) {
 
 $publicUrlValue = Read-SetupValue "Public URL" (Get-ProvidedOrDefault $PublicUrl $defaultPublicUrl) $PublicUrl
 $modelGatewayValue = Read-SetupValue "Model gateway base URL" (Get-ProvidedOrDefault $ModelGatewayBaseUrl $defaultModelGateway) $ModelGatewayBaseUrl
+$modelGatewayAPIKeyValue = Read-SetupValue "Model gateway API key" (Get-ProvidedOrDefault $ModelGatewayApiKey "") $ModelGatewayApiKey
 $embeddingGatewayValue = Read-SetupValue "Embedding base URL" (Get-ProvidedOrDefault $EmbeddingBaseUrl $defaultEmbeddingGateway) $EmbeddingBaseUrl
+$defaultEmbeddingBackend = "hash"
+$defaultEmbeddingDimensions = "384"
+if ($providerPresetValue -eq "semantic") {
+  $defaultEmbeddingBackend = "openai-compatible"
+}
+$embeddingBackendValue = Normalize-EmbeddingBackend (Read-SetupValue "Embedding backend" (Get-ProvidedOrDefault $EmbeddingBackend $defaultEmbeddingBackend) $EmbeddingBackend)
+$defaultEmbeddingModel = "hash-embedding"
+if ($embeddingBackendValue -ne "hash") {
+  $defaultEmbeddingModel = "BAAI/bge-small-en-v1.5"
+}
+$embeddingModelValue = Read-SetupValue "Embedding model" (Get-ProvidedOrDefault $EmbeddingModel $defaultEmbeddingModel) $EmbeddingModel
+$embeddingDimensionsValue = Assert-PositiveInteger "Embedding dimensions" (Read-SetupValue "Embedding dimensions" (Get-ProvidedOrDefault $EmbeddingDimensions $defaultEmbeddingDimensions) $EmbeddingDimensions)
+$embeddingAPIKeyValue = Read-SetupValue "Embedding API key" (Get-ProvidedOrDefault $EmbeddingApiKey "") $EmbeddingApiKey
 $autheliaValue = "http://authelia:9091"
 if ($selectedProfile -eq "prod-auth") {
   $autheliaValue = Read-SetupValue "Forward-auth internal URL" (Get-ProvidedOrDefault $AutheliaInternalUrl "http://authelia:9091") $AutheliaInternalUrl
@@ -360,11 +446,11 @@ Set-EnvValue $values "OBJECT_STORAGE_ENDPOINT" "http://minio:9000"
 Set-EnvValue $values "OBJECT_STORAGE_ACCESS_KEY" $objectAccessValue
 Set-EnvValue $values "OBJECT_STORAGE_SECRET_KEY" $objectSecretValue
 Set-EnvValue $values "OBJECT_STORAGE_BUCKET" "documents"
-Set-EnvValue $values "EMBEDDING_BACKEND" "hash"
+Set-EnvValue $values "EMBEDDING_BACKEND" $embeddingBackendValue
 Set-EnvValue $values "EMBEDDING_BASE_URL" $embeddingGatewayValue
-Set-EnvValue $values "EMBEDDING_API_KEY" ""
-Set-EnvValue $values "EMBEDDING_MODEL" "hash-embedding"
-Set-EnvValue $values "EMBEDDING_DIMENSIONS" "384"
+Set-EnvValue $values "EMBEDDING_API_KEY" $embeddingAPIKeyValue
+Set-EnvValue $values "EMBEDDING_MODEL" $embeddingModelValue
+Set-EnvValue $values "EMBEDDING_DIMENSIONS" $embeddingDimensionsValue
 Set-EnvValue $values "VECTOR_BACKEND" "qdrant"
 Set-EnvValue $values "VECTOR_BASE_URL" "http://qdrant:6333"
 Set-EnvValue $values "VECTOR_COLLECTION" "documents"
@@ -372,8 +458,9 @@ Set-EnvValue $values "VECTOR_API_KEY" ""
 Set-EnvValue $values "QUEUE_BACKEND" "nats"
 Set-EnvValue $values "QUEUE_URL" "nats://nats:4222"
 Set-EnvValue $values "CACHE_URL" "redis://valkey:6379/0"
+Set-EnvValue $values "PROVIDER_PRESET" $providerPresetValue
 Set-EnvValue $values "MODEL_GATEWAY_BASE_URL" $modelGatewayValue
-Set-EnvValue $values "MODEL_GATEWAY_API_KEY" ""
+Set-EnvValue $values "MODEL_GATEWAY_API_KEY" $modelGatewayAPIKeyValue
 Set-EnvValue $values "DEFAULT_MODEL_TARGET" "general"
 Set-EnvValue $values "GENERAL_MODEL_ID" $modelValue
 Set-EnvValue $values "HUGGING_FACE_HUB_TOKEN" ""
