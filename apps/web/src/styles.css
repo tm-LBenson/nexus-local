@@ -141,6 +141,11 @@ h3 {
   border-radius: 8px;
   background: #ffffff;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -152,6 +157,7 @@ h3 {
   background: transparent;
   font-size: 0.88rem;
   font-weight: 750;
+  white-space: nowrap;
 }
 
 .tab:hover,
@@ -322,14 +328,12 @@ h3 {
 .menuFields {
   display: grid;
   gap: 10px;
-  min-width: 260px;
-}
-
-.menuFields {
   position: absolute;
   z-index: 5;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   left: 0;
+  width: min(320px, calc(100vw - 44px));
+  min-width: min(260px, calc(100vw - 44px));
   border: 1px solid #cfdadb;
   border-radius: 8px;
   padding: 12px;
@@ -337,9 +341,9 @@ h3 {
   box-shadow: 0 12px 30px rgba(23, 32, 38, 0.14);
 }
 
-.compactMenu[open] .menuFields {
-  bottom: auto;
-  top: calc(100% + 8px);
+.compactMenu .menuFields {
+  right: 0;
+  left: auto;
 }
 
 .menuPanel:not([open]) .menuFields {
@@ -788,12 +792,12 @@ h3 {
   }
 
   .tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex-wrap: wrap;
     overflow: visible;
   }
 
   .tab {
+    flex: 1 1 78px;
     justify-content: center;
     min-width: 0;
     padding: 0 6px;
@@ -844,6 +848,7 @@ h3 {
 
   .menuFields {
     position: static;
+    width: auto;
     min-width: 0;
     margin-top: 8px;
     box-shadow: none;
