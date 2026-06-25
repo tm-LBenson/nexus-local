@@ -132,6 +132,9 @@ func TestDocumentIngestionWorkerFailsUnsupportedJob(t *testing.T) {
 	if updatedJob.State != domain.JobStateFailed {
 		t.Fatalf("job state = %q, want failed", updatedJob.State)
 	}
+	if updatedJob.ErrorMessage == "" {
+		t.Fatal("job error message is empty")
+	}
 }
 
 func TestDocumentIngestionWorkerMarksDocumentFailedWhenPipelineFails(t *testing.T) {

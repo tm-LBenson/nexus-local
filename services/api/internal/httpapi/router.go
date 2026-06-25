@@ -293,6 +293,7 @@ type jobPayload struct {
 	ResourceID   string `json:"resource_id"`
 	State        string `json:"state"`
 	Attempts     int    `json:"attempts"`
+	ErrorMessage string `json:"error_message"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 }
@@ -529,6 +530,9 @@ func registerDocumentHandler(service app.DocumentService, authorizer internalaut
 			if errors.Is(err, domain.ErrInvalidEntity) {
 				status = http.StatusBadRequest
 			}
+			if errors.Is(err, app.ErrUnsupportedDocumentType) {
+				status = http.StatusUnsupportedMediaType
+			}
 			writeError(w, status, err.Error())
 			return
 		}
@@ -685,6 +689,9 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 			}
 			if errors.Is(err, app.ErrObjectStoreUnavailable) {
 				status = http.StatusServiceUnavailable
+			}
+			if errors.Is(err, app.ErrUnsupportedDocumentType) {
+				status = http.StatusUnsupportedMediaType
 			}
 			writeError(w, status, fmt.Sprintf("upload document: %v", err))
 			return
@@ -1118,6 +1125,7 @@ func encodeJob(job domain.Job) jobPayload {
 		ResourceID:   job.ResourceID,
 		State:        string(job.State),
 		Attempts:     job.Attempts,
+		ErrorMessage: job.ErrorMessage,
 		CreatedAt:    job.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:    job.UpdatedAt.Format(time.RFC3339),
 	}

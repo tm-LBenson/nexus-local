@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,7 @@ type Job struct {
 	ResourceID   string
 	State        JobState
 	Attempts     int
+	ErrorMessage string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -77,8 +79,26 @@ func (j *Job) Transition(next JobState, now time.Time) error {
 	if next == JobStateRunning {
 		j.Attempts++
 	}
+	if next == JobStateQueued || next == JobStateRunning || next == JobStateSucceeded {
+		j.ErrorMessage = ""
+	}
 	j.State = next
 	j.UpdatedAt = now
+	return nil
+}
+
+func (j *Job) Fail(cause error, now time.Time) error {
+	if err := j.Transition(JobStateFailed, now); err != nil {
+		return err
+	}
+	message := "unknown failure"
+	if cause != nil {
+		message = strings.TrimSpace(cause.Error())
+	}
+	if message == "" {
+		message = "unknown failure"
+	}
+	j.ErrorMessage = message
 	return nil
 }
 

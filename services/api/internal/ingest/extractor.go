@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -24,6 +25,59 @@ var textExtensions = map[string]bool{
 	".csv":  true,
 	".tsv":  true,
 	".vtt":  true,
+}
+
+var supportedExtensions = []string{
+	".txt",
+	".md",
+	".json",
+	".html",
+	".htm",
+	".csv",
+	".tsv",
+	".vtt",
+	".pdf",
+	".docx",
+	".pptx",
+	".xlsx",
+}
+
+var ErrUnsupportedDocumentType = errors.New("unsupported document type")
+
+type UnsupportedDocumentTypeError struct {
+	Name        string
+	ContentType string
+}
+
+func (e UnsupportedDocumentTypeError) Error() string {
+	detail := strings.TrimSpace(e.ContentType)
+	if detail == "" {
+		detail = "unknown content type"
+	}
+	name := strings.TrimSpace(e.Name)
+	if name == "" {
+		name = "unnamed upload"
+	}
+	return fmt.Sprintf("unsupported document type for %q (%s); supported files: %s", name, detail, SupportedDocumentTypeSummary())
+}
+
+func (e UnsupportedDocumentTypeError) Unwrap() error {
+	return ErrUnsupportedDocumentType
+}
+
+func SupportedExtensions() []string {
+	return append([]string(nil), supportedExtensions...)
+}
+
+func SupportedDocumentTypeSummary() string {
+	return strings.Join(supportedExtensions, ", ")
+}
+
+func ValidateDocumentType(name string, contentType string) error {
+	if detectKind(name, contentType) != "" {
+		return nil
+	}
+	return UnsupportedDocumentTypeError{Name: name, ContentType: contentType}
 }
 
 const (
@@ -63,7 +117,7 @@ func (e Extractor) Extract(reader io.Reader, name string, contentType string) (s
 	case kindXLSX:
 		return extractXLSX(data)
 	default:
-		return "", fmt.Errorf("unsupported document type %q", contentType)
+		return "", UnsupportedDocumentTypeError{Name: name, ContentType: contentType}
 	}
 }
 

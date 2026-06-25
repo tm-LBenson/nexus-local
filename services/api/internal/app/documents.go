@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/ingest"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 )
 
 var ErrObjectStoreUnavailable = errors.New("object store is not configured")
+var ErrUnsupportedDocumentType = ingest.ErrUnsupportedDocumentType
 
 type DocumentIDs interface {
 	NewDocumentID() domain.DocumentID
@@ -125,6 +127,9 @@ func (s DocumentService) RegisterDocument(ctx context.Context, input RegisterDoc
 	if err := ctx.Err(); err != nil {
 		return RegisterDocumentResult{}, err
 	}
+	if err := validateDocumentType(input.Name, ""); err != nil {
+		return RegisterDocumentResult{}, err
+	}
 
 	now := s.clock.Now()
 	return s.registerDocument(ctx, input, s.ids.NewDocumentID(), s.ids.NewJobID(), now)
@@ -132,6 +137,12 @@ func (s DocumentService) RegisterDocument(ctx context.Context, input RegisterDoc
 
 func (s DocumentService) UploadDocument(ctx context.Context, input UploadDocumentInput) (RegisterDocumentResult, error) {
 	if err := ctx.Err(); err != nil {
+		return RegisterDocumentResult{}, err
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return RegisterDocumentResult{}, fmt.Errorf("upload document: %w", domain.ErrInvalidEntity)
+	}
+	if err := validateDocumentType(input.Name, input.ContentType); err != nil {
 		return RegisterDocumentResult{}, err
 	}
 	if s.objects == nil {
@@ -251,7 +262,7 @@ func (s DocumentService) RetryDocumentIngestion(ctx context.Context, input Retry
 		return RetryDocumentResult{}, err
 	}
 	if document.Status != domain.DocumentStatusFailed {
-		return RetryDocumentResult{}, fmt.Errorf("retry document %s from %s: %w", document.ID, document.Status, domain.ErrInvalidStateTransition)
+		return RetryDocumentResult{}, fmt.Errorf("only failed documents can be retried; document %s is %s: %w", document.ID, document.Status, domain.ErrInvalidStateTransition)
 	}
 
 	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
@@ -260,7 +271,7 @@ func (s DocumentService) RetryDocumentIngestion(ctx context.Context, input Retry
 	}
 	for _, job := range jobs {
 		if isActiveDocumentIngestionJob(job, document.ID) {
-			return RetryDocumentResult{}, fmt.Errorf("retry document %s with active job %s: %w", document.ID, job.ID, domain.ErrInvalidStateTransition)
+			return RetryDocumentResult{}, fmt.Errorf("retry is already queued or running for document %s with job %s: %w", document.ID, job.ID, domain.ErrInvalidStateTransition)
 		}
 	}
 
@@ -377,6 +388,13 @@ func safeFileName(name string) string {
 		return "upload.bin"
 	}
 	return base
+}
+
+func validateDocumentType(name string, contentType string) error {
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	return ingest.ValidateDocumentType(name, contentType)
 }
 
 func filterActiveDocuments(documents []domain.Document) []domain.Document {

@@ -1,0 +1,2 @@
+ALTER TABLE jobs
+    ADD COLUMN IF NOT EXISTS error_message text NOT NULL DEFAULT '';

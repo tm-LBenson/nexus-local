@@ -117,6 +117,7 @@ export type RegisteredJob = {
   resource_id: string;
   state: string;
   attempts: number;
+  error_message: string;
   created_at: string;
   updated_at: string;
 };

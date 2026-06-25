@@ -673,6 +673,11 @@ h3 {
   font-weight: 700;
 }
 
+.jobRow .jobError {
+  color: #8c2f27;
+  font-weight: 800;
+}
+
 .targetRow button {
   min-height: 34px;
   padding: 0 10px;
@@ -743,6 +748,27 @@ h3 {
   gap: 12px;
   border-top: 1px solid #e2e9e9;
   padding-top: 14px;
+}
+
+.failureNotice {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e6b4a9;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #8c2f27;
+  background: #fff4f1;
+}
+
+.failureNotice strong {
+  font-size: 0.9rem;
+}
+
+.failureNotice span {
+  color: #8c2f27;
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .detailHeader {

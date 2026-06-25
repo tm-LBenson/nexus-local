@@ -111,6 +111,10 @@ func TestClaimNextQueuedJobTransitionsJob(t *testing.T) {
 	if err := repo.SaveJob(ctx, job); err != nil {
 		t.Fatalf("save job: %v", err)
 	}
+	job.ErrorMessage = "old failure"
+	if err := repo.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save updated job: %v", err)
+	}
 
 	claimed, err := repo.ClaimNextQueuedJob(ctx, fixedTime().Add(time.Minute))
 	if err != nil {
@@ -121,6 +125,9 @@ func TestClaimNextQueuedJobTransitionsJob(t *testing.T) {
 	}
 	if claimed.Attempts != 1 {
 		t.Fatalf("attempts = %d, want 1", claimed.Attempts)
+	}
+	if claimed.ErrorMessage != "" {
+		t.Fatalf("error message = %q, want empty after claim", claimed.ErrorMessage)
 	}
 }
 

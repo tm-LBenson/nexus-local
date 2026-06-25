@@ -630,6 +630,38 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 }
 
+func TestUploadDocumentEndpointRejectsUnsupportedType(t *testing.T) {
+	server := newTestServer(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
+		t.Fatalf("tenant field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "photo.png")
+	if err != nil {
+		t.Fatalf("file field: %v", err)
+	}
+	if _, err := part.Write([]byte("not really a png")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusUnsupportedMediaType, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "supported files") {
+		t.Fatalf("body = %s, want supported files message", resp.Body.String())
+	}
+}
+
 func TestDownloadDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 

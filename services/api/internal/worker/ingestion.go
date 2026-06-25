@@ -62,7 +62,7 @@ func (w DocumentIngestionWorker) ProcessNext(ctx context.Context) (ProcessResult
 
 	result, err := w.processClaimedJob(ctx, job)
 	if err != nil {
-		if transitionErr := job.Transition(domain.JobStateFailed, w.clock.Now()); transitionErr == nil {
+		if transitionErr := job.Fail(err, w.clock.Now()); transitionErr == nil {
 			_ = w.repos.SaveJob(ctx, job)
 		}
 		return ProcessResult{}, err

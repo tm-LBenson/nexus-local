@@ -25,6 +25,8 @@ Current behavior:
 11. Transition document `processing -> ready`.
 12. Transition job `running -> succeeded`.
 
+If ingestion fails, the worker transitions the document to `failed`, transitions the job to `failed`, and stores a concise `error_message` on the job. The document detail and activity views surface that message next to the retry action.
+
 Current extraction support:
 
 - Text-like UTF-8 files: `.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, and `.vtt`.
@@ -32,6 +34,8 @@ Current extraction support:
 - OpenXML Office files: `.docx`, `.pptx`, and `.xlsx`.
 
 Legacy binary Office formats such as `.doc`, `.ppt`, and `.xls` are intentionally not supported yet. They should be converted before upload or handled later by a dedicated converter service.
+
+The API validates the supported filename/content type before storing uploads, so unsupported files fail fast with `415 Unsupported Media Type` instead of becoming queued jobs that later fail in the worker.
 
 The CPU Compose profile runs the worker beside the API. It shares the same Postgres database and claims jobs through the repository contract.
 

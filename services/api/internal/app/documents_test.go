@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/ingest"
 	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
@@ -76,6 +77,21 @@ func TestRegisterDocumentRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestRegisterDocumentRejectsUnsupportedType(t *testing.T) {
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{})
+
+	_, err := service.RegisterDocument(context.Background(), RegisterDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "photo.png",
+		StorageKey: "tenants/tenant_1/documents/photo.png",
+		SizeBytes:  42,
+	})
+	if !errors.Is(err, ingest.ErrUnsupportedDocumentType) {
+		t.Fatalf("err = %v, want unsupported document type", err)
+	}
+}
+
 func TestUploadDocumentStoresObjectAndRegistersDocument(t *testing.T) {
 	ctx := context.Background()
 	objects := objectmemory.New()
@@ -102,6 +118,27 @@ func TestUploadDocumentStoresObjectAndRegistersDocument(t *testing.T) {
 	}
 	if keys := objects.Keys(); len(keys) != 1 || keys[0] != wantKey {
 		t.Fatalf("keys = %v, want [%s]", keys, wantKey)
+	}
+}
+
+func TestUploadDocumentRejectsUnsupportedTypeBeforeStoringObject(t *testing.T) {
+	ctx := context.Background()
+	objects := objectmemory.New()
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{}).WithObjectStore(objects)
+
+	_, err := service.UploadDocument(ctx, UploadDocumentInput{
+		TenantID:    domain.TenantID("tenant_1"),
+		OwnerID:     domain.UserID("user_1"),
+		Name:        "photo.png",
+		ContentType: "image/png",
+		SizeBytes:   11,
+		Body:        strings.NewReader("not really a png"),
+	})
+	if !errors.Is(err, ingest.ErrUnsupportedDocumentType) {
+		t.Fatalf("err = %v, want unsupported document type", err)
+	}
+	if keys := objects.Keys(); len(keys) != 0 {
+		t.Fatalf("keys = %v, want none", keys)
 	}
 }
 

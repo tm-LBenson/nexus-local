@@ -71,13 +71,13 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 ## First Workflow
 
-`POST /v1/documents/register` creates a document record and queues a `document_ingestion` job from already-known object metadata.
+`POST /v1/documents/register` creates a document record and queues a `document_ingestion` job from already-known object metadata. Unsupported document names are rejected with `415 Unsupported Media Type`.
 
-`POST /v1/documents/upload` accepts a multipart file, stores it through the configured `ObjectStore`, creates the document record, and queues a `document_ingestion` job.
+`POST /v1/documents/upload` accepts a multipart file, validates its filename/content type, stores it through the configured `ObjectStore`, creates the document record, and queues a `document_ingestion` job. Unsupported files are rejected with `415 Unsupported Media Type` before storage.
 
 `DELETE /v1/documents/<document_id>?tenant_id=<tenant_id>` soft-deletes a document, removes its stored object when object storage is configured, and removes vectors when a vector index is configured. Normal document lists omit deleted documents.
 
-`GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100.
+`GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100. Failed jobs include `error_message` with the ingestion or worker failure reason.
 
 `GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows.
 
@@ -106,7 +106,7 @@ failed -> processing | deleted
 
 Terminal states should stay terminal unless we intentionally add a recovery workflow.
 
-Jobs may carry `resource_type` and `resource_id` so a worker can claim work without needing to infer the subject from side effects. Document ingestion jobs use `document/<document_id>`.
+Jobs may carry `resource_type` and `resource_id` so a worker can claim work without needing to infer the subject from side effects. Document ingestion jobs use `document/<document_id>`. Failed jobs should carry a concise `error_message`; retrying creates a fresh queued job and clears any stale error when it is claimed.
 
 ## TDD Boundary
 

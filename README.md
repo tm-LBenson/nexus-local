@@ -17,6 +17,8 @@ The project is early, but the core shape is already in place: a replaceable back
 - Review and resume conversation history.
 - Soft-delete documents and clean up stored objects and vectors.
 
+Supported upload formats are UTF-8 text-like files (`.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, `.vtt`), PDFs, and OpenXML Office files (`.docx`, `.pptx`, `.xlsx`). Unsupported files are rejected before they enter the ingestion queue.
+
 ## Architecture
 
 Nexus Local is built as a small monorepo:
@@ -189,6 +191,7 @@ Useful endpoints during development:
 The stream endpoint returns server-sent events: `status`, `delta`, `error`, and `done`.
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
+Job responses include `error_message` when ingestion fails, and failed documents can be retried from the document detail view or retry endpoint.
 
 Example document upload:
 

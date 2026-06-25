@@ -59,6 +59,30 @@ const initialMemberForm = {
   role: 'member',
 };
 
+const supportedDocumentAccept = [
+  '.txt',
+  '.md',
+  '.json',
+  '.html',
+  '.htm',
+  '.csv',
+  '.tsv',
+  '.vtt',
+  '.pdf',
+  '.docx',
+  '.pptx',
+  '.xlsx',
+].join(',');
+
+const sampleDocumentContent = `# Nexus Local Sample
+
+Nexus Local can ingest documents, index their text, search retrieved chunks, and answer questions with cited sources.
+
+Sample phrase: cedar signal atlas.
+
+Try searching for cedar signal atlas, then ask what phrase appears in the sample document.
+`;
+
 export function App() {
   const [activeView, setActiveView] = useState<View>('ask');
   const [health, setHealth] = useState<Health | null>(null);
@@ -87,6 +111,7 @@ export function App() {
   const [streamStatus, setStreamStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [removingMemberID, setRemovingMemberID] = useState('');
@@ -367,18 +392,34 @@ export function App() {
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!tenantID) {
-      setError('Create a workspace first');
-      return;
-    }
     if (!file) {
       setError('Choose a file');
+      return;
+    }
+    await uploadWorkspaceFile(file);
+  }
+
+  async function uploadSampleDocument() {
+    const sampleFile = new File([sampleDocumentContent], 'nexus-local-sample.md', {
+      type: 'text/markdown',
+    });
+    setUploadingSample(true);
+    try {
+      await uploadWorkspaceFile(sampleFile);
+    } finally {
+      setUploadingSample(false);
+    }
+  }
+
+  async function uploadWorkspaceFile(nextFile: File) {
+    if (!tenantID) {
+      setError('Create a workspace first');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const result = await uploadDocument({ tenant_id: tenantID, file });
+      const result = await uploadDocument({ tenant_id: tenantID, file: nextFile });
       setRegistration(result);
       setDocumentDetail({ document: result.document, jobs: [result.job] });
       await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
@@ -839,10 +880,18 @@ export function App() {
             <form className="uploadBar" onSubmit={submitUpload}>
               <input
                 aria-label="Document"
+                accept={supportedDocumentAccept}
                 type="file"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
-              <button disabled={submitting || !workspaceReady} type="submit">
+              <button
+                disabled={submitting || uploadingSample || !workspaceReady}
+                onClick={() => void uploadSampleDocument()}
+                type="button"
+              >
+                {uploadingSample ? 'Adding' : 'Sample'}
+              </button>
+              <button disabled={submitting || uploadingSample || !workspaceReady} type="submit">
                 {submitting ? 'Uploading' : 'Upload'}
               </button>
             </form>
@@ -924,6 +973,13 @@ export function App() {
                     )}
                   </div>
                 </div>
+                {documentDetail.document.status === 'failed' &&
+                  documentFailureMessage(documentDetail) && (
+                    <div className="failureNotice">
+                      <strong>Ingestion failed</strong>
+                      <span>{documentFailureMessage(documentDetail)}</span>
+                    </div>
+                  )}
                 <dl className="runtimeList detailList">
                   <div>
                     <dt>ID</dt>
@@ -953,7 +1009,9 @@ export function App() {
                       <div className="jobRow" key={job.id}>
                         <strong>{job.type}</strong>
                         <span className={stateClass(job.state)}>{job.state}</span>
-                        <em>{job.id}</em>
+                        <em className={job.error_message ? 'jobError' : ''} title={jobTitle(job)}>
+                          {jobDetail(job)}
+                        </em>
                         <small>{job.attempts} tries</small>
                         <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
                       </div>
@@ -985,7 +1043,9 @@ export function App() {
                 <div className="jobRow" key={job.id}>
                   <strong>{job.type}</strong>
                   <span className={stateClass(job.state)}>{job.state}</span>
-                  <em>{job.resource_id || job.id}</em>
+                  <em className={job.error_message ? 'jobError' : ''} title={jobTitle(job)}>
+                    {jobDetail(job)}
+                  </em>
                   <small>{job.attempts} tries</small>
                   <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
                 </div>
@@ -1579,6 +1639,24 @@ function isActiveJobState(state: string) {
 
 function isActiveDocumentStatus(status: string) {
   return ['uploaded', 'processing'].includes(status);
+}
+
+function documentFailureMessage(detail: DocumentDetailResponse) {
+  return (
+    detail.jobs.find((job) => job.state === 'failed' && job.error_message.trim() !== '')
+      ?.error_message ?? ''
+  );
+}
+
+function jobDetail(job: ListJobsResponse['jobs'][number]) {
+  return job.error_message || job.resource_id || job.id;
+}
+
+function jobTitle(job: ListJobsResponse['jobs'][number]) {
+  if (job.error_message) {
+    return `${job.id}: ${job.error_message}`;
+  }
+  return job.id;
 }
 
 function stateClass(state: string) {
