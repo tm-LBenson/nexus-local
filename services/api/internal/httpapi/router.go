@@ -607,39 +607,26 @@ func askConversationStreamHandler(service app.ConversationService, authorizer in
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
 
-		if err := writeSSE(w, "status", envelope{"message": "Retrieving"}); err != nil {
-			log.Printf("write sse status: %v", err)
-			return
-		}
-		flusher.Flush()
-
-		if err := writeSSE(w, "status", envelope{"message": "Generating"}); err != nil {
-			log.Printf("write sse status: %v", err)
-			return
-		}
-		flusher.Flush()
-
-		result, err := service.Ask(r.Context(), askConversationInput(req, tenantID, principal.UserID))
+		result, err := service.AskStream(r.Context(), askConversationInput(req, tenantID, principal.UserID), func(event app.AskStreamEvent) error {
+			switch event.Type {
+			case app.AskStreamStatus:
+				if err := writeSSE(w, "status", envelope{"message": event.Message}); err != nil {
+					return err
+				}
+			case app.AskStreamDelta:
+				if err := writeSSE(w, "delta", envelope{"content": event.Delta}); err != nil {
+					return err
+				}
+			}
+			flusher.Flush()
+			return nil
+		})
 		if err != nil {
 			if writeErr := writeSSE(w, "error", envelope{"message": fmt.Sprintf("ask conversation: %v", err)}); writeErr != nil {
 				log.Printf("write sse error: %v", writeErr)
 			}
 			flusher.Flush()
 			return
-		}
-
-		if err := writeSSE(w, "status", envelope{"message": "Streaming"}); err != nil {
-			log.Printf("write sse status: %v", err)
-			return
-		}
-		flusher.Flush()
-
-		for _, chunk := range streamTextChunks(result.AssistantMessage.Content, 72) {
-			if err := writeSSE(w, "delta", envelope{"content": chunk}); err != nil {
-				log.Printf("write sse delta: %v", err)
-				return
-			}
-			flusher.Flush()
 		}
 
 		if err := writeSSE(w, "done", encodeAskConversationResult(result)); err != nil {
@@ -716,26 +703,6 @@ func writeSSE(w http.ResponseWriter, event string, payload any) error {
 	}
 	_, err = fmt.Fprintf(w, "data: %s\n\n", encoded)
 	return err
-}
-
-func streamTextChunks(text string, chunkSize int) []string {
-	if text == "" {
-		return nil
-	}
-	if chunkSize <= 0 {
-		chunkSize = 72
-	}
-	runes := []rune(text)
-	chunks := make([]string, 0, (len(runes)/chunkSize)+1)
-	for len(runes) > 0 {
-		next := chunkSize
-		if len(runes) < next {
-			next = len(runes)
-		}
-		chunks = append(chunks, string(runes[:next]))
-		runes = runes[next:]
-	}
-	return chunks
 }
 
 func encodeDocument(document domain.Document) documentPayload {

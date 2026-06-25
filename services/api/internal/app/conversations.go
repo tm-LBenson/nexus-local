@@ -51,6 +51,26 @@ type AskResult struct {
 	Completion       providers.ChatCompletion
 }
 
+type AskStreamEventType string
+
+const (
+	AskStreamStatus AskStreamEventType = "status"
+	AskStreamDelta  AskStreamEventType = "delta"
+)
+
+type AskStreamEvent struct {
+	Type    AskStreamEventType
+	Message string
+	Delta   string
+}
+
+type askPreparation struct {
+	Conversation    domain.Conversation
+	UserMessage     domain.Message
+	Hits            []providers.VectorHit
+	CompletionInput providers.ChatCompletionRequest
+}
+
 type ListConversationsInput struct {
 	TenantID domain.TenantID
 	Limit    int
@@ -115,24 +135,91 @@ func (s ConversationService) ListMessages(ctx context.Context, input ListMessage
 }
 
 func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult, error) {
-	if err := ctx.Err(); err != nil {
+	prepared, err := s.prepareAsk(ctx, input, nil)
+	if err != nil {
 		return AskResult{}, err
 	}
+
+	completion, err := s.models.Complete(ctx, prepared.CompletionInput)
+	if err != nil {
+		return AskResult{}, err
+	}
+
+	return s.finishAsk(ctx, prepared, completion)
+}
+
+func (s ConversationService) AskStream(ctx context.Context, input AskInput, emit func(AskStreamEvent) error) (AskResult, error) {
+	if emit == nil {
+		emit = func(AskStreamEvent) error { return nil }
+	}
+
+	prepared, err := s.prepareAsk(ctx, input, emit)
+	if err != nil {
+		return AskResult{}, err
+	}
+	if err := emit(AskStreamEvent{Type: AskStreamStatus, Message: "Generating"}); err != nil {
+		return AskResult{}, err
+	}
+
+	streamer, ok := s.models.(providers.StreamingModelGateway)
+	if !ok {
+		completion, err := s.models.Complete(ctx, prepared.CompletionInput)
+		if err != nil {
+			return AskResult{}, err
+		}
+		if strings.TrimSpace(completion.Content) != "" {
+			if err := emit(AskStreamEvent{Type: AskStreamDelta, Delta: completion.Content}); err != nil {
+				return AskResult{}, err
+			}
+		}
+		return s.finishAsk(ctx, prepared, completion)
+	}
+
+	sawDelta := false
+	completion, err := streamer.StreamComplete(ctx, prepared.CompletionInput, func(chunk providers.ChatCompletionChunk) error {
+		if chunk.Content == "" {
+			return nil
+		}
+		sawDelta = true
+		return emit(AskStreamEvent{Type: AskStreamDelta, Delta: chunk.Content})
+	})
+	if err != nil {
+		return AskResult{}, err
+	}
+	if !sawDelta && strings.TrimSpace(completion.Content) != "" {
+		if err := emit(AskStreamEvent{Type: AskStreamDelta, Delta: completion.Content}); err != nil {
+			return AskResult{}, err
+		}
+	}
+
+	return s.finishAsk(ctx, prepared, completion)
+}
+
+func (s ConversationService) prepareAsk(ctx context.Context, input AskInput, emit func(AskStreamEvent) error) (askPreparation, error) {
+	if err := ctx.Err(); err != nil {
+		return askPreparation{}, err
+	}
 	if s.models == nil {
-		return AskResult{}, ErrConversationModelUnavailable
+		return askPreparation{}, ErrConversationModelUnavailable
 	}
 
 	question := strings.TrimSpace(input.Question)
 	if strings.TrimSpace(string(input.TenantID)) == "" ||
 		strings.TrimSpace(string(input.OwnerID)) == "" ||
 		question == "" {
-		return AskResult{}, fmt.Errorf("ask: %w", domain.ErrInvalidEntity)
+		return askPreparation{}, fmt.Errorf("ask: %w", domain.ErrInvalidEntity)
 	}
 
 	now := s.clock.Now()
 	conversation, err := s.openConversation(ctx, input, question, now)
 	if err != nil {
-		return AskResult{}, err
+		return askPreparation{}, err
+	}
+
+	if emit != nil {
+		if err := emit(AskStreamEvent{Type: AskStreamStatus, Message: "Retrieving"}); err != nil {
+			return askPreparation{}, err
+		}
 	}
 
 	searchResult, err := s.search.Search(ctx, SearchInput{
@@ -141,12 +228,12 @@ func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult
 		Limit:    input.Limit,
 	})
 	if err != nil {
-		return AskResult{}, err
+		return askPreparation{}, err
 	}
 
 	history, err := s.repos.ListMessages(ctx, conversation.TenantID, conversation.ID)
 	if err != nil {
-		return AskResult{}, err
+		return askPreparation{}, err
 	}
 
 	userMessage, err := domain.NewMessage(domain.MessageCreate{
@@ -158,34 +245,42 @@ func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult
 		Now:            now,
 	})
 	if err != nil {
-		return AskResult{}, err
+		return askPreparation{}, err
 	}
 	if err := s.repos.SaveMessage(ctx, userMessage); err != nil {
-		return AskResult{}, err
+		return askPreparation{}, err
 	}
 
-	completion, err := s.models.Complete(ctx, providers.ChatCompletionRequest{
-		Target:      conversation.ModelTarget,
-		Model:       "",
-		Messages:    promptMessages(history, question, searchResult.Hits),
-		Temperature: 0.2,
-		Metadata: map[string]string{
-			"tenant_id":       string(conversation.TenantID),
-			"conversation_id": string(conversation.ID),
+	return askPreparation{
+		Conversation: conversation,
+		UserMessage:  userMessage,
+		Hits:         searchResult.Hits,
+		CompletionInput: providers.ChatCompletionRequest{
+			Target:      conversation.ModelTarget,
+			Model:       "",
+			Messages:    promptMessages(history, question, searchResult.Hits),
+			Temperature: 0.2,
+			Metadata: map[string]string{
+				"tenant_id":       string(conversation.TenantID),
+				"conversation_id": string(conversation.ID),
+			},
 		},
-	})
-	if err != nil {
+	}, nil
+}
+
+func (s ConversationService) finishAsk(ctx context.Context, prepared askPreparation, completion providers.ChatCompletion) (AskResult, error) {
+	if err := ctx.Err(); err != nil {
 		return AskResult{}, err
 	}
 
 	assistantNow := s.clock.Now()
-	if !assistantNow.After(userMessage.CreatedAt) {
-		assistantNow = userMessage.CreatedAt.Add(time.Nanosecond)
+	if !assistantNow.After(prepared.UserMessage.CreatedAt) {
+		assistantNow = prepared.UserMessage.CreatedAt.Add(time.Nanosecond)
 	}
 	assistantMessage, err := domain.NewMessage(domain.MessageCreate{
 		ID:             s.ids.NewMessageID(),
-		TenantID:       conversation.TenantID,
-		ConversationID: conversation.ID,
+		TenantID:       prepared.Conversation.TenantID,
+		ConversationID: prepared.Conversation.ID,
 		Role:           domain.MessageRoleAssistant,
 		Content:        completion.Content,
 		Now:            assistantNow,
@@ -197,6 +292,7 @@ func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult
 		return AskResult{}, err
 	}
 
+	conversation := prepared.Conversation
 	conversation.UpdatedAt = assistantMessage.CreatedAt
 	if err := s.repos.SaveConversation(ctx, conversation); err != nil {
 		return AskResult{}, err
@@ -204,9 +300,9 @@ func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult
 
 	return AskResult{
 		Conversation:     conversation,
-		UserMessage:      userMessage,
+		UserMessage:      prepared.UserMessage,
 		AssistantMessage: assistantMessage,
-		Hits:             searchResult.Hits,
+		Hits:             prepared.Hits,
 		Completion:       completion,
 	}, nil
 }

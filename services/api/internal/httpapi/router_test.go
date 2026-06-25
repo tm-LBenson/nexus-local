@@ -500,8 +500,10 @@ func TestAskConversationStreamEndpoint(t *testing.T) {
 	for _, want := range []string{
 		"event: status",
 		`"message":"Retrieving"`,
+		`"message":"Generating"`,
 		"event: delta",
-		`"content":"Answer from fake model"`,
+		`"content":"Answer "`,
+		`"content":"from fake model"`,
 		"event: done",
 		`"assistant_message"`,
 	} {
@@ -742,6 +744,25 @@ type httpModelGateway struct{}
 func (httpModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
 	if err := ctx.Err(); err != nil {
 		return providers.ChatCompletion{}, err
+	}
+	return providers.ChatCompletion{
+		Model:        "fake-model",
+		Content:      "Answer from fake model",
+		FinishReason: "stop",
+	}, nil
+}
+
+func (httpModelGateway) StreamComplete(ctx context.Context, input providers.ChatCompletionRequest, emit func(providers.ChatCompletionChunk) error) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	for _, content := range []string{"Answer ", "from fake model"} {
+		if err := emit(providers.ChatCompletionChunk{
+			Model:   "fake-model",
+			Content: content,
+		}); err != nil {
+			return providers.ChatCompletion{}, err
+		}
 	}
 	return providers.ChatCompletion{
 		Model:        "fake-model",

@@ -76,6 +76,66 @@ func TestAskCreatesConversationRetrievesContextAndStoresMessages(t *testing.T) {
 	}
 }
 
+func TestAskStreamEmitsDeltasAndStoresFinalMessage(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	embedder := embeddinghash.New("test", 16)
+	search := NewSearchService(embedder, vectormemory.New())
+	gateway := &streamingStubModelGateway{
+		chunks: []string{"Use ", "the launch plan."},
+		response: providers.ChatCompletion{
+			Model:        "general-model",
+			Content:      "Use the launch plan.",
+			FinishReason: "stop",
+		},
+	}
+
+	service := NewConversationService(repos, &askIDs{}, fixedClock{}, search, gateway)
+	var events []AskStreamEvent
+	result, err := service.AskStream(ctx, AskInput{
+		TenantID: domain.TenantID("tenant_1"),
+		OwnerID:  domain.UserID("user_1"),
+		Question: "What is the launch plan?",
+		Limit:    1,
+	}, func(event AskStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ask stream: %v", err)
+	}
+
+	var statuses []string
+	var deltas []string
+	for _, event := range events {
+		switch event.Type {
+		case AskStreamStatus:
+			statuses = append(statuses, event.Message)
+		case AskStreamDelta:
+			deltas = append(deltas, event.Delta)
+		}
+	}
+	if strings.Join(statuses, ",") != "Retrieving,Generating" {
+		t.Fatalf("statuses = %q, want retrieving/generating", statuses)
+	}
+	if strings.Join(deltas, "") != "Use the launch plan." {
+		t.Fatalf("deltas = %q", deltas)
+	}
+	if result.AssistantMessage.Content != "Use the launch plan." {
+		t.Fatalf("assistant content = %q", result.AssistantMessage.Content)
+	}
+	messages, err := repos.ListMessages(ctx, domain.TenantID("tenant_1"), result.Conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages))
+	}
+	if gateway.request.Target != "general" {
+		t.Fatalf("target = %q, want general", gateway.request.Target)
+	}
+}
+
 func TestAskUsesExistingConversationTarget(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -214,6 +274,36 @@ func (g *stubModelGateway) Complete(ctx context.Context, input providers.ChatCom
 		return providers.ChatCompletion{}, err
 	}
 	g.request = input
+	return g.response, nil
+}
+
+type streamingStubModelGateway struct {
+	request  providers.ChatCompletionRequest
+	chunks   []string
+	response providers.ChatCompletion
+}
+
+func (g *streamingStubModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	g.request = input
+	return g.response, nil
+}
+
+func (g *streamingStubModelGateway) StreamComplete(ctx context.Context, input providers.ChatCompletionRequest, emit func(providers.ChatCompletionChunk) error) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	g.request = input
+	for _, chunk := range g.chunks {
+		if err := emit(providers.ChatCompletionChunk{
+			Model:   g.response.Model,
+			Content: chunk,
+		}); err != nil {
+			return providers.ChatCompletion{}, err
+		}
+	}
 	return g.response, nil
 }
 

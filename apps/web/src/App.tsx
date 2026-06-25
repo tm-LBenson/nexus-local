@@ -289,7 +289,10 @@ export function App() {
         limit: Number(askForm.limit),
       }, {
         onStatus: setStreamStatus,
-        onDelta: (content) => setStreamAnswer((current) => current + content),
+        onDelta: (content) => {
+          setStreamStatus('Streaming');
+          setStreamAnswer((current) => current + content);
+        },
         onDone: (response) => {
           streamedResult = response;
           setAskResult(response);

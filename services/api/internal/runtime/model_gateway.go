@@ -27,22 +27,58 @@ func NewRoutedModelGateway(router *providers.ModelRouter, cfg config.Config) *Ro
 }
 
 func (g *RoutedModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	client, input, err := g.routedClient(ctx, input)
+	if err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	return client.Complete(ctx, input)
+}
+
+func (g *RoutedModelGateway) StreamComplete(ctx context.Context, input providers.ChatCompletionRequest, emit func(providers.ChatCompletionChunk) error) (providers.ChatCompletion, error) {
+	client, input, err := g.routedClient(ctx, input)
+	if err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	streamer, ok := client.(providers.StreamingModelGateway)
+	if ok {
+		return streamer.StreamComplete(ctx, input, emit)
+	}
+
+	completion, err := client.Complete(ctx, input)
+	if err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	if strings.TrimSpace(completion.Content) != "" && emit != nil {
+		if err := emit(providers.ChatCompletionChunk{
+			Model:        completion.Model,
+			Content:      completion.Content,
+			FinishReason: completion.FinishReason,
+			Usage:        completion.Usage,
+			Metadata:     completion.Metadata,
+		}); err != nil {
+			return providers.ChatCompletion{}, err
+		}
+	}
+	return completion, nil
+}
+
+func (g *RoutedModelGateway) routedClient(ctx context.Context, input providers.ChatCompletionRequest) (providers.ModelGateway, providers.ChatCompletionRequest, error) {
 	if g.router == nil {
-		return providers.ChatCompletion{}, fmt.Errorf("model router is not configured")
+		return nil, providers.ChatCompletionRequest{}, fmt.Errorf("model router is not configured")
 	}
 	route, err := g.router.Route(ctx, providers.ModelRequest{Target: input.Target})
 	if err != nil {
-		return providers.ChatCompletion{}, err
+		return nil, providers.ChatCompletionRequest{}, err
 	}
 
 	client, err := g.clientFor(route)
 	if err != nil {
-		return providers.ChatCompletion{}, err
+		return nil, providers.ChatCompletionRequest{}, err
 	}
 	if strings.TrimSpace(input.Model) == "" {
 		input.Model = route.Model
 	}
-	return client.Complete(ctx, input)
+	return client, input, nil
 }
 
 func (g *RoutedModelGateway) clientFor(route providers.ModelRoute) (providers.ModelGateway, error) {

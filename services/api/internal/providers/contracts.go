@@ -115,6 +115,19 @@ type ChatCompletion struct {
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
+type ChatCompletionChunk struct {
+	Model        string            `json:"model,omitempty"`
+	Content      string            `json:"content,omitempty"`
+	FinishReason string            `json:"finish_reason,omitempty"`
+	Usage        map[string]int    `json:"usage,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+}
+
 type ModelGateway interface {
 	Complete(ctx context.Context, input ChatCompletionRequest) (ChatCompletion, error)
+}
+
+type StreamingModelGateway interface {
+	ModelGateway
+	StreamComplete(ctx context.Context, input ChatCompletionRequest, emit func(ChatCompletionChunk) error) (ChatCompletion, error)
 }
