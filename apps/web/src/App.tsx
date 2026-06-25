@@ -166,6 +166,12 @@ export function App() {
   const visibleAskTitle =
     askResult?.conversation.title || askResult?.conversation.id || streamStatus || 'Working';
   const visibleAskModel = askResult?.completion.model || askForm.model_target;
+  const contentTitle =
+    activeView === 'ask'
+      ? 'Dashboard'
+      : activeView === 'documents' || activeView === 'search'
+        ? 'Library'
+        : titleCase(activeView);
 
   useEffect(() => {
     Promise.all([getHealth(), getReadiness(), getModelTargets(), getCurrentUser()])
@@ -180,7 +186,7 @@ export function App() {
           setDocuments({ documents: [] });
           setJobs({ jobs: [] });
           setConversations({ conversations: [] });
-          setActiveView('settings');
+          setActiveView('ask');
           return;
         }
         const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
@@ -444,7 +450,7 @@ export function App() {
       setCurrentUser(await getCurrentUser());
       await switchTenant(created.tenant.id);
       if (hadNoWorkspace) {
-        setActiveView('documents');
+        setActiveView('ask');
       }
     } catch (err) {
       setError(messageFromError(err));
@@ -730,46 +736,45 @@ export function App() {
             onClick={() => setActiveView('ask')}
             type="button"
           >
-            Ask
+            Dashboard
           </button>
           <button
-            aria-pressed={activeView === 'search'}
+            aria-pressed={activeView === 'documents' || activeView === 'search'}
             className={
-              activeView === 'search' ? 'sideNavButton sideNavActive' : 'sideNavButton'
-            }
-            onClick={() => setActiveView('search')}
-            type="button"
-          >
-            Search
-          </button>
-          <button
-            aria-pressed={activeView === 'documents'}
-            className={
-              activeView === 'documents' ? 'sideNavButton sideNavActive' : 'sideNavButton'
+              activeView === 'documents' || activeView === 'search'
+                ? 'sideNavButton sideNavActive'
+                : 'sideNavButton'
             }
             onClick={() => setActiveView('documents')}
             type="button"
           >
-            Documents
+            Library
           </button>
           <button
-            aria-pressed={activeView === 'activity'}
+            aria-pressed={activeView === 'activity' || activeView === 'history'}
             className={
-              activeView === 'activity' ? 'sideNavButton sideNavActive' : 'sideNavButton'
+              activeView === 'activity' || activeView === 'history'
+                ? 'sideNavButton sideNavActive'
+                : 'sideNavButton'
             }
             onClick={() => setActiveView('activity')}
             type="button"
           >
             Activity
           </button>
+          <button
+            aria-pressed={activeView === 'settings'}
+            className={activeView === 'settings' ? 'sideNavButton sideNavActive' : 'sideNavButton'}
+            onClick={() => setActiveView('settings')}
+            type="button"
+          >
+            Settings
+          </button>
         </nav>
 
         <section className="sideSection">
           <div className="sideSectionHeader">
             <span>Workspace</span>
-            <button onClick={() => setActiveView('settings')} type="button">
-              Settings
-            </button>
           </div>
           <select
             aria-label="Workspace"
@@ -788,80 +793,8 @@ export function App() {
           </select>
         </section>
 
-        <section className="sideSection sideBrowse">
-          <div className="sideSectionHeader">
-            <span>Documents</span>
-            <button onClick={() => setActiveView('documents')} type="button">
-              Open
-            </button>
-          </div>
-          <div className="sideList">
-            {documents?.documents.slice(0, 6).map((document) => (
-              <button
-                className={
-                  documentDetail?.document.id === document.id
-                    ? 'sideListItem sideListItemActive'
-                    : 'sideListItem'
-                }
-                key={document.id}
-                onClick={() => {
-                  setActiveView('documents');
-                  void openDocument(document);
-                }}
-                type="button"
-              >
-                <span>{document.name}</span>
-                <em>{document.status}</em>
-              </button>
-            ))}
-            {documents && documents.documents.length === 0 && (
-              <p className="sideEmpty">No documents</p>
-            )}
-          </div>
-        </section>
-
-        <section className="sideSection sideGrow">
-          <div className="sideSectionHeader">
-            <span>History</span>
-            <button onClick={() => setActiveView('history')} type="button">
-              Open
-            </button>
-          </div>
-          <div className="sideList">
-            {conversations?.conversations.slice(0, 8).map((conversation) => (
-              <button
-                className={
-                  selectedConversationID === conversation.id
-                    ? 'sideListItem sideListItemActive'
-                    : 'sideListItem'
-                }
-                key={conversation.id}
-                onClick={() => {
-                  setActiveView('ask');
-                  void openConversation(conversation);
-                }}
-                type="button"
-              >
-                <span>{conversation.title || conversation.id}</span>
-                <em>{formatDateTime(conversation.updated_at)}</em>
-              </button>
-            ))}
-            {conversations && conversations.conversations.length === 0 && (
-              <p className="sideEmpty">No conversations</p>
-            )}
-          </div>
-        </section>
-
         <footer className="sideFooter">
           <span>{currentUser?.user.email ?? 'dev@example.local'}</span>
-          <button
-            aria-pressed={activeView === 'settings'}
-            className={activeView === 'settings' ? 'sideNavButton sideNavActive' : 'sideNavButton'}
-            onClick={() => setActiveView('settings')}
-            type="button"
-          >
-            Settings
-          </button>
         </footer>
       </aside>
 
@@ -869,7 +802,7 @@ export function App() {
         <header className="contentHeader">
           <div>
             <p className="eyebrow">{workspaceLabel}</p>
-            <h2>{activeView === 'documents' ? 'Documents' : titleCase(activeView)}</h2>
+            <h2>{contentTitle}</h2>
           </div>
           <span className={trackingIngestion ? 'syncStatus syncActive' : 'syncStatus'}>
             {activeView === 'settings' ? readiness?.provider_preset ?? 'starter' : ingestionLabel}
@@ -880,7 +813,9 @@ export function App() {
 
         <section className="workspace">
           {activeView === 'ask' && (
-            <div className="workspaceSplit">
+            workspaceReady ? (
+              <div className="dashboardStack">
+                <div className="workspaceSplit">
               <div className="workSurface chatSurface">
                 <div className="surfaceHeader">
                   <h2>Ask</h2>
@@ -1065,7 +1000,112 @@ export function App() {
                   )}
                 </div>
               </aside>
-            </div>
+                </div>
+
+                <div className="dashboardSecondary">
+                  <section className="workSurface">
+                    <div className="surfaceHeader">
+                      <h2>Search</h2>
+                      <button onClick={() => setActiveView('documents')} type="button">
+                        Library
+                      </button>
+                    </div>
+                    <form className="searchBar" onSubmit={submitSearch}>
+                      <input
+                        aria-label="Search query"
+                        onChange={(event) =>
+                          setSearchForm((current) => ({ ...current, query: event.target.value }))
+                        }
+                        placeholder="Search documents"
+                        value={searchForm.query}
+                      />
+                      <DocumentSelect
+                        documents={documents?.documents ?? []}
+                        value={searchForm.document_id}
+                        onChange={(value) =>
+                          setSearchForm((current) => ({ ...current, document_id: value }))
+                        }
+                      />
+                      <button disabled={searching || !workspaceReady} type="submit">
+                        {searching ? 'Searching' : 'Search'}
+                      </button>
+                    </form>
+                    {searchResult && (
+                      <div className="resultStack">
+                        {searchResult.hits.map((hit, index) => (
+                          <ResultHit
+                            hit={hit}
+                            index={index}
+                            key={`${hit.document_id}:${hit.chunk_id}`}
+                          />
+                        ))}
+                        {searchResult.hits.length === 0 && <p className="muted">No matches</p>}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="workSurface">
+                    <div className="surfaceHeader">
+                      <h2>Recent</h2>
+                      <span>{documents?.documents.length ?? 0} documents</span>
+                    </div>
+                    <div className="dashboardList">
+                      {documents?.documents.slice(0, 3).map((document) => (
+                        <button
+                          className="contextDoc"
+                          key={document.id}
+                          onClick={() => {
+                            setActiveView('documents');
+                            void openDocument(document);
+                          }}
+                          type="button"
+                        >
+                          <strong>{document.name}</strong>
+                          <span className={stateClass(document.status)}>{document.status}</span>
+                        </button>
+                      ))}
+                      {conversations?.conversations.slice(0, 3).map((conversation) => (
+                        <button
+                          className="contextDoc"
+                          key={conversation.id}
+                          onClick={() => {
+                            setActiveView('ask');
+                            void openConversation(conversation);
+                          }}
+                          type="button"
+                        >
+                          <strong>{conversation.title || conversation.id}</strong>
+                          <span>{formatDateTime(conversation.updated_at)}</span>
+                        </button>
+                      ))}
+                      {documents &&
+                        conversations &&
+                        documents.documents.length === 0 &&
+                        conversations.conversations.length === 0 && (
+                          <p className="muted">No recent work</p>
+                        )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            ) : (
+              <section className="workSurface dashboardStart">
+                <div className="surfaceHeader">
+                  <h2>Create workspace</h2>
+                  <span>{currentUser?.user.email ?? 'dev@example.local'}</span>
+                </div>
+                <form className="inlineForm dashboardStartForm" onSubmit={submitTenant}>
+                  <input
+                    aria-label="Workspace name"
+                    onChange={(event) => setTenantName(event.target.value)}
+                    value={tenantName}
+                  />
+                  <button disabled={creatingTenant} type="submit">
+                    {creatingTenant ? 'Creating' : 'Create'}
+                  </button>
+                </form>
+              </section>
+            )
           )}
 
         {activeView === 'documents' && (
@@ -1477,8 +1517,8 @@ export function App() {
         )}
 
         {activeView === 'settings' && (
-          <div className="settingsGrid">
-            <section className="workSurface">
+          <div className={workspaceReady ? 'settingsGrid' : 'settingsGrid settingsGridFocused'}>
+            <section className="workSurface settingsPrimary">
               <div className="surfaceHeader">
                 <h2>Workspaces</h2>
                 <span>{currentUser?.user.email ?? 'Unknown user'}</span>
@@ -1535,256 +1575,263 @@ export function App() {
               </div>
             </section>
 
-            <section className="workSurface">
-              <div className="surfaceHeader">
-                <h2>Members</h2>
-                <span>{workspaceLabel}</span>
-              </div>
-              {!workspaceReady && <p className="muted">No workspace</p>}
-              {workspaceReady && !canManageMembers && (
-                <p className="muted">Owner or admin access required</p>
-              )}
-              {workspaceReady && canManageMembers && (
-                <>
-                  <details className="inlineDetails">
-                    <summary>Add member</summary>
-                    <form className="memberForm" onSubmit={submitMember}>
-                      <input
-                        aria-label="Member user ID"
-                        onChange={(event) =>
-                          setMemberForm((current) => ({
-                            ...current,
-                            user_id: event.target.value,
-                          }))
-                        }
-                        placeholder="User ID"
-                        value={memberForm.user_id}
-                      />
-                      <input
-                        aria-label="Member email"
-                        onChange={(event) =>
-                          setMemberForm((current) => ({ ...current, email: event.target.value }))
-                        }
-                        placeholder="Email"
-                        type="email"
-                        value={memberForm.email}
-                      />
-                      <input
-                        aria-label="Member name"
-                        onChange={(event) =>
-                          setMemberForm((current) => ({ ...current, name: event.target.value }))
-                        }
-                        placeholder="Name"
-                        value={memberForm.name}
-                      />
-                      <select
-                        aria-label="Member role"
-                        onChange={(event) =>
-                          setMemberForm((current) => ({ ...current, role: event.target.value }))
-                        }
-                        value={memberForm.role}
-                      >
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                        <option value="admin">Admin</option>
-                        <option value="owner">Owner</option>
-                      </select>
-                      <button disabled={savingMember} type="submit">
-                        {savingMember ? 'Saving' : 'Add'}
-                      </button>
-                    </form>
-                  </details>
-
-                  <div className="dataTable memberTable">
-                    <div className="dataHeader">
-                      <span>User</span>
-                      <span>Role</span>
-                      <span></span>
-                    </div>
-                    {tenantMembers?.members.map((member) => {
-                      const isCurrentUser = member.user.id === currentUser?.user.id;
-                      const isLastOwner = member.role === 'owner' && ownerCount <= 1;
-                      return (
-                        <div className="dataRow memberRow" key={member.user.id}>
-                          <strong>{member.user.email}</strong>
-                          <span>{member.role}</span>
-                          <button
-                            className="dangerButton"
-                            disabled={
-                              removingMemberID === member.user.id ||
-                              isCurrentUser ||
-                              isLastOwner
-                            }
-                            onClick={() =>
-                              void removeTenantMember(member.user.id, member.user.email)
-                            }
-                            type="button"
-                          >
-                            {removingMemberID === member.user.id ? 'Removing' : 'Remove'}
-                          </button>
-                        </div>
-                      );
-                    })}
-                    {tenantMembers && tenantMembers.members.length === 0 && (
-                      <p className="muted">No members</p>
-                    )}
-                    {!tenantMembers && <p className="muted">Loading members</p>}
-                  </div>
-                </>
-              )}
-            </section>
-
-            <section className="workSurface">
-              <div className="surfaceHeader">
-                <h2>Providers</h2>
-                <span>{readiness?.provider_preset ?? 'unknown'}</span>
-              </div>
-              <ProviderPanel readiness={readiness} targets={targets} />
-              <details className="inlineDetails">
-                <summary>Runtime</summary>
-                <dl className="runtimeList">
-                  <div>
-                    <dt>API</dt>
-                    <dd>{apiBase()}</dd>
-                  </div>
-                  <div>
-                    <dt>Auth</dt>
-                    <dd>{readiness?.auth_mode ?? 'unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Storage</dt>
-                    <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Objects</dt>
-                    <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Queue</dt>
-                    <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
-                  </div>
-                </dl>
-              </details>
-              <details className="inlineDetails">
-                <summary>Model Targets</summary>
-                <div className="dataTable targetTable">
-                  <div className="dataHeader">
-                    <span>Target</span>
-                    <span>Model</span>
-                    <span>Check</span>
-                    <span></span>
-                  </div>
-                  {targets.map((target) => {
-                    const check = targetChecks[target.name];
-                    return (
-                      <div className="dataRow targetRow" key={target.name}>
-                        <span>{target.name}</span>
-                        <strong>{target.model}</strong>
-                        <em
-                          className={
-                            check?.state === 'ok'
-                              ? 'checkReady'
-                              : check?.state === 'failed'
-                                ? 'checkFailed'
-                                : ''
+            {workspaceReady && (
+              <section className="workSurface">
+                <div className="surfaceHeader">
+                  <h2>Members</h2>
+                  <span>{workspaceLabel}</span>
+                </div>
+                {!canManageMembers && <p className="muted">Owner or admin access required</p>}
+                {canManageMembers && (
+                  <>
+                    <details className="inlineDetails">
+                      <summary>Add member</summary>
+                      <form className="memberForm" onSubmit={submitMember}>
+                        <input
+                          aria-label="Member user ID"
+                          onChange={(event) =>
+                            setMemberForm((current) => ({
+                              ...current,
+                              user_id: event.target.value,
+                            }))
                           }
+                          placeholder="User ID"
+                          value={memberForm.user_id}
+                        />
+                        <input
+                          aria-label="Member email"
+                          onChange={(event) =>
+                            setMemberForm((current) => ({ ...current, email: event.target.value }))
+                          }
+                          placeholder="Email"
+                          type="email"
+                          value={memberForm.email}
+                        />
+                        <input
+                          aria-label="Member name"
+                          onChange={(event) =>
+                            setMemberForm((current) => ({ ...current, name: event.target.value }))
+                          }
+                          placeholder="Name"
+                          value={memberForm.name}
+                        />
+                        <select
+                          aria-label="Member role"
+                          onChange={(event) =>
+                            setMemberForm((current) => ({ ...current, role: event.target.value }))
+                          }
+                          value={memberForm.role}
                         >
-                          {check?.detail ?? target.provider}
-                        </em>
-                        <button
-                          disabled={checkingTarget === target.name}
-                          onClick={() => void testModelTarget(target.name)}
-                          type="button"
-                        >
-                          {checkingTarget === target.name ? 'Testing' : 'Test'}
+                          <option value="member">Member</option>
+                          <option value="viewer">Viewer</option>
+                          <option value="admin">Admin</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <button disabled={savingMember} type="submit">
+                          {savingMember ? 'Saving' : 'Add'}
                         </button>
+                      </form>
+                    </details>
+
+                    <div className="dataTable memberTable">
+                      <div className="dataHeader">
+                        <span>User</span>
+                        <span>Role</span>
+                        <span></span>
                       </div>
-                    );
-                  })}
-                  {targets.length === 0 && <p className="muted">No targets</p>}
+                      {tenantMembers?.members.map((member) => {
+                        const isCurrentUser = member.user.id === currentUser?.user.id;
+                        const isLastOwner = member.role === 'owner' && ownerCount <= 1;
+                        return (
+                          <div className="dataRow memberRow" key={member.user.id}>
+                            <strong>{member.user.email}</strong>
+                            <span>{member.role}</span>
+                            <button
+                              className="dangerButton"
+                              disabled={
+                                removingMemberID === member.user.id ||
+                                isCurrentUser ||
+                                isLastOwner
+                              }
+                              onClick={() =>
+                                void removeTenantMember(member.user.id, member.user.email)
+                              }
+                              type="button"
+                            >
+                              {removingMemberID === member.user.id ? 'Removing' : 'Remove'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {tenantMembers && tenantMembers.members.length === 0 && (
+                        <p className="muted">No members</p>
+                      )}
+                      {!tenantMembers && <p className="muted">Loading members</p>}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+
+            <section className="settingsAdvanced settingsWide">
+              <details className="settingsDetails">
+                <summary>
+                  <span>Runtime</span>
+                  <em>{readiness?.provider_preset ?? 'unknown'}</em>
+                </summary>
+                <div className="settingsDetailsBody">
+                  <ProviderPanel readiness={readiness} targets={targets} />
+                  <details className="inlineDetails">
+                    <summary>Services</summary>
+                    <dl className="runtimeList">
+                      <div>
+                        <dt>API</dt>
+                        <dd>{apiBase()}</dd>
+                      </div>
+                      <div>
+                        <dt>Auth</dt>
+                        <dd>{readiness?.auth_mode ?? 'unknown'}</dd>
+                      </div>
+                      <div>
+                        <dt>Storage</dt>
+                        <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
+                      </div>
+                      <div>
+                        <dt>Objects</dt>
+                        <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
+                      </div>
+                      <div>
+                        <dt>Queue</dt>
+                        <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                  <details className="inlineDetails">
+                    <summary>Model Targets</summary>
+                    <div className="dataTable targetTable">
+                      <div className="dataHeader">
+                        <span>Target</span>
+                        <span>Model</span>
+                        <span>Check</span>
+                        <span></span>
+                      </div>
+                      {targets.map((target) => {
+                        const check = targetChecks[target.name];
+                        return (
+                          <div className="dataRow targetRow" key={target.name}>
+                            <span>{target.name}</span>
+                            <strong>{target.model}</strong>
+                            <em
+                              className={
+                                check?.state === 'ok'
+                                  ? 'checkReady'
+                                  : check?.state === 'failed'
+                                    ? 'checkFailed'
+                                    : ''
+                              }
+                            >
+                              {check?.detail ?? target.provider}
+                            </em>
+                            <button
+                              disabled={checkingTarget === target.name}
+                              onClick={() => void testModelTarget(target.name)}
+                              type="button"
+                            >
+                              {checkingTarget === target.name ? 'Testing' : 'Test'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {targets.length === 0 && <p className="muted">No targets</p>}
+                    </div>
+                  </details>
                 </div>
               </details>
-            </section>
 
-            <section className="workSurface settingsWide">
-              <div className="surfaceHeader">
-                <h2>Diagnostics</h2>
-                <button onClick={() => void refreshRuntime()} type="button">
-                  Refresh
-                </button>
-              </div>
+              <details className="settingsDetails">
+                <summary>
+                  <span>Diagnostics</span>
+                  <em>{health?.status === 'ok' ? 'healthy' : 'offline'}</em>
+                </summary>
+                <div className="settingsDetailsBody">
+                  <div className="settingsDetailsActions">
+                    <button onClick={() => void refreshRuntime()} type="button">
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="statusGrid">
+                    <StatusTile
+                      detail={health?.version ?? apiBase()}
+                      label="API"
+                      ready={health?.status === 'ok'}
+                      value={health?.status ?? 'offline'}
+                    />
+                    <StatusTile
+                      detail={readiness?.run_migrations ? 'migrations on' : 'migrations off'}
+                      label="Database"
+                      ready={readiness?.status === 'ready'}
+                      value={readiness?.persistence_backend ?? 'unknown'}
+                    />
+                    <StatusTile
+                      detail={readiness?.object_store_configured ? 'configured' : 'local profile'}
+                      label="Objects"
+                      ready={readiness?.status === 'ready'}
+                      value={readiness?.object_storage_backend ?? 'unknown'}
+                    />
+                    <StatusTile
+                      detail={readiness?.vector_collection ?? 'documents'}
+                      label="Vectors"
+                      ready={readiness?.status === 'ready'}
+                      value={readiness?.vector_backend ?? 'unknown'}
+                    />
+                    <StatusTile
+                      detail={readiness?.embedding_model ?? 'unknown'}
+                      label="Embeddings"
+                      ready={readiness?.status === 'ready'}
+                      value={readiness?.embedding_backend ?? 'unknown'}
+                    />
+                    <StatusTile
+                      detail={readiness?.model_gateway_auth ? 'auth configured' : 'no gateway auth'}
+                      label="Model Gateway"
+                      ready={readiness?.status === 'ready'}
+                      value={readiness?.model_gateway ?? 'unknown'}
+                    />
+                    <StatusTile
+                      detail={`${jobs?.jobs.length ?? 0} recent jobs`}
+                      label="Worker"
+                      ready={Boolean(jobs)}
+                      value={activeJobCount > 0 ? `${activeJobCount} active` : 'idle'}
+                    />
+                    <StatusTile
+                      detail={`${targets.length} configured`}
+                      label="Targets"
+                      ready={targets.length > 0}
+                      value={targets[0]?.name ?? 'none'}
+                    />
+                  </div>
 
-              <div className="statusGrid">
-                <StatusTile
-                  detail={health?.version ?? apiBase()}
-                  label="API"
-                  ready={health?.status === 'ok'}
-                  value={health?.status ?? 'offline'}
-                />
-                <StatusTile
-                  detail={readiness?.run_migrations ? 'migrations on' : 'migrations off'}
-                  label="Database"
-                  ready={readiness?.status === 'ready'}
-                  value={readiness?.persistence_backend ?? 'unknown'}
-                />
-                <StatusTile
-                  detail={readiness?.object_store_configured ? 'configured' : 'local profile'}
-                  label="Objects"
-                  ready={readiness?.status === 'ready'}
-                  value={readiness?.object_storage_backend ?? 'unknown'}
-                />
-                <StatusTile
-                  detail={readiness?.vector_collection ?? 'documents'}
-                  label="Vectors"
-                  ready={readiness?.status === 'ready'}
-                  value={readiness?.vector_backend ?? 'unknown'}
-                />
-                <StatusTile
-                  detail={readiness?.embedding_model ?? 'unknown'}
-                  label="Embeddings"
-                  ready={readiness?.status === 'ready'}
-                  value={readiness?.embedding_backend ?? 'unknown'}
-                />
-                <StatusTile
-                  detail={readiness?.model_gateway_auth ? 'auth configured' : 'no gateway auth'}
-                  label="Model Gateway"
-                  ready={readiness?.status === 'ready'}
-                  value={readiness?.model_gateway ?? 'unknown'}
-                />
-                <StatusTile
-                  detail={`${jobs?.jobs.length ?? 0} recent jobs`}
-                  label="Worker"
-                  ready={Boolean(jobs)}
-                  value={activeJobCount > 0 ? `${activeJobCount} active` : 'idle'}
-                />
-                <StatusTile
-                  detail={`${targets.length} configured`}
-                  label="Targets"
-                  ready={targets.length > 0}
-                  value={targets[0]?.name ?? 'none'}
-                />
-              </div>
-
-              <details className="inlineDetails">
-                <summary>Endpoints</summary>
-                <dl className="runtimeList">
-                  <div>
-                    <dt>API</dt>
-                    <dd>{apiBase()}</dd>
-                  </div>
-                  <div>
-                    <dt>Queue</dt>
-                    <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Models</dt>
-                    <dd>{readiness?.model_gateway ?? 'unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Embeddings</dt>
-                    <dd>{readiness?.embedding_gateway ?? 'unknown'}</dd>
-                  </div>
-                </dl>
+                  <details className="inlineDetails">
+                    <summary>Endpoints</summary>
+                    <dl className="runtimeList">
+                      <div>
+                        <dt>API</dt>
+                        <dd>{apiBase()}</dd>
+                      </div>
+                      <div>
+                        <dt>Queue</dt>
+                        <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
+                      </div>
+                      <div>
+                        <dt>Models</dt>
+                        <dd>{readiness?.model_gateway ?? 'unknown'}</dd>
+                      </div>
+                      <div>
+                        <dt>Embeddings</dt>
+                        <dd>{readiness?.embedding_gateway ?? 'unknown'}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                </div>
               </details>
             </section>
           </div>

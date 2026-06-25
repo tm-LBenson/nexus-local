@@ -279,6 +279,7 @@ h3 {
 .sideFooter {
   display: grid;
   gap: 8px;
+  align-self: end;
   border-top: 1px solid #362931;
   padding-top: 12px;
 }
@@ -472,6 +473,31 @@ h3 {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 14px;
   align-items: start;
+}
+
+.dashboardStack {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboardSecondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.dashboardList {
+  display: grid;
+  gap: 6px;
+}
+
+.dashboardStart {
+  max-width: 680px;
+}
+
+.dashboardStartForm {
+  max-width: 520px;
 }
 
 .chatSurface {
@@ -1325,8 +1351,73 @@ h3 {
   gap: 14px;
 }
 
+.settingsGridFocused {
+  grid-template-columns: minmax(0, 680px);
+  justify-content: start;
+}
+
 .settingsWide {
   grid-column: 1 / -1;
+}
+
+.settingsAdvanced {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsDetails {
+  border: 1px solid #d3ddde;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(23, 32, 38, 0.04);
+  overflow: hidden;
+}
+
+.settingsDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  color: #172026;
+  font-weight: 850;
+  list-style: none;
+  cursor: pointer;
+}
+
+.settingsDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.settingsDetails summary:hover {
+  background: #f8fbfa;
+}
+
+.settingsDetails[open] summary {
+  border-bottom: 1px solid #e4ebeb;
+}
+
+.settingsDetails summary em {
+  min-width: 0;
+  overflow: hidden;
+  color: #69777d;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsDetailsBody {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.settingsDetailsActions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .statusGrid {
@@ -1425,6 +1516,7 @@ h3 {
 
   .topbar,
   .workspaceSplit,
+  .dashboardSecondary,
   .settingsGrid,
   .providerPanel,
   .statusGrid {
