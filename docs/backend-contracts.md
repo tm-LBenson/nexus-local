@@ -30,6 +30,8 @@ HTTP routes use an authenticated principal and then check tenant permissions aga
 
 Product services still receive explicit user and tenant IDs, but HTTP handlers now derive owner IDs from the authenticated principal instead of trusting client-provided owner fields.
 
+The production auth Compose profile runs this mode behind Caddy. Caddy performs forward-auth, strips spoofable identity headers from incoming requests, and only forwards `X-User-ID` and `X-User-Email` after the auth gateway returns authenticated `Remote-User` and `Remote-Email` headers.
+
 Identity bootstrap endpoints:
 
 - `GET /v1/me`: persists/returns the authenticated principal and tenant memberships.

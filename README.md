@@ -261,9 +261,12 @@ Current profiles documented in [Deployment Profiles](docs/deployment-profiles.md
 - `cpu-lite`: NAS-only app services, no local GPU runtime.
 - `split-nas-gpu`: NAS runs core services, desktop or rented GPU runs inference.
 - `gpu-local`: one GPU machine runs the full stack plus inference.
+- `prod-auth`: Caddy plus trusted-header auth behind an Authelia-compatible gateway.
 - `prod-single-node`: one server running the application stack.
 - `prod-k3s`: Kubernetes-ready deployment direction.
 - `external-ai`: self-host the app while using a remote model provider.
+
+See [Production Auth](docs/production-auth.md) for the Caddy/trusted-header deployment profile.
 
 ## Roadmap
 
@@ -273,7 +276,6 @@ Near-term priorities:
 - Better worker visibility and retry controls.
 - Streaming chat responses.
 - More document management tools.
-- Reverse-proxy/OIDC deployment examples.
 - Observability stack examples with Prometheus/Grafana/OpenTelemetry.
 
 ## License

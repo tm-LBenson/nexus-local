@@ -51,6 +51,20 @@ One GPU machine runs the whole stack. Good for a lab box, power user desktop, or
 
 One production server with fast NVMe, ECC memory if possible, and a 24 GB or larger GPU. Docker Compose remains acceptable here if operations stay simple.
 
+## prod-auth
+
+Production-facing Compose profile with Caddy as the public entrypoint and the API running in `AUTH_MODE=trusted-header`.
+
+Use:
+
+```powershell
+docker compose -f deploy\compose\compose.prod-auth.yml --env-file .env up -d --build
+```
+
+This profile expects an Authelia-compatible forward-auth gateway at `AUTHELIA_INTERNAL_URL`. Caddy strips client-supplied identity headers, asks the auth gateway to authorize the request, maps `Remote-User` and `Remote-Email` into the trusted API headers, and proxies frontend API calls through `/api`.
+
+See [Production Auth](production-auth.md) for setup and security notes.
+
 ## prod-k3s
 
 K3s or Kubernetes profile for many users, multiple nodes, GPU scheduling, and clean upgrades. This is the right target once deployments need orchestration rather than just containers.

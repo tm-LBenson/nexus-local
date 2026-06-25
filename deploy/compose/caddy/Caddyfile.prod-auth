@@ -1,0 +1,32 @@
+{$NEXUS_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	route {
+		request_header -Remote-User
+		request_header -Remote-Email
+		request_header -Remote-Groups
+		request_header -Remote-Name
+		request_header -X-User-ID
+		request_header -X-User-Email
+		request_header -X-User-Groups
+		request_header -X-User-Name
+
+		forward_auth {$AUTHELIA_INTERNAL_URL:http://authelia:9091} {
+			uri /api/authz/forward-auth
+			copy_headers {
+				Remote-User>X-User-ID
+				Remote-Email>X-User-Email
+				Remote-Groups>X-User-Groups
+				Remote-Name>X-User-Name
+			}
+		}
+
+		handle_path /api/* {
+			reverse_proxy api:8080
+		}
+
+		handle {
+			reverse_proxy web:80
+		}
+	}
+}

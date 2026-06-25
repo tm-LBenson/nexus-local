@@ -1,0 +1,165 @@
+name: nexus-local-prod-auth
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-app} -d $${POSTGRES_DB:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js"]
+    volumes:
+      - nats-data:/data
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    volumes:
+      - valkey-data:/data
+
+  api:
+    build:
+      context: ../../services/api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_ENV: production
+      HTTP_ADDR: :8080
+      CORS_ALLOWED_ORIGIN: ${NEXUS_PUBLIC_URL:-http://localhost:8088}
+      AUTH_MODE: trusted-header
+      TRUSTED_USER_ID_HEADER: X-User-ID
+      TRUSTED_EMAIL_HEADER: X-User-Email
+      PERSISTENCE_BACKEND: postgres
+      RUN_MIGRATIONS: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      OBJECT_STORAGE_BACKEND: minio
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-documents}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-hash}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8082/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      VECTOR_BACKEND: qdrant
+      VECTOR_BASE_URL: http://qdrant:6333
+      VECTOR_COLLECTION: ${VECTOR_COLLECTION:-documents}
+      VECTOR_API_KEY: ${VECTOR_API_KEY:-}
+      QUEUE_BACKEND: nats
+      QUEUE_URL: nats://nats:4222
+      CACHE_URL: redis://valkey:6379/0
+      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-http://host.docker.internal:8000/v1}
+      MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-}
+      DEFAULT_MODEL_TARGET: ${DEFAULT_MODEL_TARGET:-general}
+      GENERAL_MODEL_ID: ${GENERAL_MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      nats:
+        condition: service_started
+      valkey:
+        condition: service_started
+
+  worker:
+    build:
+      context: ../../services/api
+    entrypoint: ["/worker"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_ENV: production
+      PERSISTENCE_BACKEND: postgres
+      RUN_MIGRATIONS: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      OBJECT_STORAGE_BACKEND: minio
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-documents}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-hash}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8082/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      VECTOR_BACKEND: qdrant
+      VECTOR_BASE_URL: http://qdrant:6333
+      VECTOR_COLLECTION: ${VECTOR_COLLECTION:-documents}
+      VECTOR_API_KEY: ${VECTOR_API_KEY:-}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  web:
+    build:
+      context: ../../apps/web
+      args:
+        VITE_API_BASE_URL: ${WEB_API_BASE_URL:-/api}
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_started
+
+  caddy:
+    image: caddy:2-alpine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NEXUS_SITE_ADDRESS: ${NEXUS_SITE_ADDRESS:-:80}
+      AUTHELIA_INTERNAL_URL: ${AUTHELIA_INTERNAL_URL:-http://authelia:9091}
+    ports:
+      - "${NEXUS_HTTP_PORT:-8088}:80"
+      - "${NEXUS_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./caddy/Caddyfile.prod-auth:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  minio-data:
+  qdrant-data:
+  nats-data:
+  valkey-data:
+  caddy-data:
+  caddy-config:
