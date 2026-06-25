@@ -1,84 +1,142 @@
 # Nexus Local
 
-This is the new portable foundation for a self-hosted AI application built for private local AI workflows, but designed so the backend, model runtime, storage, vector search, and deployment target can change independently.
+Nexus Local is a self-hosted AI workspace for private document ingestion, semantic search, and retrieval-augmented chat. It is designed to run on local hardware, a NAS plus GPU workstation, rented GPU infrastructure, or a conventional cloud server without tying the application to one vendor.
 
-## Stack Direction
+The project is early, but the core shape is already in place: a replaceable backend, a slim web UI, provider-neutral storage/search/model interfaces, and Docker profiles for self-hosted deployment.
 
-- Backend: Go API and workers for low-latency I/O, streaming, jobs, and predictable deployment.
-- Frontend: React + Vite app shell, kept API-driven and replaceable.
-- Data: Postgres for relational state, Qdrant for vector search at scale.
-- Storage: S3-compatible object storage through MinIO locally and S3-compatible providers elsewhere.
-- Jobs/events: NATS JetStream for durable work queues and event streams.
-- Cache/rate limits: Valkey.
-- Inference: OpenAI-compatible model gateway, backed by local vLLM/Ollama, rented GPU, or external API.
-- Auth: provider-neutral API auth boundary with local `dev` mode and `trusted-header` mode for reverse-proxy/OIDC setups.
-- Observability: OpenTelemetry-first, with Prometheus/Grafana/Langfuse planned as separate deployment services.
+## What It Does
 
-## TDD Stance
+- Upload documents into tenant-scoped workspaces.
+- Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
+- Chunk, embed, and index documents for semantic retrieval.
+- Search across indexed document chunks.
+- Ask questions over uploaded documents through an OpenAI-compatible model gateway.
+- Track ingestion jobs and background activity.
+- Review and resume conversation history.
+- Soft-delete documents and clean up stored objects and vectors.
 
-TDD is worth it here, but only where it protects architecture decisions. We will use contract-first tests around provider boundaries, routing, auth, storage, jobs, and data access. We will not slow down early UI exploration with brittle tests for every visual detail.
+## Architecture
 
-The first test surface is model routing: the app should not care whether a request goes to a desktop GPU, NAS CPU profile, AWS GPU worker, or hosted provider.
+Nexus Local is built as a small monorepo:
+
+```text
+apps/web              React/Vite frontend
+services/api          Go HTTP API and worker binaries
+deploy/compose        Docker Compose deployment profiles
+docs                  Architecture and operating notes
+scripts               Local helper scripts
+```
+
+The backend keeps infrastructure replaceable through provider contracts:
+
+- Relational data: memory for fast local development, Postgres for durable deployments.
+- Object storage: memory for local development, MinIO/S3-compatible storage for self-hosted deployments.
+- Vector search: memory for tests and single-process experiments, Qdrant for shared deployments.
+- Inference: OpenAI-compatible model gateway for local vLLM/Ollama-compatible services, rented GPUs, or hosted providers.
+- Workers: Go worker process for asynchronous document ingestion.
+
+## Requirements
+
+For local development:
+
+- Go 1.25+
+- Node.js 22+
+- npm
+
+For the containerized stack:
+
+- Docker
+- Docker Compose
+
+For useful AI answers beyond mock/local hashing:
+
+- An OpenAI-compatible chat endpoint
+- Optional external embedding endpoint, or the built-in hash embedder for development/testing
 
 ## Quick Start
 
-The API now targets Go 1.25 because the Postgres adapter uses current `pgx`.
-
-Memory-backed local API:
+Clone the repository:
 
 ```powershell
-cd C:\path\to\nexus-local\services\api
+git clone https://github.com/tm-LBenson/nexus-local.git
+cd nexus-local
+```
+
+Run the API with in-memory storage:
+
+```powershell
+cd services\api
 go test ./...
 go run ./cmd/api
 ```
 
-Containerized Postgres-backed stack:
+In another terminal, run the web app:
 
 ```powershell
-cd C:\path\to\nexus-local\deploy\compose
+cd apps\web
+npm install
+npm run dev
+```
+
+Open the Vite URL printed by the web dev server, usually:
+
+```text
+http://localhost:5173
+```
+
+## Docker Compose
+
+The CPU profile starts the API, web app, worker, Postgres, MinIO, Qdrant, NATS, and Valkey:
+
+```powershell
+cd deploy\compose
 docker compose -f compose.cpu.yml up --build
 ```
 
-The API image includes two entrypoints:
+Default service URLs:
 
-- `/api`: HTTP API
-- `/worker`: background document ingestion worker
+- Web: `http://localhost:5173`
+- API health: `http://localhost:8080/healthz`
+- API readiness: `http://localhost:8080/readyz`
+- MinIO console: `http://localhost:9001`
+- Qdrant: `http://localhost:6333`
 
-Local development defaults to `AUTH_MODE=dev`, which injects `DEV_USER_ID=user_1`. For a production self-hosted deployment, put the API behind a trusted identity-aware proxy and set `AUTH_MODE=trusted-header`; tenant permissions are then checked against stored memberships.
+## Configuration
 
-Then open:
+The API is configured through environment variables. Common settings:
 
-- Health: `http://localhost:8080/healthz`
-- Readiness: `http://localhost:8080/readyz`
-- Current user: `GET http://localhost:8080/v1/me`
-- Create tenant: `POST http://localhost:8080/v1/tenants`
-- Model targets: `http://localhost:8080/v1/model-targets`
-- Documents: `GET http://localhost:8080/v1/documents?tenant_id=tenant_1`
-- Delete document: `DELETE http://localhost:8080/v1/documents/doc_123?tenant_id=tenant_1`
-- Jobs/activity: `GET http://localhost:8080/v1/jobs?tenant_id=tenant_1`
-- Document search: `POST http://localhost:8080/v1/search`
-- Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
-- Conversation history: `GET http://localhost:8080/v1/conversations?tenant_id=tenant_1`
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AUTH_MODE` | `dev` | `dev` for local development, `trusted-header` behind an identity-aware proxy. |
+| `PERSISTENCE_BACKEND` | `memory` | `memory` or `postgres`. |
+| `RUN_MIGRATIONS` | `false` | Runs embedded Postgres migrations on startup. |
+| `OBJECT_STORAGE_BACKEND` | `memory` | `memory` or `minio`. |
+| `VECTOR_BACKEND` | `memory` | `memory` or `qdrant`. |
+| `EMBEDDING_BACKEND` | `hash` | `hash` or OpenAI-compatible embeddings. |
+| `MODEL_GATEWAY_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible chat gateway. |
+| `GENERAL_MODEL_ID` | `Qwen/Qwen2.5-7B-Instruct` | Default model ID sent to the gateway. |
 
-Create your first tenant for the authenticated user:
+See [.env.example](.env.example) and [Deployment Profiles](docs/deployment-profiles.md) for more deployment-oriented settings.
 
-```powershell
-Invoke-RestMethod http://localhost:8080/v1/tenants `
-  -Method Post `
-  -ContentType 'application/json' `
-  -Body '{"name":"Personal Workspace"}'
-```
+## API Surface
 
-First workflow endpoint:
+Useful endpoints during development:
 
-```powershell
-Invoke-RestMethod http://localhost:8080/v1/documents/register `
-  -Method Post `
-  -ContentType 'application/json' `
-  -Body '{"tenant_id":"tenant_1","name":"Handbook.md","storage_key":"tenants/tenant_1/documents/source.md","size_bytes":42}'
-```
+- `GET /healthz`
+- `GET /readyz`
+- `GET /v1/me`
+- `POST /v1/tenants`
+- `GET /v1/model-targets`
+- `GET /v1/documents?tenant_id=tenant_1`
+- `POST /v1/documents/upload`
+- `DELETE /v1/documents/{document_id}?tenant_id=tenant_1`
+- `GET /v1/jobs?tenant_id=tenant_1`
+- `POST /v1/search`
+- `POST /v1/conversations/ask`
+- `GET /v1/conversations?tenant_id=tenant_1`
+- `GET /v1/conversations/{conversation_id}/messages?tenant_id=tenant_1`
 
-Object-storage-backed upload endpoint:
+Example document upload:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/v1/documents/upload `
@@ -86,9 +144,7 @@ Invoke-RestMethod http://localhost:8080/v1/documents/upload `
   -Form @{ tenant_id = 'tenant_1'; file = Get-Item .\README.md }
 ```
 
-Ingestion extracts text from UTF-8 text files, PDFs, and OpenXML Office files (`.docx`, `.pptx`, `.xlsx`).
-
-Tenant-scoped document search endpoint:
+Example search:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/v1/search `
@@ -97,7 +153,7 @@ Invoke-RestMethod http://localhost:8080/v1/search `
   -Body '{"tenant_id":"tenant_1","query":"deployment notes","limit":5}'
 ```
 
-Conversation ask endpoint:
+Example question:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/v1/conversations/ask `
@@ -106,46 +162,60 @@ Invoke-RestMethod http://localhost:8080/v1/conversations/ask `
   -Body '{"tenant_id":"tenant_1","question":"What do the deployment notes say?","limit":5}'
 ```
 
-Postgres integration tests are opt-in so normal test runs stay fast:
+## Tests
+
+Run backend tests:
+
+```powershell
+cd services\api
+go test ./...
+```
+
+Run frontend build checks:
+
+```powershell
+cd apps\web
+npm run build
+```
+
+Postgres integration tests are opt-in:
 
 ```powershell
 $env:TEST_DATABASE_URL='postgres://app:app@localhost:5432/app?sslmode=disable'
-cd C:\path\to\nexus-local\services\api
+cd services\api
 go test ./internal/store/postgres
 ```
 
-Qdrant integration tests are also opt-in:
+Qdrant integration tests are opt-in:
 
 ```powershell
 $env:TEST_QDRANT_URL='http://localhost:6333'
-cd C:\path\to\nexus-local\services\api
+cd services\api
 go test ./internal/providers/vector/qdrant
 ```
 
-## Project Layout
-
-```text
-apps/web              React/Vite frontend shell
-deploy/compose        Docker Compose deployment profiles
-docs                  Architecture and operating notes
-scripts               Local helper scripts
-services/api          Go API service
-```
-
-Key docs:
-
-- [Architecture](docs/architecture.md)
-- [Backend contracts](docs/backend-contracts.md)
-- [Deployment profiles](docs/deployment-profiles.md)
-- [Provider contracts](docs/provider-contracts.md)
-- [Testing strategy](docs/testing-strategy.md)
-- [Workers](docs/workers.md)
-
 ## Deployment Profiles
+
+Current profiles documented in [Deployment Profiles](docs/deployment-profiles.md):
 
 - `cpu-lite`: NAS-only app services, no local GPU runtime.
 - `split-nas-gpu`: NAS runs core services, desktop or rented GPU runs inference.
 - `gpu-local`: one GPU machine runs the full stack plus inference.
-- `prod-single-node`: one serious server, still Docker based.
-- `prod-k3s`: Kubernetes-ready shape for later multi-node installs.
-- `external-ai`: app self-hosted, model provider remote.
+- `prod-single-node`: one server running the application stack.
+- `prod-k3s`: Kubernetes-ready deployment direction.
+- `external-ai`: self-host the app while using a remote model provider.
+
+## Roadmap
+
+Near-term priorities:
+
+- Stronger local setup scripts.
+- Better worker visibility and retry controls.
+- Streaming chat responses.
+- More document management tools.
+- Production auth examples for reverse-proxy/OIDC deployments.
+- Observability stack examples with Prometheus/Grafana/OpenTelemetry.
+
+## License
+
+License information has not been finalized yet.
