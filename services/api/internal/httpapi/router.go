@@ -195,9 +195,18 @@ type searchRequest struct {
 type searchHitPayload struct {
 	DocumentID string            `json:"document_id"`
 	ChunkID    string            `json:"chunk_id"`
+	Source     sourcePayload     `json:"source"`
 	Text       string            `json:"text"`
 	Score      float32           `json:"score"`
 	Metadata   map[string]string `json:"metadata"`
+}
+
+type sourcePayload struct {
+	DocumentID   string `json:"document_id"`
+	DocumentName string `json:"document_name"`
+	ChunkID      string `json:"chunk_id"`
+	ChunkIndex   string `json:"chunk_index,omitempty"`
+	StorageKey   string `json:"storage_key,omitempty"`
 }
 
 type askConversationRequest struct {
@@ -790,9 +799,24 @@ func encodeSearchHit(hit providers.VectorHit) searchHitPayload {
 	return searchHitPayload{
 		DocumentID: string(hit.DocumentID),
 		ChunkID:    hit.ChunkID,
+		Source:     encodeSearchSource(hit),
 		Text:       hit.Text,
 		Score:      hit.Score,
 		Metadata:   hit.Metadata,
+	}
+}
+
+func encodeSearchSource(hit providers.VectorHit) sourcePayload {
+	documentName := strings.TrimSpace(hit.Metadata["document_name"])
+	if documentName == "" {
+		documentName = string(hit.DocumentID)
+	}
+	return sourcePayload{
+		DocumentID:   string(hit.DocumentID),
+		DocumentName: documentName,
+		ChunkID:      hit.ChunkID,
+		ChunkIndex:   strings.TrimSpace(hit.Metadata["chunk_index"]),
+		StorageKey:   strings.TrimSpace(hit.Metadata["storage_key"]),
 	}
 }
 

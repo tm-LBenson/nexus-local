@@ -429,6 +429,9 @@ func TestSearchEndpoint(t *testing.T) {
 	if body.Hits[0].Metadata["section"] != "planning" {
 		t.Fatalf("metadata = %#v", body.Hits[0].Metadata)
 	}
+	if body.Hits[0].Source.DocumentName != "Alpha Plan.md" {
+		t.Fatalf("source name = %q, want Alpha Plan.md", body.Hits[0].Source.DocumentName)
+	}
 }
 
 func TestSearchEndpointRejectsInvalidInput(t *testing.T) {
@@ -475,6 +478,9 @@ func TestAskConversationEndpoint(t *testing.T) {
 	}
 	if len(body.Hits) != 1 || body.Hits[0].DocumentID != "doc_search" {
 		t.Fatalf("hits = %#v", body.Hits)
+	}
+	if body.Hits[0].Source.DocumentName != "Alpha Plan.md" {
+		t.Fatalf("source name = %q, want Alpha Plan.md", body.Hits[0].Source.DocumentName)
 	}
 }
 
@@ -739,7 +745,11 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 			ChunkID:    "chunk_1",
 			Values:     seed.Vectors[0],
 			Text:       "alpha beta launch plan",
-			Metadata:   map[string]string{"section": "planning"},
+			Metadata: map[string]string{
+				"document_name": "Alpha Plan.md",
+				"section":       "planning",
+				"chunk_index":   "0",
+			},
 		},
 	}); err != nil {
 		t.Fatalf("seed vectors: %v", err)

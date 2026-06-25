@@ -108,6 +108,13 @@ export type ListJobsResponse = {
 export type SearchHit = {
   document_id: string;
   chunk_id: string;
+  source: {
+    document_id: string;
+    document_name: string;
+    chunk_id: string;
+    chunk_index?: string;
+    storage_key?: string;
+  };
   text: string;
   score: number;
   metadata: Record<string, string>;

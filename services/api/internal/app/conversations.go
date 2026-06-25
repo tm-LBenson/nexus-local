@@ -401,9 +401,25 @@ func questionWithContext(question string, hits []providers.VectorHit) string {
 		return builder.String()
 	}
 	for index, hit := range hits {
-		builder.WriteString(fmt.Sprintf("[%d] document=%s chunk=%s score=%.3f\n%s\n\n", index+1, hit.DocumentID, hit.ChunkID, hit.Score, hit.Text))
+		builder.WriteString(fmt.Sprintf("[%d] source=%s document_id=%s chunk=%s score=%.3f\n%s\n\n", index+1, sourceName(hit), hit.DocumentID, sourceChunk(hit), hit.Score, hit.Text))
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func sourceName(hit providers.VectorHit) string {
+	name := strings.TrimSpace(hit.Metadata["document_name"])
+	if name == "" {
+		return string(hit.DocumentID)
+	}
+	return name
+}
+
+func sourceChunk(hit providers.VectorHit) string {
+	index := strings.TrimSpace(hit.Metadata["chunk_index"])
+	if index == "" {
+		return hit.ChunkID
+	}
+	return index
 }
 
 func titleFromQuestion(question string) string {

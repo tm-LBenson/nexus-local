@@ -847,16 +847,32 @@ export function App() {
 }
 
 function ResultHit({ hit }: { hit: SearchDocumentsResponse['hits'][number] }) {
+  const documentName = hit.source?.document_name || hit.metadata.document_name || hit.document_id;
+  const chunkLabel = formatChunkLabel(hit);
+
   return (
     <div className="searchHit">
-      <div className="answerMeta">
-        <strong>{hit.document_id}</strong>
-        <span>{hit.score.toFixed(3)}</span>
+      <div className="sourceHeader">
+        <strong>{documentName}</strong>
+        <span>{chunkLabel}</span>
+        <em>{hit.score.toFixed(3)}</em>
       </div>
       <p>{hit.text}</p>
-      <em>{hit.chunk_id}</em>
+      <em>{hit.document_id} / {hit.chunk_id}</em>
     </div>
   );
+}
+
+function formatChunkLabel(hit: SearchDocumentsResponse['hits'][number]) {
+  const chunkIndex = hit.source?.chunk_index;
+  if (chunkIndex) {
+    const numericIndex = Number(chunkIndex);
+    if (Number.isFinite(numericIndex)) {
+      return `Chunk ${numericIndex + 1}`;
+    }
+    return `Chunk ${chunkIndex}`;
+  }
+  return hit.source?.chunk_id || hit.chunk_id;
 }
 
 function StatusTile({

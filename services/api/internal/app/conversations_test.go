@@ -39,6 +39,7 @@ func TestAskCreatesConversationRetrievesContextAndStoresMessages(t *testing.T) {
 			ChunkID:    "chunk_1",
 			Values:     seed.Vectors[0],
 			Text:       "alpha beta launch plan",
+			Metadata:   map[string]string{"document_name": "Alpha Plan.md", "chunk_index": "0"},
 		},
 	}); err != nil {
 		t.Fatalf("upsert seed: %v", err)
@@ -72,7 +73,7 @@ func TestAskCreatesConversationRetrievesContextAndStoresMessages(t *testing.T) {
 		t.Fatalf("target = %q, want general", gateway.request.Target)
 	}
 	lastPrompt := gateway.request.Messages[len(gateway.request.Messages)-1].Content
-	if !strings.Contains(lastPrompt, "document=doc_1") || !strings.Contains(lastPrompt, "alpha beta launch plan") {
+	if !strings.Contains(lastPrompt, "source=Alpha Plan.md") || !strings.Contains(lastPrompt, "alpha beta launch plan") {
 		t.Fatalf("prompt missing retrieved context: %q", lastPrompt)
 	}
 }

@@ -84,6 +84,12 @@ func TestDocumentIngestionWorkerProcessesQueuedJob(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("hits len = %d, want 1", len(hits))
 	}
+	if hits[0].Metadata["document_name"] != "Handbook.md" {
+		t.Fatalf("document name metadata = %q, want Handbook.md", hits[0].Metadata["document_name"])
+	}
+	if hits[0].Metadata["chunk_index"] == "" {
+		t.Fatalf("chunk index metadata is empty: %#v", hits[0].Metadata)
+	}
 }
 
 func TestDocumentIngestionWorkerReturnsNoQueuedJobs(t *testing.T) {

@@ -161,6 +161,7 @@ Useful endpoints during development:
 - `DELETE /v1/conversations/{conversation_id}?tenant_id=tenant_1`
 
 The stream endpoint returns server-sent events: `status`, `delta`, `error`, and `done`.
+Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 
 Example document upload:
 
