@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	defaultModelTarget = "general"
-	maxHistoryMessages = 12
+	defaultModelTarget           = "general"
+	defaultConversationListLimit = 25
+	maxConversationListLimit     = 100
+	maxHistoryMessages           = 12
 )
 
 var ErrConversationModelUnavailable = errors.New("conversation model gateway is not configured")
@@ -49,6 +51,24 @@ type AskResult struct {
 	Completion       providers.ChatCompletion
 }
 
+type ListConversationsInput struct {
+	TenantID domain.TenantID
+	Limit    int
+}
+
+type ListConversationsResult struct {
+	Conversations []domain.Conversation
+}
+
+type ListMessagesInput struct {
+	TenantID       domain.TenantID
+	ConversationID domain.ConversationID
+}
+
+type ListMessagesResult struct {
+	Messages []domain.Message
+}
+
 func NewConversationService(repos store.RepositorySet, ids ConversationIDs, clock Clock, search SearchService, models providers.ModelGateway) ConversationService {
 	return ConversationService{
 		repos:  repos,
@@ -57,6 +77,41 @@ func NewConversationService(repos store.RepositorySet, ids ConversationIDs, cloc
 		search: search,
 		models: models,
 	}
+}
+
+func (s ConversationService) ListConversations(ctx context.Context, input ListConversationsInput) (ListConversationsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ListConversationsResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" {
+		return ListConversationsResult{}, fmt.Errorf("conversations: %w", domain.ErrInvalidEntity)
+	}
+	conversations, err := s.repos.ListConversations(ctx, input.TenantID)
+	if err != nil {
+		return ListConversationsResult{}, err
+	}
+	limit := normalizeConversationLimit(input.Limit)
+	if len(conversations) > limit {
+		conversations = conversations[:limit]
+	}
+	return ListConversationsResult{Conversations: conversations}, nil
+}
+
+func (s ConversationService) ListMessages(ctx context.Context, input ListMessagesInput) (ListMessagesResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ListMessagesResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.ConversationID)) == "" {
+		return ListMessagesResult{}, fmt.Errorf("messages: %w", domain.ErrInvalidEntity)
+	}
+	if _, err := s.repos.GetConversation(ctx, input.TenantID, input.ConversationID); err != nil {
+		return ListMessagesResult{}, err
+	}
+	messages, err := s.repos.ListMessages(ctx, input.TenantID, input.ConversationID)
+	if err != nil {
+		return ListMessagesResult{}, err
+	}
+	return ListMessagesResult{Messages: messages}, nil
 }
 
 func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult, error) {
@@ -123,13 +178,17 @@ func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult
 		return AskResult{}, err
 	}
 
+	assistantNow := s.clock.Now()
+	if !assistantNow.After(userMessage.CreatedAt) {
+		assistantNow = userMessage.CreatedAt.Add(time.Nanosecond)
+	}
 	assistantMessage, err := domain.NewMessage(domain.MessageCreate{
 		ID:             s.ids.NewMessageID(),
 		TenantID:       conversation.TenantID,
 		ConversationID: conversation.ID,
 		Role:           domain.MessageRoleAssistant,
 		Content:        completion.Content,
-		Now:            s.clock.Now(),
+		Now:            assistantNow,
 	})
 	if err != nil {
 		return AskResult{}, err
@@ -232,4 +291,14 @@ func titleFromQuestion(question string) string {
 		return title
 	}
 	return strings.TrimSpace(title[:80])
+}
+
+func normalizeConversationLimit(limit int) int {
+	if limit <= 0 {
+		return defaultConversationListLimit
+	}
+	if limit > maxConversationListLimit {
+		return maxConversationListLimit
+	}
+	return limit
 }

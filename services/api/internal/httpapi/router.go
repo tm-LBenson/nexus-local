@@ -45,6 +45,8 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
+	mux.HandleFunc("GET /v1/conversations", listConversationsHandler(deps.Conversations, deps.Authorizer))
+	mux.HandleFunc("GET /v1/conversations/{conversation_id}/messages", listConversationMessagesHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
 
 	return loggingMiddleware(corsMiddleware(cfg, authMiddleware(deps.Authenticator, mux)))
@@ -465,6 +467,71 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 			hits = append(hits, encodeSearchHit(hit))
 		}
 		writeJSON(w, http.StatusOK, envelope{"hits": hits})
+	}
+}
+
+func listConversationsHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
+			return
+		}
+		limit, err := queryInt(r, "limit")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+
+		result, err := service.ListConversations(r.Context(), app.ListConversationsInput{
+			TenantID: tenantID,
+			Limit:    limit,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("list conversations: %v", err))
+			return
+		}
+
+		conversations := make([]conversationPayload, 0, len(result.Conversations))
+		for _, conversation := range result.Conversations {
+			conversations = append(conversations, encodeConversation(conversation))
+		}
+		writeJSON(w, http.StatusOK, envelope{"conversations": conversations})
+	}
+}
+
+func listConversationMessagesHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
+			return
+		}
+		conversationID := domain.ConversationID(r.PathValue("conversation_id"))
+
+		result, err := service.ListMessages(r.Context(), app.ListMessagesInput{
+			TenantID:       tenantID,
+			ConversationID: conversationID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("list conversation messages: %v", err))
+			return
+		}
+
+		messages := make([]messagePayload, 0, len(result.Messages))
+		for _, message := range result.Messages {
+			messages = append(messages, encodeMessage(message))
+		}
+		writeJSON(w, http.StatusOK, envelope{"messages": messages})
 	}
 }
 

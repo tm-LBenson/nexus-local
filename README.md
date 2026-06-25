@@ -57,6 +57,7 @@ Then open:
 - Jobs/activity: `GET http://localhost:8080/v1/jobs?tenant_id=tenant_1`
 - Document search: `POST http://localhost:8080/v1/search`
 - Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
+- Conversation history: `GET http://localhost:8080/v1/conversations?tenant_id=tenant_1`
 
 Create your first tenant for the authenticated user:
 

@@ -428,6 +428,73 @@ func TestAskConversationEndpoint(t *testing.T) {
 	}
 }
 
+func TestConversationHistoryEndpoints(t *testing.T) {
+	server := newTestServer(t)
+
+	ask := httptest.NewRecorder()
+	askReq := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"question": "What is the alpha beta plan?",
+		"limit": 1
+	}`))
+	server.ServeHTTP(ask, askReq)
+	if ask.Code != http.StatusOK {
+		t.Fatalf("ask status = %d, want %d, body = %s", ask.Code, http.StatusOK, ask.Body.String())
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/conversations?tenant_id=tenant_1&limit=5", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", list.Code, http.StatusOK, list.Body.String())
+	}
+
+	var listBody struct {
+		Conversations []conversationPayload `json:"conversations"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if len(listBody.Conversations) != 1 {
+		t.Fatalf("conversations len = %d, want 1", len(listBody.Conversations))
+	}
+	if listBody.Conversations[0].ID != "conv_http" {
+		t.Fatalf("conversation id = %q, want conv_http", listBody.Conversations[0].ID)
+	}
+
+	messages := httptest.NewRecorder()
+	messagesReq := httptest.NewRequest(http.MethodGet, "/v1/conversations/conv_http/messages?tenant_id=tenant_1", nil)
+	server.ServeHTTP(messages, messagesReq)
+	if messages.Code != http.StatusOK {
+		t.Fatalf("messages status = %d, want %d, body = %s", messages.Code, http.StatusOK, messages.Body.String())
+	}
+
+	var messagesBody struct {
+		Messages []messagePayload `json:"messages"`
+	}
+	if err := json.Unmarshal(messages.Body.Bytes(), &messagesBody); err != nil {
+		t.Fatalf("decode messages body: %v", err)
+	}
+	if len(messagesBody.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messagesBody.Messages))
+	}
+	if messagesBody.Messages[0].Role != string(domain.MessageRoleUser) || messagesBody.Messages[1].Role != string(domain.MessageRoleAssistant) {
+		t.Fatalf("roles = %s/%s, want user/assistant", messagesBody.Messages[0].Role, messagesBody.Messages[1].Role)
+	}
+}
+
+func TestConversationHistoryEndpointRejectsInvalidLimit(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/conversations?tenant_id=tenant_1&limit=nope", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
 func TestAskConversationEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 

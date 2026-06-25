@@ -150,6 +150,14 @@ export type AskConversationResponse = {
   };
 };
 
+export type ListConversationsResponse = {
+  conversations: Conversation[];
+};
+
+export type ListConversationMessagesResponse = {
+  messages: ConversationMessage[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
 export function apiBase() {
@@ -232,6 +240,18 @@ export async function askConversation(input: {
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export async function listConversations(tenantId: string, limit = 25) {
+  const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
+  return request<ListConversationsResponse>(`/v1/conversations?${params.toString()}`);
+}
+
+export async function listConversationMessages(tenantId: string, conversationId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<ListConversationMessagesResponse>(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`,
+  );
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

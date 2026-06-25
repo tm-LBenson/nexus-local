@@ -3,6 +3,8 @@ import {
   AskConversationResponse,
   CurrentUserResponse,
   Health,
+  ListConversationMessagesResponse,
+  ListConversationsResponse,
   ListDocumentsResponse,
   ListJobsResponse,
   ModelTarget,
@@ -16,13 +18,15 @@ import {
   getHealth,
   getModelTargets,
   getReadiness,
+  listConversationMessages,
+  listConversations,
   listDocuments,
   listJobs,
   searchDocuments,
   uploadDocument,
 } from './api';
 
-type View = 'ask' | 'documents' | 'activity' | 'search' | 'settings';
+type View = 'ask' | 'documents' | 'activity' | 'history' | 'search' | 'settings';
 
 const fallbackTenantID = 'tenant_1';
 
@@ -45,6 +49,10 @@ export function App() {
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
+  const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
+  const [conversationMessages, setConversationMessages] =
+    useState<ListConversationMessagesResponse | null>(null);
+  const [selectedConversationID, setSelectedConversationID] = useState('');
   const [searchForm, setSearchForm] = useState({ query: '', limit: 5 });
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -69,12 +77,14 @@ export function App() {
         setCurrentUser(currentUserResult);
         const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? fallbackTenantID;
         setTenantID(initialTenantID);
-        const [documentsResult, jobsResult] = await Promise.all([
+        const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
           listDocuments(initialTenantID),
           listJobs(initialTenantID),
+          listConversations(initialTenantID),
         ]);
         setDocuments(documentsResult);
         setJobs(jobsResult);
+        setConversations(conversationsResult);
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
@@ -97,16 +107,29 @@ export function App() {
     }
   }
 
-  async function switchTenant(nextTenantID: string) {
-    setTenantID(nextTenantID);
+  async function refreshConversations(nextTenantID = tenantID) {
     setError(null);
     try {
-      const [documentsResult, jobsResult] = await Promise.all([
+      setConversations(await listConversations(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function switchTenant(nextTenantID: string) {
+    setTenantID(nextTenantID);
+    setSelectedConversationID('');
+    setConversationMessages(null);
+    setError(null);
+    try {
+      const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
         listDocuments(nextTenantID),
         listJobs(nextTenantID),
+        listConversations(nextTenantID),
       ]);
       setDocuments(documentsResult);
       setJobs(jobsResult);
+      setConversations(conversationsResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -148,6 +171,31 @@ export function App() {
     } finally {
       setCreatingTenant(false);
     }
+  }
+
+  async function openConversation(conversation: ListConversationsResponse['conversations'][number]) {
+    setSelectedConversationID(conversation.id);
+    setAskForm((current) => ({
+      ...current,
+      conversation_id: conversation.id,
+      model_target: conversation.model_target,
+    }));
+    setError(null);
+    try {
+      setConversationMessages(await listConversationMessages(tenantID, conversation.id));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  function resumeConversation(conversation: ListConversationsResponse['conversations'][number]) {
+    setAskForm((current) => ({
+      ...current,
+      conversation_id: conversation.id,
+      model_target: conversation.model_target,
+      question: '',
+    }));
+    setActiveView('ask');
   }
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -195,6 +243,11 @@ export function App() {
         conversation_id: result.conversation.id,
         question: '',
       }));
+      setSelectedConversationID(result.conversation.id);
+      await refreshConversations(tenantID);
+      if (conversationMessages && selectedConversationID === result.conversation.id) {
+        setConversationMessages(await listConversationMessages(tenantID, result.conversation.id));
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -404,6 +457,55 @@ export function App() {
               ))}
               {jobs && jobs.jobs.length === 0 && <p className="muted">No activity</p>}
             </div>
+          </div>
+        )}
+
+        {activeView === 'history' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>History</h2>
+              <button onClick={() => void refreshConversations()} type="button">
+                Refresh
+              </button>
+            </div>
+
+            <div className="tableList">
+              {conversations?.conversations.map((conversation) => (
+                <div
+                  className={
+                    selectedConversationID === conversation.id
+                      ? 'conversationRow selectedRow'
+                      : 'conversationRow'
+                  }
+                  key={conversation.id}
+                >
+                  <button onClick={() => void openConversation(conversation)} type="button">
+                    <strong>{conversation.title || conversation.id}</strong>
+                  </button>
+                  <span>{conversation.model_target}</span>
+                  <time dateTime={conversation.updated_at}>
+                    {formatDateTime(conversation.updated_at)}
+                  </time>
+                  <button onClick={() => resumeConversation(conversation)} type="button">
+                    Resume
+                  </button>
+                </div>
+              ))}
+              {conversations && conversations.conversations.length === 0 && (
+                <p className="muted">No conversations</p>
+              )}
+            </div>
+
+            {conversationMessages && (
+              <div className="messageStack">
+                {conversationMessages.messages.map((message) => (
+                  <div className={`messageBubble ${message.role}`} key={message.id}>
+                    <span>{message.role}</span>
+                    <p>{message.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

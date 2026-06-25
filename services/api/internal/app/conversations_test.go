@@ -113,6 +113,85 @@ func TestAskUsesExistingConversationTarget(t *testing.T) {
 	}
 }
 
+func TestListConversationsAndMessages(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	embedder := embeddinghash.New("test", 16)
+	search := NewSearchService(embedder, vectormemory.New())
+	gateway := &stubModelGateway{response: providers.ChatCompletion{Content: "done"}}
+	service := NewConversationService(repos, &askIDs{}, fixedClock{}, search, gateway)
+
+	askResult, err := service.Ask(ctx, AskInput{
+		TenantID: domain.TenantID("tenant_1"),
+		OwnerID:  domain.UserID("user_1"),
+		Question: "What is saved?",
+	})
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+
+	conversations, err := service.ListConversations(ctx, ListConversationsInput{
+		TenantID: domain.TenantID("tenant_1"),
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if len(conversations.Conversations) != 1 {
+		t.Fatalf("conversations len = %d, want 1", len(conversations.Conversations))
+	}
+	if conversations.Conversations[0].ID != askResult.Conversation.ID {
+		t.Fatalf("conversation id = %q, want %q", conversations.Conversations[0].ID, askResult.Conversation.ID)
+	}
+
+	messages, err := service.ListMessages(ctx, ListMessagesInput{
+		TenantID:       domain.TenantID("tenant_1"),
+		ConversationID: askResult.Conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages.Messages))
+	}
+	if messages.Messages[0].Role != domain.MessageRoleUser || messages.Messages[1].Role != domain.MessageRoleAssistant {
+		t.Fatalf("roles = %s/%s, want user/assistant", messages.Messages[0].Role, messages.Messages[1].Role)
+	}
+}
+
+func TestListConversationMessagesRequiresExistingConversation(t *testing.T) {
+	service := NewConversationService(memory.New(), &askIDs{}, fixedClock{}, SearchService{}, &stubModelGateway{})
+
+	_, err := service.ListMessages(context.Background(), ListMessagesInput{
+		TenantID:       domain.TenantID("tenant_1"),
+		ConversationID: domain.ConversationID("missing"),
+	})
+	if err == nil {
+		t.Fatal("err = nil, want not found")
+	}
+}
+
+func TestNormalizeConversationLimit(t *testing.T) {
+	cases := []struct {
+		name  string
+		limit int
+		want  int
+	}{
+		{name: "default", limit: 0, want: defaultConversationListLimit},
+		{name: "negative", limit: -1, want: defaultConversationListLimit},
+		{name: "custom", limit: 3, want: 3},
+		{name: "max", limit: maxConversationListLimit + 1, want: maxConversationListLimit},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeConversationLimit(tc.limit); got != tc.want {
+				t.Fatalf("limit = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAskRejectsInvalidInput(t *testing.T) {
 	service := NewConversationService(memory.New(), &askIDs{}, fixedClock{}, SearchService{}, &stubModelGateway{})
 

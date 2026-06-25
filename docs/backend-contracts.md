@@ -72,6 +72,8 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 `GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100.
 
+`GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows.
+
 The first worker can claim a document ingestion job and advance the document/job state flow. Extraction, chunking, embeddings, and vector writes are the next layer.
 
 ## Current State Machines
