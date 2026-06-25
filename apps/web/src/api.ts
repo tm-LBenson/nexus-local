@@ -225,6 +225,14 @@ export async function getDocument(tenantId: string, documentId: string) {
   );
 }
 
+export async function retryDocument(tenantId: string, documentId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<RegisterDocumentResponse>(
+    `/v1/documents/${encodeURIComponent(documentId)}/retry?${params.toString()}`,
+    { method: 'POST' },
+  );
+}
+
 export async function deleteDocument(tenantId: string, documentId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<{ document: RegisteredDocument }>(

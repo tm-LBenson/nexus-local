@@ -82,6 +82,16 @@ type DeleteDocumentResult struct {
 	Document domain.Document
 }
 
+type RetryDocumentInput struct {
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+}
+
+type RetryDocumentResult struct {
+	Document domain.Document
+	Job      domain.Job
+}
+
 func NewDocumentService(repos store.RepositorySet, ids DocumentIDs, clock Clock) DocumentService {
 	return DocumentService{
 		repos: repos,
@@ -186,6 +196,53 @@ func (s DocumentService) GetDocumentDetail(ctx context.Context, input DocumentDe
 	}, nil
 }
 
+func (s DocumentService) RetryDocumentIngestion(ctx context.Context, input RetryDocumentInput) (RetryDocumentResult, error) {
+	if err := ctx.Err(); err != nil {
+		return RetryDocumentResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DocumentID)) == "" {
+		return RetryDocumentResult{}, fmt.Errorf("retry document: %w", domain.ErrInvalidEntity)
+	}
+
+	document, err := s.repos.GetDocument(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return RetryDocumentResult{}, err
+	}
+	if document.Status != domain.DocumentStatusFailed {
+		return RetryDocumentResult{}, fmt.Errorf("retry document %s from %s: %w", document.ID, document.Status, domain.ErrInvalidStateTransition)
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return RetryDocumentResult{}, err
+	}
+	for _, job := range jobs {
+		if isActiveDocumentIngestionJob(job, document.ID) {
+			return RetryDocumentResult{}, fmt.Errorf("retry document %s with active job %s: %w", document.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+	}
+
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           s.ids.NewJobID(),
+		TenantID:     document.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   string(document.ID),
+		Now:          s.clock.Now(),
+	})
+	if err != nil {
+		return RetryDocumentResult{}, err
+	}
+	if err := s.repos.SaveJob(ctx, job); err != nil {
+		return RetryDocumentResult{}, err
+	}
+
+	return RetryDocumentResult{
+		Document: document,
+		Job:      job,
+	}, nil
+}
+
 func (s DocumentService) DeleteDocument(ctx context.Context, input DeleteDocumentInput) (DeleteDocumentResult, error) {
 	if err := ctx.Err(); err != nil {
 		return DeleteDocumentResult{}, err
@@ -219,6 +276,13 @@ func (s DocumentService) DeleteDocument(ctx context.Context, input DeleteDocumen
 		return DeleteDocumentResult{}, err
 	}
 	return DeleteDocumentResult{Document: document}, nil
+}
+
+func isActiveDocumentIngestionJob(job domain.Job, documentID domain.DocumentID) bool {
+	if job.Type != domain.JobTypeDocumentIngestion || job.ResourceType != "document" || job.ResourceID != string(documentID) {
+		return false
+	}
+	return job.State == domain.JobStateQueued || job.State == domain.JobStateRunning || job.State == domain.JobStateRetrying
 }
 
 func (s DocumentService) registerDocument(ctx context.Context, input RegisterDocumentInput, documentID domain.DocumentID, jobID domain.JobID, now time.Time) (RegisterDocumentResult, error) {

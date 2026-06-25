@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -285,6 +286,62 @@ func TestGetDocumentEndpoint(t *testing.T) {
 	}
 	if body.Jobs[0].ResourceType != "document" || body.Jobs[0].ResourceID != "doc_http" {
 		t.Fatalf("job resource = %s/%s, want document/doc_http", body.Jobs[0].ResourceType, body.Jobs[0].ResourceID)
+	}
+}
+
+func TestRetryDocumentEndpoint(t *testing.T) {
+	server := newTestServerWithSeed(t, func(repos *memory.Store) {
+		document := newHTTPFailedDocument(t)
+		if err := repos.SaveDocument(context.Background(), document); err != nil {
+			t.Fatalf("save document: %v", err)
+		}
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/doc_failed_http/retry?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+
+	var body struct {
+		Document documentPayload `json:"document"`
+		Job      jobPayload      `json:"job"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Document.ID != "doc_failed_http" || body.Document.Status != string(domain.DocumentStatusFailed) {
+		t.Fatalf("document = %s/%s, want failed doc_failed_http", body.Document.ID, body.Document.Status)
+	}
+	if body.Job.State != string(domain.JobStateQueued) {
+		t.Fatalf("job state = %q, want queued", body.Job.State)
+	}
+	if body.Job.ResourceType != "document" || body.Job.ResourceID != "doc_failed_http" {
+		t.Fatalf("job resource = %s/%s, want document/doc_failed_http", body.Job.ResourceType, body.Job.ResourceID)
+	}
+}
+
+func TestRetryDocumentEndpointRejectsUploadedDocument(t *testing.T) {
+	server := newTestServer(t)
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"name": "Handbook.md",
+		"storage_key": "tenants/tenant_1/documents/source.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(register, registerReq)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d, body = %s", register.Code, http.StatusCreated, register.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/doc_http/retry?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusConflict, resp.Body.String())
 	}
 }
 
@@ -738,7 +795,25 @@ func newTestServer(t *testing.T) http.Handler {
 	})
 }
 
+func newTestServerWithSeed(t *testing.T, seed func(*memory.Store)) http.Handler {
+	t.Helper()
+
+	return newTestServerWithConfigAndSeed(t, config.Config{
+		AuthMode:            internalauth.ModeDev,
+		DevUserID:           "user_1",
+		DevUserEmail:        "dev@example.local",
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	}, seed)
+}
+
 func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
+	t.Helper()
+
+	return newTestServerWithConfigAndSeed(t, authCfg, nil)
+}
+
+func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed func(*memory.Store)) http.Handler {
 	t.Helper()
 
 	router, err := providers.NewModelRouter([]providers.TargetConfig{
@@ -767,6 +842,9 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 	}
 
 	repos := memory.New()
+	if seed != nil {
+		seed(repos)
+	}
 	ids := &httpIDs{}
 	embedder := embeddinghash.New("test", 16)
 	vectorIndex := vectormemory.New()
@@ -774,7 +852,7 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 		WithObjectStore(objectmemory.New()).
 		WithVectorIndex(vectorIndex)
 	jobs := app.NewJobService(repos)
-	seed, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
+	seedEmbedding, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
 	if err != nil {
 		t.Fatalf("embed seed: %v", err)
 	}
@@ -783,7 +861,7 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 			TenantID:   domain.TenantID("tenant_1"),
 			DocumentID: domain.DocumentID("doc_search"),
 			ChunkID:    "chunk_1",
-			Values:     seed.Vectors[0],
+			Values:     seedEmbedding.Vectors[0],
 			Text:       "alpha beta launch plan",
 			Metadata: map[string]string{
 				"document_name": "Alpha Plan.md",
@@ -811,6 +889,7 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 }
 
 type httpIDs struct {
+	job     int
 	message int
 }
 
@@ -822,8 +901,12 @@ func (httpIDs) NewTenantID() domain.TenantID {
 	return domain.TenantID("tenant_http")
 }
 
-func (httpIDs) NewJobID() domain.JobID {
-	return domain.JobID("job_http")
+func (g *httpIDs) NewJobID() domain.JobID {
+	g.job++
+	if g.job == 1 {
+		return domain.JobID("job_http")
+	}
+	return domain.JobID(fmt.Sprintf("job_http_%d", g.job))
 }
 
 func (httpIDs) NewConversationID() domain.ConversationID {
@@ -842,6 +925,27 @@ type httpClock struct{}
 
 func (httpClock) Now() time.Time {
 	return time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+}
+
+func newHTTPFailedDocument(t *testing.T) domain.Document {
+	t.Helper()
+
+	document, err := domain.NewDocument(domain.DocumentCreate{
+		ID:         domain.DocumentID("doc_failed_http"),
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "Broken Handbook.md",
+		StorageKey: "tenants/tenant_1/documents/doc_failed_http/Broken Handbook.md",
+		SizeBytes:  42,
+		Now:        httpClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new document: %v", err)
+	}
+	if err := document.Transition(domain.DocumentStatusFailed, httpClock{}.Now()); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+	return document
 }
 
 type httpModelGateway struct{}

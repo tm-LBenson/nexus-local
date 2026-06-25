@@ -44,6 +44,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/documents/{document_id}", getDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("POST /v1/documents/{document_id}/retry", retryDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
@@ -438,6 +439,40 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 				status = http.StatusServiceUnavailable
 			}
 			writeError(w, status, fmt.Sprintf("upload document: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, envelope{
+			"document": encodeDocument(result.Document),
+			"job":      encodeJob(result.Job),
+		})
+	}
+}
+
+func retryDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments); !ok {
+			return
+		}
+		documentID := domain.DocumentID(r.PathValue("document_id"))
+
+		result, err := service.RetryDocumentIngestion(r.Context(), app.RetryDocumentInput{
+			TenantID:   tenantID,
+			DocumentID: documentID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, domain.ErrInvalidStateTransition) {
+				status = http.StatusConflict
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("retry document: %v", err))
 			return
 		}
 

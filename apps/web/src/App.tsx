@@ -26,6 +26,7 @@ import {
   listConversations,
   listDocuments,
   listJobs,
+  retryDocument,
   searchDocuments,
   uploadDocument,
 } from './api';
@@ -69,6 +70,7 @@ export function App() {
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [loadingDocumentID, setLoadingDocumentID] = useState('');
+  const [retryingDocumentID, setRetryingDocumentID] = useState('');
   const [deletingConversationID, setDeletingConversationID] = useState('');
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -265,6 +267,28 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setDeletingDocumentID('');
+    }
+  }
+
+  async function retryDocumentIngestion(documentID: string) {
+    setRetryingDocumentID(documentID);
+    setError(null);
+    try {
+      const result = await retryDocument(tenantID, documentID);
+      setDocumentDetail((current) => {
+        if (!current || current.document.id !== documentID) {
+          return { document: result.document, jobs: [result.job] };
+        }
+        return {
+          document: result.document,
+          jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+        };
+      });
+      await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setRetryingDocumentID('');
     }
   }
 
@@ -577,7 +601,25 @@ export function App() {
               <div className="detailPanel">
                 <div className="detailHeader">
                   <h3>{documentDetail.document.name}</h3>
-                  <span>{documentDetail.document.status}</span>
+                  <div className="detailActions">
+                    <span>{documentDetail.document.status}</span>
+                    {documentDetail.document.status === 'failed' && (
+                      <button
+                        disabled={
+                          retryingDocumentID === documentDetail.document.id ||
+                          hasActiveIngestionJob(documentDetail)
+                        }
+                        onClick={() => void retryDocumentIngestion(documentDetail.document.id)}
+                        type="button"
+                      >
+                        {retryingDocumentID === documentDetail.document.id
+                          ? 'Retrying'
+                          : hasActiveIngestionJob(documentDetail)
+                            ? 'Queued'
+                            : 'Retry'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <dl className="runtimeList detailList">
                   <div>
@@ -977,6 +1019,16 @@ function titleCase(value: string) {
 
 function messageFromError(err: unknown) {
   return err instanceof Error ? err.message : 'Unknown API error';
+}
+
+function hasActiveIngestionJob(detail: DocumentDetailResponse) {
+  return detail.jobs.some(
+    (job) =>
+      job.type === 'document_ingestion' &&
+      job.resource_type === 'document' &&
+      job.resource_id === detail.document.id &&
+      ['queued', 'running', 'retrying'].includes(job.state),
+  );
 }
 
 function formatBytes(bytes: number) {

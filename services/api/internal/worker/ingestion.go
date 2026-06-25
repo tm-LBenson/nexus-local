@@ -98,6 +98,9 @@ func (w DocumentIngestionWorker) processClaimedJob(ctx context.Context, job doma
 
 	chunkCount, err := w.ingestDocument(ctx, document)
 	if err != nil {
+		if transitionErr := document.Transition(domain.DocumentStatusFailed, w.clock.Now()); transitionErr == nil {
+			_ = w.repos.SaveDocument(ctx, document)
+		}
 		return ProcessResult{}, err
 	}
 

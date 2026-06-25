@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -205,6 +206,89 @@ func TestGetDocumentDetailReturnsRelatedJobs(t *testing.T) {
 	}
 }
 
+func TestRetryDocumentIngestionCreatesQueuedJobForFailedDocument(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{})
+	document := newFailedDocument(t)
+	if err := repos.SaveDocument(ctx, document); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+
+	result, err := service.RetryDocumentIngestion(ctx, RetryDocumentInput{
+		TenantID:   document.TenantID,
+		DocumentID: document.ID,
+	})
+	if err != nil {
+		t.Fatalf("retry document: %v", err)
+	}
+	if result.Document.ID != document.ID {
+		t.Fatalf("document id = %q, want %q", result.Document.ID, document.ID)
+	}
+	if result.Job.State != domain.JobStateQueued {
+		t.Fatalf("job state = %q, want queued", result.Job.State)
+	}
+	if result.Job.Type != domain.JobTypeDocumentIngestion || result.Job.ResourceID != string(document.ID) {
+		t.Fatalf("job resource = %s/%s, want document ingestion for %s", result.Job.Type, result.Job.ResourceID, document.ID)
+	}
+}
+
+func TestRetryDocumentIngestionRejectsActiveJob(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{})
+	document := newFailedDocument(t)
+	if err := repos.SaveDocument(ctx, document); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_active"),
+		TenantID:     document.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   string(document.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err = service.RetryDocumentIngestion(ctx, RetryDocumentInput{
+		TenantID:   document.TenantID,
+		DocumentID: document.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
+func TestRetryDocumentIngestionRejectsUploadedDocument(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{})
+	registered, err := service.RegisterDocument(ctx, RegisterDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "Handbook.md",
+		StorageKey: "tenants/tenant_1/documents/source.md",
+		SizeBytes:  42,
+	})
+	if err != nil {
+		t.Fatalf("register document: %v", err)
+	}
+
+	_, err = service.RetryDocumentIngestion(ctx, RetryDocumentInput{
+		TenantID:   registered.Document.TenantID,
+		DocumentID: registered.Document.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
 func TestDeleteDocumentMarksDeletedAndRemovesObject(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -244,6 +328,26 @@ func TestDeleteDocumentMarksDeletedAndRemovesObject(t *testing.T) {
 	if len(list.Documents) != 0 {
 		t.Fatalf("documents len = %d, want 0", len(list.Documents))
 	}
+}
+
+func newFailedDocument(t *testing.T) domain.Document {
+	t.Helper()
+	document, err := domain.NewDocument(domain.DocumentCreate{
+		ID:         domain.DocumentID("doc_failed"),
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "Handbook.md",
+		StorageKey: "tenants/tenant_1/documents/doc_failed/Handbook.md",
+		SizeBytes:  42,
+		Now:        fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new document: %v", err)
+	}
+	if err := document.Transition(domain.DocumentStatusFailed, fixedClock{}.Now()); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+	return document
 }
 
 type fixedIDs struct{}

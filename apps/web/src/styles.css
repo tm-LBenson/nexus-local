@@ -637,12 +637,24 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.detailHeader span {
+.detailActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.detailActions span {
   flex: 0 0 auto;
   color: #0a684c;
   font-size: 0.8rem;
   font-weight: 800;
   text-transform: capitalize;
+}
+
+.detailActions button {
+  min-height: 30px;
+  padding: 0 10px;
 }
 
 .detailList {
@@ -822,6 +834,15 @@ h3 {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .detailHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .detailActions {
+    flex-wrap: wrap;
   }
 
   .menuFields,

@@ -152,6 +152,7 @@ Useful endpoints during development:
 - `GET /v1/documents?tenant_id=tenant_1`
 - `GET /v1/documents/{document_id}?tenant_id=tenant_1`
 - `POST /v1/documents/upload`
+- `POST /v1/documents/{document_id}/retry?tenant_id=tenant_1`
 - `DELETE /v1/documents/{document_id}?tenant_id=tenant_1`
 - `GET /v1/jobs?tenant_id=tenant_1`
 - `POST /v1/search`

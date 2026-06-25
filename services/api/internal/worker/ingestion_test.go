@@ -134,6 +134,41 @@ func TestDocumentIngestionWorkerFailsUnsupportedJob(t *testing.T) {
 	}
 }
 
+func TestDocumentIngestionWorkerMarksDocumentFailedWhenPipelineFails(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	doc := newTestDocument(t)
+	job := newDocumentJob(t, doc)
+	if err := repos.SaveDocument(ctx, doc); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	worker := NewDocumentIngestionWorker(repos, fixedClock{})
+	_, err := worker.ProcessNext(ctx)
+	if err == nil {
+		t.Fatal("err = nil, want pipeline error")
+	}
+
+	updatedDoc, err := repos.GetDocument(ctx, doc.TenantID, doc.ID)
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if updatedDoc.Status != domain.DocumentStatusFailed {
+		t.Fatalf("document status = %q, want failed", updatedDoc.Status)
+	}
+
+	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if updatedJob.State != domain.JobStateFailed {
+		t.Fatalf("job state = %q, want failed", updatedJob.State)
+	}
+}
+
 func newTestDocument(t *testing.T) domain.Document {
 	t.Helper()
 	doc, err := domain.NewDocument(domain.DocumentCreate{
