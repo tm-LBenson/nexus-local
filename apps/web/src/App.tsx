@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AskConversationResponse,
   CurrentUserResponse,
@@ -11,8 +11,8 @@ import {
   askConversation,
   apiBase,
   createTenant,
-  getHealth,
   getCurrentUser,
+  getHealth,
   getModelTargets,
   getReadiness,
   listDocuments,
@@ -20,18 +20,11 @@ import {
   uploadDocument,
 } from './api';
 
-const initialUpload = {
-  tenant_id: 'tenant_1',
-};
+type View = 'ask' | 'documents' | 'search' | 'settings';
 
-const initialSearch = {
-  tenant_id: 'tenant_1',
-  query: '',
-  limit: 5,
-};
+const fallbackTenantID = 'tenant_1';
 
 const initialAsk = {
-  tenant_id: 'tenant_1',
   conversation_id: '',
   model_target: 'general',
   question: '',
@@ -39,25 +32,30 @@ const initialAsk = {
 };
 
 export function App() {
+  const [activeView, setActiveView] = useState<View>('ask');
   const [health, setHealth] = useState<Health | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
-  const [uploadForm, setUploadForm] = useState(initialUpload);
-  const [documentTenant, setDocumentTenant] = useState(initialUpload.tenant_id);
+  const [tenantID, setTenantID] = useState(fallbackTenantID);
   const [tenantName, setTenantName] = useState('Personal Workspace');
-  const [searchForm, setSearchForm] = useState(initialSearch);
-  const [askForm, setAskForm] = useState(initialAsk);
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
+  const [searchForm, setSearchForm] = useState({ query: '', limit: 5 });
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
+  const [askForm, setAskForm] = useState(initialAsk);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
+
+  const selectedTenant = useMemo(
+    () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
+    [currentUser, tenantID],
+  );
 
   useEffect(() => {
     Promise.all([getHealth(), getReadiness(), getModelTargets(), getCurrentUser()])
@@ -66,44 +64,39 @@ export function App() {
         setReadiness(readinessResult);
         setTargets(targetsResult.targets);
         setCurrentUser(currentUserResult);
-        const tenantId = currentUserResult.memberships[0]?.tenant.id ?? initialUpload.tenant_id;
-        applyTenant(tenantId);
-        const documentsResult = await listDocuments(tenantId);
-        setDocuments(documentsResult);
+        const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? fallbackTenantID;
+        setTenantID(initialTenantID);
+        setDocuments(await listDocuments(initialTenantID));
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
 
-  function applyTenant(tenantId: string) {
-    setDocumentTenant(tenantId);
-    setUploadForm((current) => ({ ...current, tenant_id: tenantId }));
-    setSearchForm((current) => ({ ...current, tenant_id: tenantId }));
-    setAskForm((current) => ({ ...current, tenant_id: tenantId }));
-  }
-
-  async function refreshDocuments(tenantId = documentTenant) {
+  async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
     try {
-      const result = await listDocuments(tenantId);
-      setDocuments(result);
+      setDocuments(await listDocuments(nextTenantID));
     } catch (err) {
       setError(messageFromError(err));
     }
   }
 
+  async function switchTenant(nextTenantID: string) {
+    setTenantID(nextTenantID);
+    await refreshDocuments(nextTenantID);
+  }
+
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
-      setError('Choose a file before uploading');
+      setError('Choose a file');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const result = await uploadDocument({ ...uploadForm, file });
+      const result = await uploadDocument({ tenant_id: tenantID, file });
       setRegistration(result);
-      setDocumentTenant(uploadForm.tenant_id);
-      await refreshDocuments(uploadForm.tenant_id);
+      await refreshDocuments(tenantID);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -121,10 +114,8 @@ export function App() {
     setError(null);
     try {
       const created = await createTenant({ name: tenantName });
-      const result = await getCurrentUser();
-      setCurrentUser(result);
-      applyTenant(created.tenant.id);
-      await refreshDocuments(created.tenant.id);
+      setCurrentUser(await getCurrentUser());
+      await switchTenant(created.tenant.id);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -135,17 +126,19 @@ export function App() {
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!searchForm.query.trim()) {
-      setError('Enter a search query');
+      setError('Enter a query');
       return;
     }
     setSearching(true);
     setError(null);
     try {
-      const result = await searchDocuments({
-        ...searchForm,
-        limit: Number(searchForm.limit),
-      });
-      setSearchResult(result);
+      setSearchResult(
+        await searchDocuments({
+          tenant_id: tenantID,
+          query: searchForm.query,
+          limit: Number(searchForm.limit),
+        }),
+      );
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -163,8 +156,10 @@ export function App() {
     setError(null);
     try {
       const result = await askConversation({
-        ...askForm,
+        tenant_id: tenantID,
         conversation_id: askForm.conversation_id || undefined,
+        model_target: askForm.model_target,
+        question: askForm.question,
         limit: Number(askForm.limit),
       });
       setAskResult(result);
@@ -182,88 +177,158 @@ export function App() {
 
   return (
     <main className="shell">
-      <section className="workspace">
-        <div className="topbar">
-          <div>
-            <p className="eyebrow">Nexus Local</p>
-            <h1>Portable AI workspace</h1>
-          </div>
+      <header className="topbar">
+        <div className="brandBlock">
+          <p className="eyebrow">Nexus Local</p>
+          <h1>Workspace</h1>
+        </div>
+        <nav className="tabs" aria-label="Workspace">
+          {(['ask', 'documents', 'search', 'settings'] as View[]).map((view) => (
+            <button
+              aria-pressed={activeView === view}
+              className={activeView === view ? 'tab tabActive' : 'tab'}
+              key={view}
+              onClick={() => setActiveView(view)}
+              type="button"
+            >
+              {titleCase(view)}
+            </button>
+          ))}
+        </nav>
+        <div className="topActions">
+          <select
+            aria-label="Tenant"
+            className="tenantSelect"
+            onChange={(event) => void switchTenant(event.target.value)}
+            value={tenantID}
+          >
+            {currentUser?.memberships.map((membership) => (
+              <option key={membership.tenant.id} value={membership.tenant.id}>
+                {membership.tenant.name}
+              </option>
+            ))}
+            {(!currentUser || currentUser.memberships.length === 0) && (
+              <option value={fallbackTenantID}>{fallbackTenantID}</option>
+            )}
+          </select>
           <span className={health ? 'status statusReady' : 'status'}>
-            {health ? 'API online' : 'Connecting'}
+            {health ? 'Online' : 'Connecting'}
           </span>
         </div>
+      </header>
 
-        <div className="grid">
-          <article className="panel">
-            <h2>Runtime</h2>
-            <dl>
-              <div>
-                <dt>API</dt>
-                <dd>{apiBase()}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{health?.status ?? error ?? 'Checking health'}</dd>
-              </div>
-              <div>
-                <dt>Auth</dt>
-                <dd>{readiness?.auth_mode ?? 'unknown'}</dd>
-              </div>
-              <div>
-                <dt>Version</dt>
-                <dd>{health?.version ?? 'unknown'}</dd>
-              </div>
-              <div>
-                <dt>Storage</dt>
-                <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
-              </div>
-              <div>
-                <dt>Objects</dt>
-                <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
-              </div>
-              <div>
-                <dt>Vectors</dt>
-                <dd>{readiness?.vector_backend ?? 'unknown'}</dd>
-              </div>
-              <div>
-                <dt>Embeddings</dt>
-                <dd>{readiness?.embedding_backend ?? 'unknown'}</dd>
-              </div>
-            </dl>
-          </article>
+      {error && <div className="toast">{error}</div>}
 
-          <article className="panel">
-            <h2>Model Targets</h2>
-            <div className="targetList">
-              {targets.map((target) => (
-                <div className="targetRow" key={target.name}>
-                  <span>{target.name}</span>
-                  <strong>{target.model}</strong>
-                </div>
-              ))}
-              {targets.length === 0 && <p className="muted">No targets loaded</p>}
+      <section className="workspace">
+        {activeView === 'ask' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>Ask</h2>
+              <span>{selectedTenant?.tenant.name ?? tenantID}</span>
             </div>
-          </article>
+            <form className="askComposer" onSubmit={submitAsk}>
+              <textarea
+                aria-label="Question"
+                onChange={(event) =>
+                  setAskForm((current) => ({ ...current, question: event.target.value }))
+                }
+                placeholder="Ask a question"
+                value={askForm.question}
+              />
+              <div className="composerActions">
+                <details className="menuPanel">
+                  <summary>Options</summary>
+                  <div className="menuFields">
+                    <label>
+                      Target
+                      <select
+                        value={askForm.model_target}
+                        onChange={(event) =>
+                          setAskForm((current) => ({
+                            ...current,
+                            model_target: event.target.value,
+                          }))
+                        }
+                      >
+                        {targets.length === 0 && <option value="general">general</option>}
+                        {targets.map((target) => (
+                          <option key={target.name} value={target.name}>
+                            {target.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Limit
+                      <input
+                        max="20"
+                        min="1"
+                        type="number"
+                        value={askForm.limit}
+                        onChange={(event) =>
+                          setAskForm((current) => ({
+                            ...current,
+                            limit: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Conversation
+                      <input
+                        value={askForm.conversation_id}
+                        onChange={(event) =>
+                          setAskForm((current) => ({
+                            ...current,
+                            conversation_id: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                </details>
+                <button disabled={asking} type="submit">
+                  {asking ? 'Asking' : 'Ask'}
+                </button>
+              </div>
+            </form>
 
-          <article className="panel panelWide">
-            <h2>Upload Document</h2>
-            <form className="documentForm" onSubmit={submitUpload}>
-              <label>
-                Tenant
-                <input
-                  value={uploadForm.tenant_id}
-                  onChange={(event) =>
-                    setUploadForm((current) => ({ ...current, tenant_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                File
-                <input
-                  type="file"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                />
-              </label>
+            {askResult && (
+              <div className="answerBox">
+                <div className="answerMeta">
+                  <strong>{askResult.conversation.title || askResult.conversation.id}</strong>
+                  <span>{askResult.completion.model || askResult.conversation.model_target}</span>
+                </div>
+                <p>{askResult.assistant_message.content}</p>
+                <details className="inlineDetails">
+                  <summary>Sources</summary>
+                  <div className="resultStack">
+                    {askResult.hits.map((hit) => (
+                      <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
+                    ))}
+                    {askResult.hits.length === 0 && <p className="muted">No sources</p>}
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeView === 'documents' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>Documents</h2>
+              <button onClick={() => void refreshDocuments()} type="button">
+                Refresh
+              </button>
+            </div>
+
+            <form className="uploadBar" onSubmit={submitUpload}>
+              <input
+                aria-label="Document"
+                type="file"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
               <button disabled={submitting} type="submit">
                 {submitting ? 'Uploading' : 'Upload'}
               </button>
@@ -271,72 +336,13 @@ export function App() {
 
             {registration && (
               <div className="resultBand">
-                <span>{registration.document.id}</span>
+                <span>{registration.document.name}</span>
                 <strong>{registration.job.type}</strong>
                 <em>{registration.job.state}</em>
               </div>
             )}
 
-            {error && <p className="errorText">{error}</p>}
-          </article>
-
-          <article className="panel panelWide">
-            <h2>Tenant Access</h2>
-            <div className="identityBar">
-              <strong>{currentUser?.user.email ?? 'Unknown user'}</strong>
-              <span>{currentUser?.user.id ?? 'No principal'}</span>
-            </div>
-            <form className="documentForm compactForm" onSubmit={submitTenant}>
-              <label>
-                Name
-                <input value={tenantName} onChange={(event) => setTenantName(event.target.value)} />
-              </label>
-              <button disabled={creatingTenant} type="submit">
-                {creatingTenant ? 'Creating' : 'Create Tenant'}
-              </button>
-            </form>
-            <div className="documentList">
-              {currentUser?.memberships.map((membership) => (
-                <button
-                  className="tenantRow"
-                  key={membership.tenant.id}
-                  onClick={() => {
-                    applyTenant(membership.tenant.id);
-                    void refreshDocuments(membership.tenant.id);
-                  }}
-                  type="button"
-                >
-                  <strong>{membership.tenant.name}</strong>
-                  <span>{membership.role}</span>
-                  <em>{membership.tenant.id}</em>
-                </button>
-              ))}
-              {currentUser && currentUser.memberships.length === 0 && (
-                <p className="muted">Create a tenant to start using membership-scoped access</p>
-              )}
-            </div>
-          </article>
-
-          <article className="panel panelWide">
-            <h2>Document Library</h2>
-            <form
-              className="documentForm compactForm"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void refreshDocuments();
-              }}
-            >
-              <label>
-                Tenant
-                <input
-                  value={documentTenant}
-                  onChange={(event) => setDocumentTenant(event.target.value)}
-                />
-              </label>
-              <button type="submit">Refresh</button>
-            </form>
-
-            <div className="documentList">
+            <div className="tableList">
               {documents?.documents.map((document) => (
                 <div className="documentRow" key={document.id}>
                   <strong>{document.name}</strong>
@@ -345,141 +351,157 @@ export function App() {
                   <small>{formatBytes(document.size_bytes)}</small>
                 </div>
               ))}
-              {documents && documents.documents.length === 0 && (
-                <p className="muted">No documents for this tenant</p>
-              )}
+              {documents && documents.documents.length === 0 && <p className="muted">No documents</p>}
             </div>
-          </article>
+          </div>
+        )}
 
-          <article className="panel panelWide">
-            <h2>Search Documents</h2>
-            <form className="documentForm" onSubmit={submitSearch}>
-              <label>
-                Tenant
-                <input
-                  value={searchForm.tenant_id}
-                  onChange={(event) =>
-                    setSearchForm((current) => ({ ...current, tenant_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Limit
-                <input
-                  min="1"
-                  max="20"
-                  type="number"
-                  value={searchForm.limit}
-                  onChange={(event) =>
-                    setSearchForm((current) => ({
-                      ...current,
-                      limit: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-              <label className="spanAll">
-                Query
-                <input
-                  value={searchForm.query}
-                  onChange={(event) =>
-                    setSearchForm((current) => ({ ...current, query: event.target.value }))
-                  }
-                />
-              </label>
+        {activeView === 'search' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>Search</h2>
+              <span>{selectedTenant?.tenant.name ?? tenantID}</span>
+            </div>
+            <form className="searchBar" onSubmit={submitSearch}>
+              <input
+                aria-label="Search"
+                onChange={(event) =>
+                  setSearchForm((current) => ({ ...current, query: event.target.value }))
+                }
+                placeholder="Search documents"
+                value={searchForm.query}
+              />
+              <details className="menuPanel compactMenu">
+                <summary>Options</summary>
+                <label>
+                  Limit
+                  <input
+                    max="20"
+                    min="1"
+                    type="number"
+                    value={searchForm.limit}
+                    onChange={(event) =>
+                      setSearchForm((current) => ({
+                        ...current,
+                        limit: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+              </details>
               <button disabled={searching} type="submit">
                 {searching ? 'Searching' : 'Search'}
               </button>
             </form>
-
             {searchResult && (
-              <div className="searchResults">
+              <div className="resultStack">
                 {searchResult.hits.map((hit) => (
-                  <div className="searchHit" key={`${hit.document_id}:${hit.chunk_id}`}>
-                    <div className="searchHitHeader">
-                      <strong>{hit.document_id}</strong>
-                      <span>{hit.score.toFixed(3)}</span>
-                    </div>
-                    <p>{hit.text}</p>
-                    <em>{hit.chunk_id}</em>
-                  </div>
+                  <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
                 ))}
-                {searchResult.hits.length === 0 && <p className="muted">No matching chunks</p>}
+                {searchResult.hits.length === 0 && <p className="muted">No matches</p>}
               </div>
             )}
-          </article>
+          </div>
+        )}
 
-          <article className="panel panelWide">
-            <h2>Ask Documents</h2>
-            <form className="documentForm" onSubmit={submitAsk}>
-              <label>
-                Tenant
+        {activeView === 'settings' && (
+          <div className="settingsGrid">
+            <section className="workSurface">
+              <div className="surfaceHeader">
+                <h2>Tenants</h2>
+                <span>{currentUser?.user.email ?? 'Unknown user'}</span>
+              </div>
+              <form className="inlineForm" onSubmit={submitTenant}>
                 <input
-                  value={askForm.tenant_id}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, tenant_id: event.target.value }))
-                  }
+                  aria-label="Tenant name"
+                  onChange={(event) => setTenantName(event.target.value)}
+                  value={tenantName}
                 />
-              </label>
-              <label>
-                Target
-                <input
-                  value={askForm.model_target}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, model_target: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Limit
-                <input
-                  min="1"
-                  max="20"
-                  type="number"
-                  value={askForm.limit}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, limit: Number(event.target.value) }))
-                  }
-                />
-              </label>
-              <label className="spanAll">
-                Conversation
-                <input
-                  value={askForm.conversation_id}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, conversation_id: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="spanAll">
-                Question
-                <input
-                  value={askForm.question}
-                  onChange={(event) =>
-                    setAskForm((current) => ({ ...current, question: event.target.value }))
-                  }
-                />
-              </label>
-              <button disabled={asking} type="submit">
-                {asking ? 'Asking' : 'Ask'}
-              </button>
-            </form>
+                <button disabled={creatingTenant} type="submit">
+                  {creatingTenant ? 'Creating' : 'Create'}
+                </button>
+              </form>
+              <div className="tableList">
+                {currentUser?.memberships.map((membership) => (
+                  <button
+                    className="tenantRow"
+                    key={membership.tenant.id}
+                    onClick={() => void switchTenant(membership.tenant.id)}
+                    type="button"
+                  >
+                    <strong>{membership.tenant.name}</strong>
+                    <span>{membership.role}</span>
+                    <em>{membership.tenant.id}</em>
+                  </button>
+                ))}
+                {currentUser && currentUser.memberships.length === 0 && (
+                  <p className="muted">No tenants</p>
+                )}
+              </div>
+            </section>
 
-            {askResult && (
-              <div className="answerBox">
-                <div className="searchHitHeader">
-                  <strong>{askResult.conversation.id}</strong>
-                  <span>{askResult.completion.model || askResult.conversation.model_target}</span>
+            <section className="workSurface">
+              <div className="surfaceHeader">
+                <h2>Runtime</h2>
+                <span>{readiness?.auth_mode ?? 'unknown'}</span>
+              </div>
+              <dl className="runtimeList">
+                <div>
+                  <dt>API</dt>
+                  <dd>{apiBase()}</dd>
                 </div>
-                <p>{askResult.assistant_message.content}</p>
-                <em>{askResult.hits.length} retrieved chunks</em>
-              </div>
-            )}
-          </article>
-        </div>
+                <div>
+                  <dt>Storage</dt>
+                  <dd>{readiness?.persistence_backend ?? 'unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Objects</dt>
+                  <dd>{readiness?.object_storage_backend ?? 'unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Vectors</dt>
+                  <dd>{readiness?.vector_backend ?? 'unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Embeddings</dt>
+                  <dd>{readiness?.embedding_backend ?? 'unknown'}</dd>
+                </div>
+              </dl>
+              <details className="inlineDetails">
+                <summary>Model Targets</summary>
+                <div className="tableList">
+                  {targets.map((target) => (
+                    <div className="targetRow" key={target.name}>
+                      <span>{target.name}</span>
+                      <strong>{target.model}</strong>
+                    </div>
+                  ))}
+                  {targets.length === 0 && <p className="muted">No targets</p>}
+                </div>
+              </details>
+            </section>
+          </div>
+        )}
       </section>
     </main>
   );
+}
+
+function ResultHit({ hit }: { hit: SearchDocumentsResponse['hits'][number] }) {
+  return (
+    <div className="searchHit">
+      <div className="answerMeta">
+        <strong>{hit.document_id}</strong>
+        <span>{hit.score.toFixed(3)}</span>
+      </div>
+      <p>{hit.text}</p>
+      <em>{hit.chunk_id}</em>
+    </div>
+  );
+}
+
+function titleCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function messageFromError(err: unknown) {
