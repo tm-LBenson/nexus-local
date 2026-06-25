@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ type envelope map[string]any
 
 type Dependencies struct {
 	ModelRouter   *providers.ModelRouter
+	ModelGateway  providers.ModelGateway
 	Tenants       app.TenantService
 	Documents     app.DocumentService
 	Jobs          app.JobService
@@ -41,6 +43,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/me", currentUserHandler(deps.Tenants))
 	mux.HandleFunc("POST /v1/tenants", createTenantHandler(deps.Tenants))
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
+	mux.HandleFunc("POST /v1/model-targets/check", modelTargetCheckHandler(deps.ModelRouter, deps.ModelGateway, deps.Authorizer))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents/{document_id}", getDocumentHandler(deps.Documents, deps.Authorizer))
@@ -104,6 +107,68 @@ func modelTargetsHandler(modelRouter *providers.ModelRouter) http.HandlerFunc {
 	}
 }
 
+func modelTargetCheckHandler(modelRouter *providers.ModelRouter, modelGateway providers.ModelGateway, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if modelRouter == nil {
+			writeError(w, http.StatusServiceUnavailable, "model router is not configured")
+			return
+		}
+		if modelGateway == nil {
+			writeError(w, http.StatusServiceUnavailable, "model gateway is not configured")
+			return
+		}
+
+		var req modelTargetCheckRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if strings.TrimSpace(req.TenantID) != "" {
+			if _, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionUseAI); !ok {
+				return
+			}
+		}
+
+		route, err := modelRouter.Route(r.Context(), providers.ModelRequest{
+			Target:   req.Target,
+			TenantID: req.TenantID,
+		})
+		if err != nil {
+			writeError(w, modelRouteStatus(err), err.Error())
+			return
+		}
+
+		checkCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+
+		started := time.Now()
+		completion, err := modelGateway.Complete(checkCtx, providers.ChatCompletionRequest{
+			Target: route.Target,
+			Model:  route.Model,
+			Messages: []providers.ChatMessage{
+				{Role: "system", Content: "Reply with exactly: ok"},
+				{Role: "user", Content: "Nexus Local model target check. Reply with exactly: ok."},
+			},
+			Temperature: 0,
+			Metadata: map[string]string{
+				"purpose": "model_target_check",
+			},
+		})
+		if err != nil {
+			writeError(w, modelTargetCheckStatus(err), fmt.Sprintf("model target check: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, envelope{
+			"status":        "ok",
+			"route":         route,
+			"model":         completion.Model,
+			"finish_reason": completion.FinishReason,
+			"latency_ms":    time.Since(started).Milliseconds(),
+		})
+	}
+}
+
 func modelRouteHandler(modelRouter *providers.ModelRouter, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if modelRouter == nil {
@@ -124,16 +189,35 @@ func modelRouteHandler(modelRouter *providers.ModelRouter, authorizer internalau
 
 		route, err := modelRouter.Route(r.Context(), req)
 		if err != nil {
-			status := http.StatusInternalServerError
-			if errors.Is(err, providers.ErrUnknownTarget) {
-				status = http.StatusNotFound
-			}
-			writeError(w, status, err.Error())
+			writeError(w, modelRouteStatus(err), err.Error())
 			return
 		}
 
 		writeJSON(w, http.StatusOK, envelope{"route": route})
 	}
+}
+
+func modelRouteStatus(err error) int {
+	if errors.Is(err, providers.ErrUnknownTarget) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, providers.ErrEmptyTarget) || errors.Is(err, domain.ErrInvalidEntity) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func modelTargetCheckStatus(err error) int {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	if errors.Is(err, providers.ErrUnknownTarget) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, providers.ErrEmptyTarget) || errors.Is(err, domain.ErrInvalidEntity) {
+		return http.StatusBadRequest
+	}
+	return http.StatusBadGateway
 }
 
 type registerDocumentRequest struct {
@@ -146,6 +230,11 @@ type registerDocumentRequest struct {
 
 type createTenantRequest struct {
 	Name string `json:"name"`
+}
+
+type modelTargetCheckRequest struct {
+	TenantID string `json:"tenant_id"`
+	Target   string `json:"target"`
 }
 
 type userPayload struct {

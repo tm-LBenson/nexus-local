@@ -14,6 +14,7 @@ import {
   SearchDocumentsResponse,
   askConversationStream,
   apiBase,
+  checkModelTarget,
   createTenant,
   deleteConversation,
   deleteDocument,
@@ -34,6 +35,11 @@ import {
 
 type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' | 'settings';
 
+type TargetCheckState = {
+  state: 'ok' | 'failed';
+  detail: string;
+};
+
 const fallbackTenantID = 'tenant_1';
 
 const initialAsk = {
@@ -50,6 +56,7 @@ export function App() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
+  const [targetChecks, setTargetChecks] = useState<Record<string, TargetCheckState>>({});
   const [tenantID, setTenantID] = useState(fallbackTenantID);
   const [tenantName, setTenantName] = useState('Personal Workspace');
   const [file, setFile] = useState<File | null>(null);
@@ -77,6 +84,7 @@ export function App() {
   const [deletingConversationID, setDeletingConversationID] = useState('');
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [checkingTarget, setCheckingTarget] = useState('');
 
   const selectedTenant = useMemo(
     () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
@@ -155,6 +163,34 @@ export function App() {
       setJobs(jobsResult);
     } catch (err) {
       setError(messageFromError(err));
+    }
+  }
+
+  async function testModelTarget(targetName: string) {
+    setError(null);
+    setCheckingTarget(targetName);
+    try {
+      const result = await checkModelTarget({
+        tenant_id: tenantID,
+        target: targetName,
+      });
+      setTargetChecks((current) => ({
+        ...current,
+        [targetName]: {
+          state: 'ok',
+          detail: `${result.model || result.route.model} ${result.latency_ms}ms`,
+        },
+      }));
+    } catch (err) {
+      setTargetChecks((current) => ({
+        ...current,
+        [targetName]: {
+          state: 'failed',
+          detail: messageFromError(err),
+        },
+      }));
+    } finally {
+      setCheckingTarget('');
     }
   }
 
@@ -1002,12 +1038,33 @@ export function App() {
               <details className="inlineDetails">
                 <summary>Model Targets</summary>
                 <div className="tableList">
-                  {targets.map((target) => (
-                    <div className="targetRow" key={target.name}>
-                      <span>{target.name}</span>
-                      <strong>{target.model}</strong>
-                    </div>
-                  ))}
+                  {targets.map((target) => {
+                    const check = targetChecks[target.name];
+                    return (
+                      <div className="targetRow" key={target.name}>
+                        <span>{target.name}</span>
+                        <strong>{target.model}</strong>
+                        <em
+                          className={
+                            check?.state === 'ok'
+                              ? 'checkReady'
+                              : check?.state === 'failed'
+                                ? 'checkFailed'
+                                : ''
+                          }
+                        >
+                          {check?.detail ?? target.provider}
+                        </em>
+                        <button
+                          disabled={checkingTarget === target.name}
+                          onClick={() => void testModelTarget(target.name)}
+                          type="button"
+                        >
+                          {checkingTarget === target.name ? 'Testing' : 'Test'}
+                        </button>
+                      </div>
+                    );
+                  })}
                   {targets.length === 0 && <p className="muted">No targets</p>}
                 </div>
               </details>

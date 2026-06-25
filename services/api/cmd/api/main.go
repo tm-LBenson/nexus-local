@@ -63,6 +63,7 @@ func main() {
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(cfg, httpapi.Dependencies{
 			ModelRouter:   modelRouter,
+			ModelGateway:  modelGateway,
 			Tenants:       tenantService,
 			Documents:     documentService,
 			Jobs:          jobService,

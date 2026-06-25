@@ -31,6 +31,19 @@ export type ModelTarget = {
   model: string;
 };
 
+export type ModelTargetCheckResponse = {
+  status: string;
+  route: {
+    target: string;
+    provider: string;
+    base_url: string;
+    model: string;
+  };
+  model: string;
+  finish_reason: string;
+  latency_ms: number;
+};
+
 export type CurrentUser = {
   id: string;
   email: string;
@@ -203,6 +216,13 @@ export async function getModelTargets() {
   return request<{ targets: ModelTarget[] }>('/v1/model-targets');
 }
 
+export async function checkModelTarget(input: { tenant_id: string; target: string }) {
+  return request<ModelTargetCheckResponse>('/v1/model-targets/check', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getCurrentUser() {
   return request<CurrentUserResponse>('/v1/me');
 }
@@ -307,8 +327,7 @@ export async function askConversationStream(
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `API returned ${response.status}`);
+    throw await errorFromResponse(response);
   }
   if (!response.body) {
     throw new Error('Streaming is not supported by this browser');
@@ -422,8 +441,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `API returned ${response.status}`);
+    throw await errorFromResponse(response);
   }
 
   return response.json() as Promise<T>;
@@ -433,8 +451,7 @@ async function requestForm<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, init);
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `API returned ${response.status}`);
+    throw await errorFromResponse(response);
   }
 
   return response.json() as Promise<T>;
@@ -444,11 +461,26 @@ async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}${path}`, init);
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `API returned ${response.status}`);
+    throw await errorFromResponse(response);
   }
 
   return response.blob();
+}
+
+async function errorFromResponse(response: Response) {
+  const body = await response.text();
+  if (body) {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (isRecord(parsed) && typeof parsed.error === 'string') {
+        return new Error(parsed.error);
+      }
+    } catch {
+      return new Error(body);
+    }
+    return new Error(body);
+  }
+  return new Error(`API returned ${response.status}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

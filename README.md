@@ -157,6 +157,7 @@ Useful endpoints during development:
 - `GET /v1/me`
 - `POST /v1/tenants`
 - `GET /v1/model-targets`
+- `POST /v1/model-targets/check`
 - `GET /v1/documents?tenant_id=tenant_1`
 - `GET /v1/documents/{document_id}?tenant_id=tenant_1`
 - `GET /v1/documents/{document_id}/download?tenant_id=tenant_1`

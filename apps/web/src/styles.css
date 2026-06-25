@@ -533,7 +533,7 @@ h3 {
 }
 
 .targetRow {
-  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 120px) minmax(0, 1fr) minmax(120px, 190px) 76px;
   gap: 10px;
 }
 
@@ -577,6 +577,7 @@ h3 {
 .tenantRow em,
 .targetRow span,
 .targetRow strong,
+.targetRow em,
 .searchHit em {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -599,11 +600,27 @@ h3 {
 .jobRow small,
 .jobRow time,
 .tenantRow em,
+.targetRow em,
 .searchHit em {
   color: #69777d;
   font-size: 0.78rem;
   font-style: normal;
   font-weight: 700;
+}
+
+.targetRow button {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.targetRow .checkReady {
+  color: #0a684c;
+  font-weight: 800;
+}
+
+.targetRow .checkFailed {
+  color: #8c2f27;
+  font-weight: 800;
 }
 
 .tenantRow:hover {

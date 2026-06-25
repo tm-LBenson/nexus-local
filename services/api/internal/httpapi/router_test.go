@@ -97,6 +97,75 @@ func TestModelRouteEndpointRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestModelTargetCheckEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/model-targets/check", bytes.NewBufferString(`{"tenant_id":"tenant_1","target":"general"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Status       string               `json:"status"`
+		Route        providers.ModelRoute `json:"route"`
+		Model        string               `json:"model"`
+		FinishReason string               `json:"finish_reason"`
+		LatencyMS    int64                `json:"latency_ms"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Status != "ok" {
+		t.Fatalf("status = %q, want ok", body.Status)
+	}
+	if body.Route.Target != "general" || body.Route.Model != "general-model" {
+		t.Fatalf("route = %#v", body.Route)
+	}
+	if body.Model != "fake-model" || body.FinishReason != "stop" {
+		t.Fatalf("completion summary = %#v", body)
+	}
+	if body.LatencyMS < 0 {
+		t.Fatalf("latency_ms = %d, want non-negative", body.LatencyMS)
+	}
+}
+
+func TestModelTargetCheckEndpointMapsGatewayFailure(t *testing.T) {
+	router, err := providers.NewModelRouter([]providers.TargetConfig{
+		{Name: "general", Provider: "openai-compatible", BaseURL: "http://gpu.local:8000/v1", Model: "general-model"},
+	}, "general")
+	if err != nil {
+		t.Fatalf("model router: %v", err)
+	}
+	cfg := config.Config{
+		Env:                 "test",
+		Version:             "test",
+		CORSAllowedOrigin:   "http://localhost:5173",
+		AuthMode:            internalauth.ModeDev,
+		DevUserID:           "user_1",
+		DevUserEmail:        "dev@example.local",
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	}
+
+	server := NewRouter(cfg, Dependencies{
+		ModelRouter:   router,
+		ModelGateway:  failingModelGateway{},
+		Authenticator: internalauth.NewAuthenticator(cfg),
+		Authorizer:    internalauth.NewAuthorizer(cfg, memory.New()),
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/model-targets/check", bytes.NewBufferString(`{"target":"general"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusBadGateway, resp.Body.String())
+	}
+}
+
 func TestCurrentUserEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -1001,6 +1070,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 
 	return NewRouter(cfg, Dependencies{
 		ModelRouter:   router,
+		ModelGateway:  httpModelGateway{},
 		Tenants:       tenants,
 		Documents:     documents,
 		Jobs:          jobs,
@@ -1082,6 +1152,15 @@ func (httpModelGateway) Complete(ctx context.Context, input providers.ChatComple
 		Content:      "Answer from fake model",
 		FinishReason: "stop",
 	}, nil
+}
+
+type failingModelGateway struct{}
+
+func (failingModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	return providers.ChatCompletion{}, fmt.Errorf("gateway unavailable")
 }
 
 func (httpModelGateway) StreamComplete(ctx context.Context, input providers.ChatCompletionRequest, emit func(providers.ChatCompletionChunk) error) (providers.ChatCompletion, error) {
