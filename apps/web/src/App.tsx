@@ -85,16 +85,39 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
   const [checkingTarget, setCheckingTarget] = useState('');
+  const [ingestionSyncing, setIngestionSyncing] = useState(false);
+  const [lastIngestionSync, setLastIngestionSync] = useState('');
 
   const selectedTenant = useMemo(
     () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
     [currentUser, tenantID],
   );
   const activeJobCount = useMemo(
-    () =>
-      jobs?.jobs.filter((job) => ['queued', 'running', 'retrying'].includes(job.state)).length ?? 0,
+    () => jobs?.jobs.filter((job) => isActiveJobState(job.state)).length ?? 0,
     [jobs],
   );
+  const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
+  const trackingIngestion = useMemo(
+    () =>
+      activeJobCount > 0 ||
+      Boolean(documentDetail && isActiveDocumentStatus(documentDetail.document.status)) ||
+      Boolean(documentDetail && hasActiveIngestionJob(documentDetail)) ||
+      Boolean(
+        registration &&
+          (isActiveDocumentStatus(registration.document.status) ||
+            isActiveJobState(registration.job.state)),
+      ),
+    [activeJobCount, documentDetail, registration],
+  );
+  const ingestionLabel = ingestionSyncing
+    ? 'Updating'
+    : trackingIngestion
+      ? activeJobCount > 0
+        ? `${activeJobCount} active`
+        : 'Tracking'
+      : lastIngestionSync
+        ? `Synced ${formatTimeOnly(lastIngestionSync)}`
+        : 'Idle';
   const visibleAskAnswer = askResult?.assistant_message.content || streamAnswer;
   const visibleAskTitle =
     askResult?.conversation.title || askResult?.conversation.id || streamStatus || 'Working';
@@ -120,6 +143,53 @@ export function App() {
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
+
+  useEffect(() => {
+    if (!trackingIngestion) {
+      return;
+    }
+
+    let canceled = false;
+
+    async function refreshIngestionState() {
+      setIngestionSyncing(true);
+      try {
+        const [documentsResult, jobsResult, detailResult] = await Promise.all([
+          listDocuments(tenantID),
+          listJobs(tenantID),
+          trackedDocumentID ? getDocument(tenantID, trackedDocumentID) : Promise.resolve(null),
+        ]);
+        if (canceled) {
+          return;
+        }
+
+        setDocuments(documentsResult);
+        setJobs(jobsResult);
+        if (detailResult) {
+          setDocumentDetail(detailResult);
+        }
+        setRegistration((current) =>
+          current ? mergeRegistrationProgress(current, documentsResult, jobsResult) : current,
+        );
+        setLastIngestionSync(new Date().toISOString());
+      } catch (err) {
+        if (!canceled) {
+          setError(messageFromError(err));
+        }
+      } finally {
+        if (!canceled) {
+          setIngestionSyncing(false);
+        }
+      }
+    }
+
+    void refreshIngestionState();
+    const interval = window.setInterval(() => void refreshIngestionState(), 3000);
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
+  }, [tenantID, trackedDocumentID, trackingIngestion]);
 
   async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
@@ -611,9 +681,14 @@ export function App() {
           <div className="workSurface">
             <div className="surfaceHeader">
               <h2>Documents</h2>
-              <button onClick={() => void refreshDocuments()} type="button">
-                Refresh
-              </button>
+              <div className="headerActions">
+                <span className={trackingIngestion ? 'syncStatus syncActive' : 'syncStatus'}>
+                  {ingestionLabel}
+                </span>
+                <button onClick={() => void refreshDocuments()} type="button">
+                  Refresh
+                </button>
+              </div>
             </div>
 
             <form className="uploadBar" onSubmit={submitUpload}>
@@ -630,8 +705,10 @@ export function App() {
             {registration && (
               <div className="resultBand">
                 <span>{registration.document.name}</span>
-                <strong>{registration.job.type}</strong>
-                <em>{registration.job.state}</em>
+                <strong className={stateClass(registration.document.status)}>
+                  {registration.document.status}
+                </strong>
+                <em className={stateClass(registration.job.state)}>{registration.job.state}</em>
               </div>
             )}
 
@@ -641,7 +718,7 @@ export function App() {
                   <button onClick={() => void openDocument(document)} type="button">
                     <strong>{document.name}</strong>
                   </button>
-                  <span>{document.status}</span>
+                  <span className={stateClass(document.status)}>{document.status}</span>
                   <em>{document.id}</em>
                   <small>{formatBytes(document.size_bytes)}</small>
                   <details className="rowMenu">
@@ -674,7 +751,9 @@ export function App() {
                 <div className="detailHeader">
                   <h3>{documentDetail.document.name}</h3>
                   <div className="detailActions">
-                    <span>{documentDetail.document.status}</span>
+                    <span className={stateClass(documentDetail.document.status)}>
+                      {documentDetail.document.status}
+                    </span>
                     <button
                       disabled={downloadingDocumentID === documentDetail.document.id}
                       onClick={() => void downloadDocumentSource(documentDetail.document)}
@@ -728,7 +807,7 @@ export function App() {
                     {documentDetail.jobs.map((job) => (
                       <div className="jobRow" key={job.id}>
                         <strong>{job.type}</strong>
-                        <span>{job.state}</span>
+                        <span className={stateClass(job.state)}>{job.state}</span>
                         <em>{job.id}</em>
                         <small>{job.attempts} tries</small>
                         <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
@@ -746,16 +825,21 @@ export function App() {
           <div className="workSurface">
             <div className="surfaceHeader">
               <h2>Activity</h2>
-              <button onClick={() => void refreshJobs()} type="button">
-                Refresh
-              </button>
+              <div className="headerActions">
+                <span className={trackingIngestion ? 'syncStatus syncActive' : 'syncStatus'}>
+                  {ingestionLabel}
+                </span>
+                <button onClick={() => void refreshJobs()} type="button">
+                  Refresh
+                </button>
+              </div>
             </div>
 
             <div className="tableList">
               {jobs?.jobs.map((job) => (
                 <div className="jobRow" key={job.id}>
                   <strong>{job.type}</strong>
-                  <span>{job.state}</span>
+                  <span className={stateClass(job.state)}>{job.state}</span>
                   <em>{job.resource_id || job.id}</em>
                   <small>{job.attempts} tries</small>
                   <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
@@ -1160,8 +1244,42 @@ function hasActiveIngestionJob(detail: DocumentDetailResponse) {
       job.type === 'document_ingestion' &&
       job.resource_type === 'document' &&
       job.resource_id === detail.document.id &&
-      ['queued', 'running', 'retrying'].includes(job.state),
+      isActiveJobState(job.state),
   );
+}
+
+function isActiveJobState(state: string) {
+  return ['queued', 'running', 'retrying'].includes(state);
+}
+
+function isActiveDocumentStatus(status: string) {
+  return ['uploaded', 'processing'].includes(status);
+}
+
+function stateClass(state: string) {
+  if (['failed'].includes(state)) {
+    return 'stateBadge stateFailed';
+  }
+  if (['queued', 'running', 'retrying', 'uploaded', 'processing'].includes(state)) {
+    return 'stateBadge stateActive';
+  }
+  if (['ready', 'succeeded'].includes(state)) {
+    return 'stateBadge stateReady';
+  }
+  return 'stateBadge';
+}
+
+function mergeRegistrationProgress(
+  current: RegisterDocumentResponse,
+  documents: ListDocumentsResponse,
+  jobs: ListJobsResponse,
+) {
+  return {
+    document:
+      documents.documents.find((document) => document.id === current.document.id) ??
+      current.document,
+    job: jobs.jobs.find((job) => job.id === current.job.id) ?? current.job,
+  };
 }
 
 function saveBlob(blob: Blob, filename: string) {
@@ -1191,5 +1309,13 @@ function formatDateTime(value: string) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatTimeOnly(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
   }).format(new Date(value));
 }

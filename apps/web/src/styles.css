@@ -243,6 +243,32 @@ h3 {
   white-space: nowrap;
 }
 
+.headerActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.surfaceHeader .syncStatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid #d8e2e2;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #69777d;
+  background: #f8fbfa;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.surfaceHeader .syncActive {
+  border-color: #d8bf86;
+  color: #7a4a08;
+  background: #fff7e6;
+}
+
 .askComposer {
   display: grid;
   gap: 10px;
@@ -623,6 +649,43 @@ h3 {
   font-weight: 800;
 }
 
+.stateBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid #d8e2e2;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #69777d;
+  background: #ffffff;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.stateActive {
+  border-color: #d8bf86;
+  color: #7a4a08;
+  background: #fff7e6;
+}
+
+.stateReady {
+  border-color: #9bc8b7;
+  color: #0a684c;
+  background: #edf8f3;
+}
+
+.stateFailed {
+  border-color: #e6b4a9;
+  color: #8c2f27;
+  background: #fff4f1;
+}
+
 .tenantRow:hover {
   border-color: #9eb7be;
   color: #172026;
@@ -673,6 +736,24 @@ h3 {
 .detailActions button {
   min-height: 30px;
   padding: 0 10px;
+}
+
+.detailActions .stateBadge {
+  color: #69777d;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.detailActions .stateActive {
+  color: #7a4a08;
+}
+
+.detailActions .stateReady {
+  color: #0a684c;
+}
+
+.detailActions .stateFailed {
+  color: #8c2f27;
 }
 
 .detailList {
@@ -852,6 +933,14 @@ h3 {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions button {
+    margin-left: auto;
   }
 
   .detailHeader {
