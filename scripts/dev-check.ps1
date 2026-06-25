@@ -1,7 +1,16 @@
+param(
+  [switch]$Smoke,
+  [switch]$IncludeAsk,
+  [string]$ApiUrl = "http://localhost:8080",
+  [string]$TenantId = "tenant_1",
+  [int]$SmokeTimeoutSeconds = 90
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
+$smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
 $failures = 0
 
 function Pass($name, $detail = "") {
@@ -112,14 +121,31 @@ if ($hasDocker) {
 
 Write-Host ""
 Test-Http "web" "http://localhost:5173" $false | Out-Null
-Test-Http "api health" "http://localhost:8080/healthz" $false | Out-Null
-Test-Http "api readiness" "http://localhost:8080/readyz" $false | Out-Null
+Test-Http "api health" "$($ApiUrl.TrimEnd('/'))/healthz" $false | Out-Null
+Test-Http "api readiness" "$($ApiUrl.TrimEnd('/'))/readyz" $false | Out-Null
 Test-Http "qdrant" "http://localhost:6333" $false | Out-Null
 Test-Tcp "postgres" "localhost" 5432 $false | Out-Null
 Test-Tcp "minio api" "localhost" 9000 $false | Out-Null
 Test-Tcp "minio console" "localhost" 9001 $false | Out-Null
 Test-Tcp "nats" "localhost" 4222 $false | Out-Null
 Test-Tcp "valkey" "localhost" 6379 $false | Out-Null
+
+if ($Smoke) {
+  Write-Host ""
+  try {
+    $smokeArgs = @(
+      "-ApiUrl", $ApiUrl,
+      "-TenantId", $TenantId,
+      "-TimeoutSeconds", $SmokeTimeoutSeconds
+    )
+    if ($IncludeAsk) {
+      $smokeArgs += "-IncludeAsk"
+    }
+    & $smokeScript @smokeArgs
+  } catch {
+    Fail "smoke test" $_.Exception.Message
+  }
+}
 
 Write-Host ""
 if ($failures -gt 0) {

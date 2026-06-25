@@ -74,6 +74,14 @@ Check the stack:
 .\scripts\dev-check.ps1
 ```
 
+Run an end-to-end smoke test:
+
+```powershell
+.\scripts\dev-check.ps1 -Smoke
+```
+
+The smoke test uploads a temporary text file, waits for worker ingestion, searches the indexed chunks, and deletes the temporary document. Add `-IncludeAsk` when an OpenAI-compatible model gateway is configured and reachable.
+
 Stop the stack:
 
 ```powershell
@@ -182,6 +190,13 @@ Invoke-RestMethod http://localhost:8080/v1/search `
   -Method Post `
   -ContentType 'application/json' `
   -Body '{"tenant_id":"tenant_1","query":"deployment notes","limit":5}'
+```
+
+Example smoke test:
+
+```powershell
+.\scripts\dev-smoke.ps1
+.\scripts\dev-smoke.ps1 -IncludeAsk
 ```
 
 Example question:
