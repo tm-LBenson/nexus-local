@@ -2,6 +2,8 @@
 
 Use `scripts/setup.ps1` to generate a deployment-ready `.env` file and validate the selected Compose profile.
 
+For hardware and hosting choices before choosing a profile, see [Deployment Scenarios](deployment-scenarios.md).
+
 ```powershell
 .\scripts\setup.ps1
 ```
@@ -129,7 +131,7 @@ For the default CPU profile:
 .\scripts\dev-up.ps1
 ```
 
-For other profiles, use the command printed by the setup script. The helper scripts automatically pass the root `.env` file when it exists.
+For `split-nas-gpu`, `gpu-local`, and `prod-auth`, use the command printed by the setup script. The `dev-up.ps1` helper is intentionally the simple local CPU-stack helper; it automatically passes the root `.env` file and starts optional embedding overlays, but it does not start the bundled GPU model gateway.
 
 After the stack is running, use the end-to-end smoke gate:
 

@@ -57,6 +57,16 @@ For useful AI answers beyond mock/local hashing:
 - An OpenAI-compatible chat endpoint
 - Optional external embedding endpoint, or the built-in hash embedder for development/testing
 
+For hardware planning, see [Deployment Scenarios](docs/deployment-scenarios.md). Short version:
+
+| Scenario | Practical floor | Good test target |
+| --- | --- | --- |
+| App only, remote AI | 4 CPU cores, 16 GB RAM, 50 GB SSD, no GPU | 4-8 CPU cores, 32 GB RAM, 100 GB SSD |
+| Local AI test box | 6-8 CPU cores, 32 GB RAM, NVIDIA GPU with 8 GB VRAM | 8+ CPU cores, 64 GB RAM, NVIDIA GPU with 16 GB+ VRAM |
+| Team/on-prem node | 8+ CPU cores, 64 GB RAM, fast NVMe, remote or local GPU | 16+ CPU cores, 128 GB RAM, NVMe, 24 GB+ GPU or rented GPU endpoint |
+
+Live Postgres and Qdrant data should use Docker named volumes on local SSD/NVMe storage when possible. Use large HDDs, NAS shares, or object storage for uploaded document archives, model caches, and backups rather than hot database/vector storage.
+
 ## Quick Start
 
 Clone the repository:
@@ -96,7 +106,29 @@ Stop the stack:
 Use `.\scripts\dev-down.ps1 -Volumes` when you want to remove local Postgres, MinIO, Qdrant, NATS, and Valkey data volumes too.
 Run `.\scripts\backup.ps1` before removing volumes or doing destructive maintenance.
 
+For a first Windows Docker Desktop test run without a configured model gateway, use:
+
+```powershell
+.\scripts\setup.ps1 -Profile cpu-lite -ProviderPreset starter -Force
+.\scripts\dev-up.ps1
+.\scripts\dev-check.ps1 -Smoke -SkipAsk
+```
+
+To test with a local OpenAI-compatible model server running on the Windows host, point containers at `host.docker.internal`:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile cpu-lite `
+  -ProviderPreset starter `
+  -ModelGatewayBaseUrl "http://host.docker.internal:11434/v1" `
+  -Force
+
+.\scripts\dev-up.ps1
+.\scripts\dev-check.ps1 -Smoke
+```
+
 See [Guided Setup](docs/setup.md) for split NAS/GPU, local GPU, and production auth profile generation.
+See [Deployment Scenarios](docs/deployment-scenarios.md) for Windows Docker Desktop, NAS plus GPU desktop, on-prem, Coolify/Linux, cloud, rented GPU, minimum requirements, and storage guidance.
 See [Backup and Restore](docs/backup-restore.md) for basic Postgres, MinIO, and Qdrant snapshots.
 
 ## Local Development
@@ -269,15 +301,17 @@ go test ./internal/providers/vector/qdrant
 
 ## Deployment Profiles
 
-Current profiles documented in [Deployment Profiles](docs/deployment-profiles.md):
+Setup profiles and deployment directions are documented in [Deployment Profiles](docs/deployment-profiles.md), with scenario guidance in [Deployment Scenarios](docs/deployment-scenarios.md):
 
-- `cpu-lite`: NAS-only app services, no local GPU runtime.
-- `split-nas-gpu`: NAS runs core services, desktop or rented GPU runs inference.
-- `gpu-local`: one GPU machine runs the full stack plus inference.
-- `prod-auth`: Caddy plus trusted-header auth behind an Authelia-compatible gateway.
-- `prod-single-node`: one server running the application stack.
-- `prod-k3s`: Kubernetes-ready deployment direction.
-- `external-ai`: self-host the app while using a remote model provider.
+| Name | Kind | Use it for |
+| --- | --- | --- |
+| `cpu-lite` | setup profile | Windows Docker Desktop tests, NAS-only app services, CPU-only servers, or remote AI providers. |
+| `split-nas-gpu` | setup profile | NAS/Linux/cloud app services with inference on a desktop GPU, laptop GPU, or rented GPU endpoint. |
+| `gpu-local` | setup profile | One NVIDIA GPU machine running the full stack plus the bundled vLLM-compatible gateway. |
+| `prod-auth` | setup profile | Production-facing Compose deployment with Caddy and trusted-header auth behind forward auth. |
+| `prod-single-node` | direction | One on-prem or cloud server running the application stack. |
+| `prod-k3s` | direction | Future Kubernetes direction for many users, multiple nodes, and GPU scheduling. |
+| `external-ai` | pattern | Self-hosted app/data layer with hosted, cloud, or customer-managed model endpoints. |
 
 See [Production Auth](docs/production-auth.md) for the Caddy/trusted-header deployment profile.
 See [Backup and Restore](docs/backup-restore.md) before changing persistent volumes.

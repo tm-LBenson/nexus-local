@@ -1,10 +1,11 @@
 # Deployment Profiles
 
-Run `scripts\setup.ps1` to generate `.env` for any Compose profile before starting the stack. See [Guided Setup](setup.md) for profile-specific examples.
+Run `scripts\setup.ps1` to generate `.env` for `cpu-lite`, `split-nas-gpu`, `gpu-local`, or `prod-auth` before starting the stack. See [Guided Setup](setup.md) for profile-specific examples.
+See [Deployment Scenarios](deployment-scenarios.md) for Windows Docker Desktop, NAS plus GPU, on-prem, cloud, rented GPU, minimum requirements, and storage guidance.
 
 ## cpu-lite
 
-Runs the app without a local GPU. Useful for NAS-only installs, demos, admin work, document management, and remote model providers.
+Runs the app without a bundled local GPU model container. Useful for Windows Docker Desktop test runs, NAS-only installs, demos, admin work, document management, and remote model providers.
 
 Core services:
 
@@ -24,7 +25,7 @@ Add `deploy\compose\compose.embeddings.yml` for self-hosted semantic embeddings 
 
 ## split-nas-gpu
 
-Recommended for your current hardware.
+Recommended when the app/data node and inference node are different machines.
 
 NAS:
 
@@ -57,6 +58,7 @@ If the NAS should own embeddings too, use `-EmbeddingRuntime cpu`. If the deskto
 One GPU machine runs the whole stack. Good for a lab box, power user desktop, or customer-owned appliance with a large GPU.
 
 Add `deploy\compose\compose.embeddings.yml` and `deploy\compose\compose.embeddings.gpu.yml` for GPU-backed TEI embeddings.
+On smaller GPUs, prefer `cpu-lite` with an external/native model gateway if the bundled vLLM container cannot fit the chosen model.
 
 ## prod-single-node
 
