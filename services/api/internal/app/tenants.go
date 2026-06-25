@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 )
+
+var ErrLastOwner = errors.New("cannot remove the last owner")
 
 type TenantIDs interface {
 	NewTenantID() domain.TenantID
@@ -22,6 +25,11 @@ type TenantService struct {
 
 type MembershipSummary struct {
 	Tenant     domain.Tenant
+	Membership domain.Membership
+}
+
+type TenantMemberSummary struct {
+	User       domain.User
 	Membership domain.Membership
 }
 
@@ -39,6 +47,38 @@ type CreateTenantResult struct {
 	User       domain.User
 	Tenant     domain.Tenant
 	Membership domain.Membership
+}
+
+type ListTenantMembersInput struct {
+	TenantID domain.TenantID
+}
+
+type ListTenantMembersResult struct {
+	Tenant  domain.Tenant
+	Members []TenantMemberSummary
+}
+
+type AddTenantMemberInput struct {
+	TenantID domain.TenantID
+	UserID   domain.UserID
+	Email    string
+	Name     string
+	Role     domain.Role
+}
+
+type AddTenantMemberResult struct {
+	Tenant domain.Tenant
+	Member TenantMemberSummary
+}
+
+type DeleteTenantMemberInput struct {
+	TenantID domain.TenantID
+	UserID   domain.UserID
+}
+
+type DeleteTenantMemberResult struct {
+	Tenant domain.Tenant
+	Member TenantMemberSummary
 }
 
 func NewTenantService(repos store.RepositorySet, ids TenantIDs, clock Clock) TenantService {
@@ -111,6 +151,105 @@ func (s TenantService) CreateTenant(ctx context.Context, input CreateTenantInput
 	}, nil
 }
 
+func (s TenantService) ListTenantMembers(ctx context.Context, input ListTenantMembersInput) (ListTenantMembersResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ListTenantMembersResult{}, err
+	}
+	tenant, err := s.repos.GetTenant(ctx, input.TenantID)
+	if err != nil {
+		return ListTenantMembersResult{}, err
+	}
+	members, err := s.tenantMemberSummaries(ctx, input.TenantID)
+	if err != nil {
+		return ListTenantMembersResult{}, err
+	}
+	return ListTenantMembersResult{
+		Tenant:  tenant,
+		Members: members,
+	}, nil
+}
+
+func (s TenantService) AddTenantMember(ctx context.Context, input AddTenantMemberInput) (AddTenantMemberResult, error) {
+	if err := ctx.Err(); err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	tenant, err := s.repos.GetTenant(ctx, input.TenantID)
+	if err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	if input.Role == "" {
+		input.Role = domain.RoleMember
+	}
+	user, err := domain.NewUser(domain.UserCreate{
+		ID:    input.UserID,
+		Email: input.Email,
+		Name:  input.Name,
+		Now:   s.clock.Now(),
+	})
+	if err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	membership, err := domain.NewMembership(domain.MembershipCreate{
+		TenantID: input.TenantID,
+		UserID:   user.ID,
+		Role:     input.Role,
+	})
+	if err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	if err := s.repos.SaveUser(ctx, user); err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	if err := s.repos.SaveMembership(ctx, membership); err != nil {
+		return AddTenantMemberResult{}, err
+	}
+	return AddTenantMemberResult{
+		Tenant: tenant,
+		Member: TenantMemberSummary{
+			User:       user,
+			Membership: membership,
+		},
+	}, nil
+}
+
+func (s TenantService) DeleteTenantMember(ctx context.Context, input DeleteTenantMemberInput) (DeleteTenantMemberResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DeleteTenantMemberResult{}, err
+	}
+	tenant, err := s.repos.GetTenant(ctx, input.TenantID)
+	if err != nil {
+		return DeleteTenantMemberResult{}, err
+	}
+	members, err := s.tenantMemberSummaries(ctx, input.TenantID)
+	if err != nil {
+		return DeleteTenantMemberResult{}, err
+	}
+
+	var removed TenantMemberSummary
+	ownerCount := 0
+	for _, member := range members {
+		if member.Membership.Role == domain.RoleOwner {
+			ownerCount++
+		}
+		if member.Membership.UserID == input.UserID {
+			removed = member
+		}
+	}
+	if removed.Membership.UserID == "" {
+		return DeleteTenantMemberResult{}, store.ErrNotFound
+	}
+	if removed.Membership.Role == domain.RoleOwner && ownerCount <= 1 {
+		return DeleteTenantMemberResult{}, ErrLastOwner
+	}
+	if err := s.repos.DeleteMembership(ctx, input.TenantID, input.UserID); err != nil {
+		return DeleteTenantMemberResult{}, err
+	}
+	return DeleteTenantMemberResult{
+		Tenant: tenant,
+		Member: removed,
+	}, nil
+}
+
 func (s TenantService) ensureUser(ctx context.Context, principal internalauth.Principal) (domain.User, error) {
 	email := strings.TrimSpace(principal.Email)
 	if email == "" {
@@ -144,6 +283,25 @@ func (s TenantService) membershipSummaries(ctx context.Context, userID domain.Us
 		}
 		summaries = append(summaries, MembershipSummary{
 			Tenant:     tenant,
+			Membership: membership,
+		})
+	}
+	return summaries, nil
+}
+
+func (s TenantService) tenantMemberSummaries(ctx context.Context, tenantID domain.TenantID) ([]TenantMemberSummary, error) {
+	memberships, err := s.repos.ListMembershipsForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]TenantMemberSummary, 0, len(memberships))
+	for _, membership := range memberships {
+		user, err := s.repos.GetUser(ctx, membership.UserID)
+		if err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, TenantMemberSummary{
+			User:       user,
 			Membership: membership,
 		})
 	}

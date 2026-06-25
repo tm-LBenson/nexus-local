@@ -50,6 +50,52 @@ func TestGetDocumentRequiresMatchingTenant(t *testing.T) {
 	}
 }
 
+func TestMembershipsAreTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+
+	for _, userID := range []domain.UserID{"user_a", "user_b"} {
+		if err := repo.SaveUser(ctx, newTestUser(t, userID, string(userID)+"@example.test")); err != nil {
+			t.Fatalf("save user %s: %v", userID, err)
+		}
+	}
+	memberships := []domain.Membership{
+		newTestMembership(t, domain.TenantID("tenant_a"), domain.UserID("user_b"), domain.RoleMember),
+		newTestMembership(t, domain.TenantID("tenant_a"), domain.UserID("user_a"), domain.RoleOwner),
+		newTestMembership(t, domain.TenantID("tenant_b"), domain.UserID("user_a"), domain.RoleViewer),
+	}
+	for _, membership := range memberships {
+		if err := repo.SaveMembership(ctx, membership); err != nil {
+			t.Fatalf("save membership %s/%s: %v", membership.TenantID, membership.UserID, err)
+		}
+	}
+
+	got, err := repo.ListMembershipsForTenant(ctx, domain.TenantID("tenant_a"))
+	if err != nil {
+		t.Fatalf("list memberships: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("memberships len = %d, want 2", len(got))
+	}
+	if got[0].UserID != domain.UserID("user_a") || got[1].UserID != domain.UserID("user_b") {
+		t.Fatalf("membership order = %s, %s; want user_a, user_b", got[0].UserID, got[1].UserID)
+	}
+
+	if err := repo.DeleteMembership(ctx, domain.TenantID("tenant_a"), domain.UserID("user_b")); err != nil {
+		t.Fatalf("delete membership: %v", err)
+	}
+	got, err = repo.ListMembershipsForTenant(ctx, domain.TenantID("tenant_a"))
+	if err != nil {
+		t.Fatalf("list memberships after delete: %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != domain.UserID("user_a") {
+		t.Fatalf("memberships after delete = %#v", got)
+	}
+	if err := repo.DeleteMembership(ctx, domain.TenantID("tenant_a"), domain.UserID("missing")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestClaimNextQueuedJobTransitionsJob(t *testing.T) {
 	ctx := context.Background()
 	repo := New()
@@ -239,6 +285,35 @@ func newTestDocument(t *testing.T, tenantID domain.TenantID, documentID domain.D
 		t.Fatalf("new document: %v", err)
 	}
 	return doc
+}
+
+func newTestUser(t *testing.T, userID domain.UserID, email string) domain.User {
+	t.Helper()
+
+	user, err := domain.NewUser(domain.UserCreate{
+		ID:    userID,
+		Email: email,
+		Name:  string(userID),
+		Now:   fixedTime(),
+	})
+	if err != nil {
+		t.Fatalf("new user: %v", err)
+	}
+	return user
+}
+
+func newTestMembership(t *testing.T, tenantID domain.TenantID, userID domain.UserID, role domain.Role) domain.Membership {
+	t.Helper()
+
+	membership, err := domain.NewMembership(domain.MembershipCreate{
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     role,
+	})
+	if err != nil {
+		t.Fatalf("new membership: %v", err)
+	}
+	return membership
 }
 
 func newTestJob(t *testing.T, tenantID domain.TenantID, jobID domain.JobID, now time.Time) domain.Job {

@@ -138,6 +138,43 @@ func (s *Store) ListMembershipsForUser(ctx context.Context, userID domain.UserID
 	return memberships, nil
 }
 
+func (s *Store) ListMembershipsForTenant(ctx context.Context, tenantID domain.TenantID) ([]domain.Membership, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	memberships := make([]domain.Membership, 0)
+	for _, membership := range s.memberships {
+		if membership.TenantID == tenantID {
+			memberships = append(memberships, membership)
+		}
+	}
+	sort.Slice(memberships, func(i, j int) bool {
+		return memberships[i].UserID < memberships[j].UserID
+	})
+	return memberships, nil
+}
+
+func (s *Store) DeleteMembership(ctx context.Context, tenantID domain.TenantID, userID domain.UserID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := membershipKey{
+		tenantID: tenantID,
+		userID:   userID,
+	}
+	if _, ok := s.memberships[key]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.memberships, key)
+	return nil
+}
+
 func (s *Store) SaveDocument(ctx context.Context, document domain.Document) error {
 	if err := ctx.Err(); err != nil {
 		return err

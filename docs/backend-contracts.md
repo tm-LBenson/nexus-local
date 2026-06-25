@@ -34,6 +34,9 @@ Identity bootstrap endpoints:
 
 - `GET /v1/me`: persists/returns the authenticated principal and tenant memberships.
 - `POST /v1/tenants`: creates a generated tenant and grants the authenticated principal `owner`.
+- `GET /v1/tenants/<tenant_id>/members`: lists workspace members for owner/admin users.
+- `POST /v1/tenants/<tenant_id>/members`: creates or updates a member user and role for owner/admin users.
+- `DELETE /v1/tenants/<tenant_id>/members/<user_id>`: removes a workspace member while protecting the last owner.
 
 ## Provider Package
 

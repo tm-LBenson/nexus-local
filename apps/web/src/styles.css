@@ -307,6 +307,14 @@ h3 {
   justify-content: space-between;
 }
 
+.memberForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr) 112px 76px;
+  gap: 8px;
+  align-items: end;
+  width: 100%;
+}
+
 .uploadBar input[type="file"] {
   min-height: 34px;
   padding: 5px 8px;
@@ -472,6 +480,7 @@ h3 {
 }
 
 .inlineDetails .resultStack,
+.inlineDetails .memberForm,
 .inlineDetails .tableList {
   width: 100%;
 }
@@ -511,6 +520,7 @@ h3 {
 .conversationRow,
 .jobRow,
 .tenantRow,
+.memberRow,
 .targetRow,
 .searchHit {
   display: grid;
@@ -578,6 +588,11 @@ h3 {
   text-align: left;
 }
 
+.memberRow {
+  grid-template-columns: minmax(0, 1fr) 88px minmax(150px, 220px) 92px;
+  gap: 10px;
+}
+
 .targetRow {
   grid-template-columns: minmax(0, 120px) minmax(0, 1fr) minmax(120px, 190px) 76px;
   gap: 10px;
@@ -621,6 +636,8 @@ h3 {
 .jobRow time,
 .tenantRow strong,
 .tenantRow em,
+.memberRow strong,
+.memberRow em,
 .targetRow span,
 .targetRow strong,
 .targetRow em,
@@ -632,7 +649,8 @@ h3 {
 .documentRow span,
 .conversationRow span,
 .jobRow span,
-.tenantRow span {
+.tenantRow span,
+.memberRow span {
   color: #0a684c;
   font-size: 0.8rem;
   font-weight: 800;
@@ -646,6 +664,7 @@ h3 {
 .jobRow small,
 .jobRow time,
 .tenantRow em,
+.memberRow em,
 .targetRow em,
 .searchHit em {
   color: #69777d;
@@ -995,6 +1014,8 @@ h3 {
   .conversationRow,
   .jobRow,
   .tenantRow,
+  .memberForm,
+  .memberRow,
   .targetRow,
   .resultBand {
     grid-template-columns: 1fr;

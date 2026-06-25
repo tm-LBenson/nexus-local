@@ -8,16 +8,19 @@ import {
   ListConversationsResponse,
   ListDocumentsResponse,
   ListJobsResponse,
+  ListTenantMembersResponse,
   ModelTarget,
   Readiness,
   RegisterDocumentResponse,
   SearchDocumentsResponse,
+  addTenantMember,
   askConversationStream,
   apiBase,
   checkModelTarget,
   createTenant,
   deleteConversation,
   deleteDocument,
+  deleteTenantMember,
   downloadDocument,
   getDocument,
   getCurrentUser,
@@ -28,6 +31,7 @@ import {
   listConversations,
   listDocuments,
   listJobs,
+  listTenantMembers,
   retryDocument,
   searchDocuments,
   uploadDocument,
@@ -48,6 +52,13 @@ const initialAsk = {
   limit: 5,
 };
 
+const initialMemberForm = {
+  user_id: '',
+  email: '',
+  name: '',
+  role: 'member',
+};
+
 export function App() {
   const [activeView, setActiveView] = useState<View>('ask');
   const [health, setHealth] = useState<Health | null>(null);
@@ -62,12 +73,14 @@ export function App() {
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
+  const [tenantMembers, setTenantMembers] = useState<ListTenantMembersResponse | null>(null);
   const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
   const [conversationMessages, setConversationMessages] =
     useState<ListConversationMessagesResponse | null>(null);
   const [selectedConversationID, setSelectedConversationID] = useState('');
   const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
+  const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [streamAnswer, setStreamAnswer] = useState('');
@@ -75,6 +88,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
+  const [savingMember, setSavingMember] = useState(false);
+  const [removingMemberID, setRemovingMemberID] = useState('');
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [downloadingDocumentID, setDownloadingDocumentID] = useState('');
   const [loadingDocumentID, setLoadingDocumentID] = useState('');
@@ -93,6 +108,9 @@ export function App() {
   const workspaceReady = tenantID !== '';
   const needsWorkspace = currentUser !== null && currentUser.memberships.length === 0;
   const workspaceLabel = selectedTenant?.tenant.name ?? (tenantID || 'No workspace');
+  const canManageMembers =
+    selectedTenant?.role === 'owner' || selectedTenant?.role === 'admin';
+  const ownerCount = tenantMembers?.members.filter((member) => member.role === 'owner').length ?? 0;
   const activeJobCount = useMemo(
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)).length ?? 0,
     [jobs],
@@ -199,6 +217,15 @@ export function App() {
     };
   }, [tenantID, trackedDocumentID, trackingIngestion]);
 
+  useEffect(() => {
+    if (activeView !== 'settings' || !tenantID || !canManageMembers) {
+      setTenantMembers(null);
+      return;
+    }
+
+    void refreshTenantMembers(tenantID);
+  }, [activeView, tenantID, canManageMembers]);
+
   async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
     if (!nextTenantID) {
@@ -207,6 +234,19 @@ export function App() {
     }
     try {
       setDocuments(await listDocuments(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function refreshTenantMembers(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setTenantMembers(null);
+      return;
+    }
+    try {
+      setTenantMembers(await listTenantMembers(nextTenantID));
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -289,6 +329,7 @@ export function App() {
     setRegistration(null);
     setDocumentDetail(null);
     setSearchResult(null);
+    setTenantMembers(null);
     setSelectedConversationID('');
     setConversationMessages(null);
     setAskForm((current) => ({ ...current, conversation_id: '', document_id: '' }));
@@ -297,6 +338,7 @@ export function App() {
     if (!nextTenantID) {
       setDocuments({ documents: [] });
       setJobs({ jobs: [] });
+      setTenantMembers(null);
       setConversations({ conversations: [] });
       return;
     }
@@ -311,6 +353,15 @@ export function App() {
       setConversations(conversationsResult);
     } catch (err) {
       setError(messageFromError(err));
+    }
+  }
+
+  async function refreshCurrentUserAfterMemberChange(nextTenantID = tenantID) {
+    const nextUser = await getCurrentUser();
+    setCurrentUser(nextUser);
+    if (nextTenantID && !nextUser.memberships.some((membership) => membership.tenant.id === nextTenantID)) {
+      const replacementTenantID = nextUser.memberships[0]?.tenant.id ?? '';
+      await switchTenant(replacementTenantID);
     }
   }
 
@@ -358,6 +409,56 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setCreatingTenant(false);
+    }
+  }
+
+  async function submitMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    if (!memberForm.user_id.trim() || !memberForm.email.trim()) {
+      setError('Enter a user ID and email');
+      return;
+    }
+    setSavingMember(true);
+    setError(null);
+    try {
+      await addTenantMember(tenantID, {
+        user_id: memberForm.user_id.trim(),
+        email: memberForm.email.trim(),
+        name: memberForm.name.trim(),
+        role: memberForm.role,
+      });
+      setMemberForm(initialMemberForm);
+      await Promise.all([
+        refreshTenantMembers(tenantID),
+        refreshCurrentUserAfterMemberChange(tenantID),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setSavingMember(false);
+    }
+  }
+
+  async function removeTenantMember(userID: string, email: string) {
+    if (!window.confirm(`Remove ${email || userID}?`)) {
+      return;
+    }
+    setRemovingMemberID(userID);
+    setError(null);
+    try {
+      await deleteTenantMember(tenantID, userID);
+      await Promise.all([
+        refreshTenantMembers(tenantID),
+        refreshCurrentUserAfterMemberChange(tenantID),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setRemovingMemberID('');
     }
   }
 
@@ -1104,7 +1205,7 @@ export function App() {
           <div className="settingsGrid">
             <section className="workSurface">
               <div className="surfaceHeader">
-                <h2>Tenants</h2>
+                <h2>Workspaces</h2>
                 <span>{currentUser?.user.email ?? 'Unknown user'}</span>
               </div>
               {needsWorkspace && (
@@ -1137,9 +1238,104 @@ export function App() {
                   </button>
                 ))}
                 {currentUser && currentUser.memberships.length === 0 && (
-                  <p className="muted">No tenants</p>
+                  <p className="muted">No workspaces</p>
                 )}
               </div>
+            </section>
+
+            <section className="workSurface">
+              <div className="surfaceHeader">
+                <h2>Members</h2>
+                <span>{workspaceLabel}</span>
+              </div>
+              {!workspaceReady && <p className="muted">No workspace</p>}
+              {workspaceReady && !canManageMembers && (
+                <p className="muted">Owner or admin access required</p>
+              )}
+              {workspaceReady && canManageMembers && (
+                <>
+                  <details className="inlineDetails">
+                    <summary>Add member</summary>
+                    <form className="memberForm" onSubmit={submitMember}>
+                      <input
+                        aria-label="Member user ID"
+                        onChange={(event) =>
+                          setMemberForm((current) => ({
+                            ...current,
+                            user_id: event.target.value,
+                          }))
+                        }
+                        placeholder="User ID"
+                        value={memberForm.user_id}
+                      />
+                      <input
+                        aria-label="Member email"
+                        onChange={(event) =>
+                          setMemberForm((current) => ({ ...current, email: event.target.value }))
+                        }
+                        placeholder="Email"
+                        type="email"
+                        value={memberForm.email}
+                      />
+                      <input
+                        aria-label="Member name"
+                        onChange={(event) =>
+                          setMemberForm((current) => ({ ...current, name: event.target.value }))
+                        }
+                        placeholder="Name"
+                        value={memberForm.name}
+                      />
+                      <select
+                        aria-label="Member role"
+                        onChange={(event) =>
+                          setMemberForm((current) => ({ ...current, role: event.target.value }))
+                        }
+                        value={memberForm.role}
+                      >
+                        <option value="member">Member</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                      <button disabled={savingMember} type="submit">
+                        {savingMember ? 'Saving' : 'Add'}
+                      </button>
+                    </form>
+                  </details>
+
+                  <div className="tableList">
+                    {tenantMembers?.members.map((member) => {
+                      const isCurrentUser = member.user.id === currentUser?.user.id;
+                      const isLastOwner = member.role === 'owner' && ownerCount <= 1;
+                      return (
+                        <div className="memberRow" key={member.user.id}>
+                          <strong>{member.user.email}</strong>
+                          <span>{member.role}</span>
+                          <em>{member.user.id}</em>
+                          <button
+                            className="dangerButton"
+                            disabled={
+                              removingMemberID === member.user.id ||
+                              isCurrentUser ||
+                              isLastOwner
+                            }
+                            onClick={() =>
+                              void removeTenantMember(member.user.id, member.user.email)
+                            }
+                            type="button"
+                          >
+                            {removingMemberID === member.user.id ? 'Removing' : 'Remove'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {tenantMembers && tenantMembers.members.length === 0 && (
+                      <p className="muted">No members</p>
+                    )}
+                    {!tenantMembers && <p className="muted">Loading members</p>}
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="workSurface">

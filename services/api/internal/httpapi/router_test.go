@@ -218,6 +218,68 @@ func TestCreateTenantEndpointCreatesOwnerMembership(t *testing.T) {
 	}
 }
 
+func TestTenantMemberEndpoints(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/tenants", bytes.NewBufferString(`{"name":"Research Lab"}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant_http/members", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", list.Code, list.Body.String())
+	}
+	var listBody struct {
+		Members []tenantMemberPayload `json:"members"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listBody.Members) != 1 || listBody.Members[0].Role != "owner" {
+		t.Fatalf("members = %#v", listBody.Members)
+	}
+
+	add := httptest.NewRecorder()
+	addReq := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant_http/members", bytes.NewBufferString(`{
+		"user_id": "user_2",
+		"email": "User2@Example.Test",
+		"name": "User Two",
+		"role": "viewer"
+	}`))
+	server.ServeHTTP(add, addReq)
+	if add.Code != http.StatusCreated {
+		t.Fatalf("add status = %d, body = %s", add.Code, add.Body.String())
+	}
+	var addBody struct {
+		Member tenantMemberPayload `json:"member"`
+	}
+	if err := json.NewDecoder(add.Body).Decode(&addBody); err != nil {
+		t.Fatalf("decode add: %v", err)
+	}
+	if addBody.Member.User.Email != "user2@example.test" || addBody.Member.Role != "viewer" {
+		t.Fatalf("member = %#v", addBody.Member)
+	}
+
+	remove := httptest.NewRecorder()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/tenants/tenant_http/members/user_2", nil)
+	server.ServeHTTP(remove, removeReq)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", remove.Code, remove.Body.String())
+	}
+
+	lastOwner := httptest.NewRecorder()
+	lastOwnerReq := httptest.NewRequest(http.MethodDelete, "/v1/tenants/tenant_http/members/user_1", nil)
+	server.ServeHTTP(lastOwner, lastOwnerReq)
+	if lastOwner.Code != http.StatusConflict {
+		t.Fatalf("last owner status = %d, want %d, body = %s", lastOwner.Code, http.StatusConflict, lastOwner.Body.String())
+	}
+}
+
 func TestRegisterDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 

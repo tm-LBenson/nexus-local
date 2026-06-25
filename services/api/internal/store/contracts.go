@@ -23,6 +23,8 @@ type UserRepository interface {
 type MembershipRepository interface {
 	SaveMembership(ctx context.Context, membership domain.Membership) error
 	ListMembershipsForUser(ctx context.Context, userID domain.UserID) ([]domain.Membership, error)
+	ListMembershipsForTenant(ctx context.Context, tenantID domain.TenantID) ([]domain.Membership, error)
+	DeleteMembership(ctx context.Context, tenantID domain.TenantID, userID domain.UserID) error
 }
 
 type DocumentRepository interface {

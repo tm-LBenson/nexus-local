@@ -42,6 +42,9 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
 	mux.HandleFunc("GET /v1/me", currentUserHandler(deps.Tenants))
 	mux.HandleFunc("POST /v1/tenants", createTenantHandler(deps.Tenants))
+	mux.HandleFunc("GET /v1/tenants/{tenant_id}/members", listTenantMembersHandler(deps.Tenants, deps.Authorizer))
+	mux.HandleFunc("POST /v1/tenants/{tenant_id}/members", addTenantMemberHandler(deps.Tenants, deps.Authorizer))
+	mux.HandleFunc("DELETE /v1/tenants/{tenant_id}/members/{user_id}", deleteTenantMemberHandler(deps.Tenants, deps.Authorizer))
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/model-targets/check", modelTargetCheckHandler(deps.ModelRouter, deps.ModelGateway, deps.Authorizer))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
@@ -232,6 +235,13 @@ type createTenantRequest struct {
 	Name string `json:"name"`
 }
 
+type tenantMemberRequest struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	Role   string `json:"role"`
+}
+
 type modelTargetCheckRequest struct {
 	TenantID string `json:"tenant_id"`
 	Target   string `json:"target"`
@@ -253,6 +263,11 @@ type tenantPayload struct {
 type membershipPayload struct {
 	Tenant tenantPayload `json:"tenant"`
 	Role   string        `json:"role"`
+}
+
+type tenantMemberPayload struct {
+	User userPayload `json:"user"`
+	Role string      `json:"role"`
 }
 
 type documentPayload struct {
@@ -394,6 +409,97 @@ func createTenantHandler(service app.TenantService) http.HandlerFunc {
 			}),
 		})
 	}
+}
+
+func listTenantMembersHandler(service app.TenantService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.PathValue("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageUsers); !ok {
+			return
+		}
+
+		result, err := service.ListTenantMembers(r.Context(), app.ListTenantMembersInput{
+			TenantID: tenantID,
+		})
+		if err != nil {
+			writeTenantMemberError(w, "list tenant members", err)
+			return
+		}
+		members := make([]tenantMemberPayload, 0, len(result.Members))
+		for _, member := range result.Members {
+			members = append(members, encodeTenantMember(member))
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"tenant":  encodeTenant(result.Tenant),
+			"members": members,
+		})
+	}
+}
+
+func addTenantMemberHandler(service app.TenantService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.PathValue("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageUsers); !ok {
+			return
+		}
+
+		var req tenantMemberRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		result, err := service.AddTenantMember(r.Context(), app.AddTenantMemberInput{
+			TenantID: tenantID,
+			UserID:   domain.UserID(req.UserID),
+			Email:    req.Email,
+			Name:     req.Name,
+			Role:     domain.Role(req.Role),
+		})
+		if err != nil {
+			writeTenantMemberError(w, "add tenant member", err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, envelope{
+			"tenant": encodeTenant(result.Tenant),
+			"member": encodeTenantMember(result.Member),
+		})
+	}
+}
+
+func deleteTenantMemberHandler(service app.TenantService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.PathValue("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageUsers); !ok {
+			return
+		}
+
+		result, err := service.DeleteTenantMember(r.Context(), app.DeleteTenantMemberInput{
+			TenantID: tenantID,
+			UserID:   domain.UserID(r.PathValue("user_id")),
+		})
+		if err != nil {
+			writeTenantMemberError(w, "delete tenant member", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"tenant": encodeTenant(result.Tenant),
+			"member": encodeTenantMember(result.Member),
+		})
+	}
+}
+
+func writeTenantMemberError(w http.ResponseWriter, action string, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, domain.ErrInvalidEntity) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	if errors.Is(err, app.ErrLastOwner) {
+		status = http.StatusConflict
+	}
+	writeError(w, status, fmt.Sprintf("%s: %v", action, err))
 }
 
 func registerDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
@@ -990,6 +1096,13 @@ func encodeMembershipSummary(summary app.MembershipSummary) membershipPayload {
 	return membershipPayload{
 		Tenant: encodeTenant(summary.Tenant),
 		Role:   string(summary.Membership.Role),
+	}
+}
+
+func encodeTenantMember(member app.TenantMemberSummary) tenantMemberPayload {
+	return tenantMemberPayload{
+		User: encodeUser(member.User),
+		Role: string(member.Membership.Role),
 	}
 }
 

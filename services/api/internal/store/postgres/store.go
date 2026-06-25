@@ -118,6 +118,43 @@ func (s *Store) ListMembershipsForUser(ctx context.Context, userID domain.UserID
 	return memberships, rows.Err()
 }
 
+func (s *Store) ListMembershipsForTenant(ctx context.Context, tenantID domain.TenantID) ([]domain.Membership, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT tenant_id, user_id, role
+		FROM memberships
+		WHERE tenant_id = $1
+		ORDER BY user_id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memberships := make([]domain.Membership, 0)
+	for rows.Next() {
+		var membership domain.Membership
+		if err := rows.Scan(&membership.TenantID, &membership.UserID, &membership.Role); err != nil {
+			return nil, err
+		}
+		memberships = append(memberships, membership)
+	}
+	return memberships, rows.Err()
+}
+
+func (s *Store) DeleteMembership(ctx context.Context, tenantID domain.TenantID, userID domain.UserID) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM memberships
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) SaveDocument(ctx context.Context, document domain.Document) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO documents (

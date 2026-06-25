@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	internalauth "github.com/tm-lbenson/nexus-local/services/api/internal/auth"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
@@ -85,6 +87,157 @@ func TestCreateTenantRejectsMissingName(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("err = nil, want validation error")
+	}
+}
+
+func TestAddTenantMemberCreatesUserMembershipAndListEntry(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewTenantService(repos, tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Research Lab",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	result, err := service.AddTenantMember(ctx, AddTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("user_2"),
+		Email:    "User2@Example.Test",
+		Name:     "User Two",
+		Role:     domain.RoleMember,
+	})
+	if err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+	if result.Member.User.Email != "user2@example.test" {
+		t.Fatalf("email = %q, want normalized email", result.Member.User.Email)
+	}
+	if result.Member.Membership.Role != domain.RoleMember {
+		t.Fatalf("role = %q, want member", result.Member.Membership.Role)
+	}
+
+	members, err := service.ListTenantMembers(ctx, ListTenantMembersInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+	})
+	if err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	if len(members.Members) != 2 {
+		t.Fatalf("members len = %d, want 2", len(members.Members))
+	}
+	if members.Members[1].User.ID != domain.UserID("user_2") {
+		t.Fatalf("second user = %q, want user_2", members.Members[1].User.ID)
+	}
+
+	currentUser, err := service.CurrentUser(ctx, internalauth.Principal{
+		UserID: domain.UserID("user_2"),
+		Email:  "user2@example.test",
+	})
+	if err != nil {
+		t.Fatalf("current added user: %v", err)
+	}
+	if len(currentUser.Memberships) != 1 || currentUser.Memberships[0].Tenant.ID != domain.TenantID("tenant_fixed") {
+		t.Fatalf("memberships = %#v", currentUser.Memberships)
+	}
+}
+
+func TestAddTenantMemberRejectsInvalidRole(t *testing.T) {
+	ctx := context.Background()
+	service := NewTenantService(memory.New(), tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Research Lab",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	_, err := service.AddTenantMember(ctx, AddTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("user_2"),
+		Email:    "user2@example.test",
+		Role:     domain.Role("superuser"),
+	})
+	if !errors.Is(err, domain.ErrInvalidEntity) {
+		t.Fatalf("err = %v, want ErrInvalidEntity", err)
+	}
+}
+
+func TestDeleteTenantMemberRemovesMembership(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewTenantService(repos, tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Research Lab",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if _, err := service.AddTenantMember(ctx, AddTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("user_2"),
+		Email:    "user2@example.test",
+		Role:     domain.RoleViewer,
+	}); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+
+	deleted, err := service.DeleteTenantMember(ctx, DeleteTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("user_2"),
+	})
+	if err != nil {
+		t.Fatalf("delete member: %v", err)
+	}
+	if deleted.Member.User.Email != "user2@example.test" {
+		t.Fatalf("deleted email = %q", deleted.Member.User.Email)
+	}
+	memberships, err := repos.ListMembershipsForUser(ctx, domain.UserID("user_2"))
+	if err != nil {
+		t.Fatalf("list memberships: %v", err)
+	}
+	if len(memberships) != 0 {
+		t.Fatalf("memberships len = %d, want 0", len(memberships))
+	}
+}
+
+func TestDeleteTenantMemberProtectsLastOwner(t *testing.T) {
+	ctx := context.Background()
+	service := NewTenantService(memory.New(), tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Research Lab",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	_, err := service.DeleteTenantMember(ctx, DeleteTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("owner_1"),
+	})
+	if !errors.Is(err, ErrLastOwner) {
+		t.Fatalf("err = %v, want ErrLastOwner", err)
+	}
+
+	_, err = service.DeleteTenantMember(ctx, DeleteTenantMemberInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+		UserID:   domain.UserID("missing"),
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 

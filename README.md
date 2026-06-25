@@ -7,6 +7,7 @@ The project is early, but the core shape is already in place: a replaceable back
 ## What It Does
 
 - Upload documents into tenant-scoped workspaces.
+- Manage workspace members and roles for self-hosted team access.
 - Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
 - Chunk, embed, and index documents for semantic retrieval.
 - Search across indexed document chunks.
@@ -156,6 +157,9 @@ Useful endpoints during development:
 - `GET /readyz`
 - `GET /v1/me`
 - `POST /v1/tenants`
+- `GET /v1/tenants/{tenant_id}/members`
+- `POST /v1/tenants/{tenant_id}/members`
+- `DELETE /v1/tenants/{tenant_id}/members/{user_id}`
 - `GET /v1/model-targets`
 - `POST /v1/model-targets/check`
 - `GET /v1/documents?tenant_id=tenant_1`
@@ -182,6 +186,15 @@ Example document upload:
 Invoke-RestMethod http://localhost:8080/v1/documents/upload `
   -Method Post `
   -Form @{ tenant_id = 'tenant_1'; file = Get-Item .\README.md }
+```
+
+Example member add:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/v1/tenants/tenant_1/members `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"user_id":"user_2","email":"user2@example.local","role":"member"}'
 ```
 
 Example search:
@@ -260,7 +273,7 @@ Near-term priorities:
 - Better worker visibility and retry controls.
 - Streaming chat responses.
 - More document management tools.
-- Production auth examples for reverse-proxy/OIDC deployments.
+- Reverse-proxy/OIDC deployment examples.
 - Observability stack examples with Prometheus/Grafana/OpenTelemetry.
 
 ## License

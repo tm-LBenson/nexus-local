@@ -62,6 +62,11 @@ export type TenantMembership = {
   role: string;
 };
 
+export type TenantMember = {
+  user: CurrentUser;
+  role: string;
+};
+
 export type CurrentUserResponse = {
   user: CurrentUser;
   memberships: TenantMembership[];
@@ -71,6 +76,16 @@ export type CreateTenantResponse = {
   user: CurrentUser;
   tenant: Tenant;
   membership: TenantMembership;
+};
+
+export type ListTenantMembersResponse = {
+  tenant: Tenant;
+  members: TenantMember[];
+};
+
+export type AddTenantMemberResponse = {
+  tenant: Tenant;
+  member: TenantMember;
 };
 
 export type DocumentRegistration = {
@@ -232,6 +247,32 @@ export async function createTenant(input: { name: string }) {
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export async function listTenantMembers(tenantId: string) {
+  return request<ListTenantMembersResponse>(
+    `/v1/tenants/${encodeURIComponent(tenantId)}/members`,
+  );
+}
+
+export async function addTenantMember(
+  tenantId: string,
+  input: { user_id: string; email: string; name?: string; role: string },
+) {
+  return request<AddTenantMemberResponse>(
+    `/v1/tenants/${encodeURIComponent(tenantId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteTenantMember(tenantId: string, userId: string) {
+  return request<AddTenantMemberResponse>(
+    `/v1/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function listDocuments(tenantId: string) {
