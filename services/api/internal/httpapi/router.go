@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,6 +44,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents/{document_id}", getDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("GET /v1/documents/{document_id}/download", downloadDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/{document_id}/retry", retryDocumentHandler(deps.Documents, deps.Authorizer))
@@ -395,6 +398,51 @@ func getDocumentHandler(service app.DocumentService, authorizer internalauth.Aut
 			"document": encodeDocument(result.Document),
 			"jobs":     jobs,
 		})
+	}
+}
+
+func downloadDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		documentID := domain.DocumentID(r.PathValue("document_id"))
+
+		result, err := service.DownloadDocument(r.Context(), app.DownloadDocumentInput{
+			TenantID:   tenantID,
+			DocumentID: documentID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, app.ErrObjectStoreUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("download document: %v", err))
+			return
+		}
+		defer result.Body.Close()
+
+		contentType := result.Object.ContentType
+		if strings.TrimSpace(contentType) == "" {
+			contentType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+			"filename": result.Document.Name,
+		}))
+		if result.Object.SizeBytes >= 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(result.Object.SizeBytes, 10))
+		}
+		if _, err := io.Copy(w, result.Body); err != nil {
+			log.Printf("download document %s failed: %v", result.Document.ID, err)
+		}
 	}
 }
 

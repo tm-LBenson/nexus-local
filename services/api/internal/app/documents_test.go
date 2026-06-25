@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,60 @@ func TestUploadDocumentRequiresObjectStore(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("err = nil, want object store error")
+	}
+}
+
+func TestDownloadDocumentReturnsStoredObject(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{}).WithObjectStore(objects)
+
+	uploaded, err := service.UploadDocument(ctx, UploadDocumentInput{
+		TenantID:    domain.TenantID("tenant_1"),
+		OwnerID:     domain.UserID("user_1"),
+		Name:        "Handbook.md",
+		ContentType: "text/markdown",
+		SizeBytes:   11,
+		Body:        strings.NewReader("hello world"),
+	})
+	if err != nil {
+		t.Fatalf("upload document: %v", err)
+	}
+
+	downloaded, err := service.DownloadDocument(ctx, DownloadDocumentInput{
+		TenantID:   uploaded.Document.TenantID,
+		DocumentID: uploaded.Document.ID,
+	})
+	if err != nil {
+		t.Fatalf("download document: %v", err)
+	}
+	defer downloaded.Body.Close()
+
+	content, err := io.ReadAll(downloaded.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(content) != "hello world" {
+		t.Fatalf("content = %q, want hello world", content)
+	}
+	if downloaded.Document.ID != uploaded.Document.ID {
+		t.Fatalf("document id = %q, want %q", downloaded.Document.ID, uploaded.Document.ID)
+	}
+	if downloaded.Object.ContentType != "text/markdown" {
+		t.Fatalf("content type = %q, want text/markdown", downloaded.Object.ContentType)
+	}
+}
+
+func TestDownloadDocumentRequiresObjectStore(t *testing.T) {
+	service := NewDocumentService(memory.New(), fixedIDs{}, fixedClock{})
+
+	_, err := service.DownloadDocument(context.Background(), DownloadDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		DocumentID: domain.DocumentID("doc_1"),
+	})
+	if !errors.Is(err, ErrObjectStoreUnavailable) {
+		t.Fatalf("err = %v, want object store unavailable", err)
 	}
 }
 

@@ -73,6 +73,17 @@ type DocumentDetailResult struct {
 	Jobs     []domain.Job
 }
 
+type DownloadDocumentInput struct {
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+}
+
+type DownloadDocumentResult struct {
+	Document domain.Document
+	Object   providers.ObjectInfo
+	Body     io.ReadCloser
+}
+
 type DeleteDocumentInput struct {
 	TenantID   domain.TenantID
 	DocumentID domain.DocumentID
@@ -193,6 +204,37 @@ func (s DocumentService) GetDocumentDetail(ctx context.Context, input DocumentDe
 	return DocumentDetailResult{
 		Document: document,
 		Jobs:     relatedJobs,
+	}, nil
+}
+
+func (s DocumentService) DownloadDocument(ctx context.Context, input DownloadDocumentInput) (DownloadDocumentResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DownloadDocumentResult{}, err
+	}
+	if s.objects == nil {
+		return DownloadDocumentResult{}, ErrObjectStoreUnavailable
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DocumentID)) == "" {
+		return DownloadDocumentResult{}, fmt.Errorf("download document: %w", domain.ErrInvalidEntity)
+	}
+
+	document, err := s.repos.GetDocument(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return DownloadDocumentResult{}, err
+	}
+	if document.Status == domain.DocumentStatusDeleted {
+		return DownloadDocumentResult{}, store.ErrNotFound
+	}
+
+	body, info, err := s.objects.GetObject(ctx, document.TenantID, document.StorageKey)
+	if err != nil {
+		return DownloadDocumentResult{}, err
+	}
+
+	return DownloadDocumentResult{
+		Document: document,
+		Object:   info,
+		Body:     body,
 	}, nil
 }
 

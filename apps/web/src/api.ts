@@ -225,6 +225,13 @@ export async function getDocument(tenantId: string, documentId: string) {
   );
 }
 
+export async function downloadDocument(tenantId: string, documentId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return requestBlob(
+    `/v1/documents/${encodeURIComponent(documentId)}/download?${params.toString()}`,
+  );
+}
+
 export async function retryDocument(tenantId: string, documentId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<RegisterDocumentResponse>(
@@ -429,6 +436,17 @@ async function requestForm<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}${path}`, init);
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `API returned ${response.status}`);
+  }
+
+  return response.blob();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -17,6 +17,7 @@ import {
   createTenant,
   deleteConversation,
   deleteDocument,
+  downloadDocument,
   getDocument,
   getCurrentUser,
   getHealth,
@@ -69,6 +70,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
+  const [downloadingDocumentID, setDownloadingDocumentID] = useState('');
   const [loadingDocumentID, setLoadingDocumentID] = useState('');
   const [retryingDocumentID, setRetryingDocumentID] = useState('');
   const [deletingConversationID, setDeletingConversationID] = useState('');
@@ -289,6 +291,19 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setRetryingDocumentID('');
+    }
+  }
+
+  async function downloadDocumentSource(source: DocumentDetailResponse['document']) {
+    setDownloadingDocumentID(source.id);
+    setError(null);
+    try {
+      const blob = await downloadDocument(tenantID, source.id);
+      saveBlob(blob, source.name || source.id);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDownloadingDocumentID('');
     }
   }
 
@@ -603,6 +618,13 @@ export function App() {
                   <h3>{documentDetail.document.name}</h3>
                   <div className="detailActions">
                     <span>{documentDetail.document.status}</span>
+                    <button
+                      disabled={downloadingDocumentID === documentDetail.document.id}
+                      onClick={() => void downloadDocumentSource(documentDetail.document)}
+                      type="button"
+                    >
+                      {downloadingDocumentID === documentDetail.document.id ? 'Downloading' : 'Download'}
+                    </button>
                     {documentDetail.document.status === 'failed' && (
                       <button
                         disabled={
@@ -1029,6 +1051,17 @@ function hasActiveIngestionJob(detail: DocumentDetailResponse) {
       job.resource_id === detail.document.id &&
       ['queued', 'running', 'retrying'].includes(job.state),
   );
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = globalThis.document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  globalThis.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formatBytes(bytes: number) {

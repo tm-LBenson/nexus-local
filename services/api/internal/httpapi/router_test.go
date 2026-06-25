@@ -496,6 +496,54 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 }
 
+func TestDownloadDocumentEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
+		t.Fatalf("tenant field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "Handbook.md")
+	if err != nil {
+		t.Fatalf("file field: %v", err)
+	}
+	if _, err := part.Write([]byte("hello world")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	upload := httptest.NewRecorder()
+	uploadReq := httptest.NewRequest(http.MethodPost, "/v1/documents/upload", &body)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	server.ServeHTTP(upload, uploadReq)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, want %d, body = %s", upload.Code, http.StatusCreated, upload.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents/doc_http/download?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if resp.Body.String() != "hello world" {
+		t.Fatalf("body = %q, want hello world", resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("content type = %q, want application/octet-stream", got)
+	}
+	if got := resp.Header().Get("Content-Length"); got != "11" {
+		t.Fatalf("content length = %q, want 11", got)
+	}
+	if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "Handbook.md") {
+		t.Fatalf("content disposition = %q, want filename", got)
+	}
+}
+
 func TestSearchEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
