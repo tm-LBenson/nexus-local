@@ -89,6 +89,15 @@ type ListMessagesResult struct {
 	Messages []domain.Message
 }
 
+type DeleteConversationInput struct {
+	TenantID       domain.TenantID
+	ConversationID domain.ConversationID
+}
+
+type DeleteConversationResult struct {
+	Conversation domain.Conversation
+}
+
 func NewConversationService(repos store.RepositorySet, ids ConversationIDs, clock Clock, search SearchService, models providers.ModelGateway) ConversationService {
 	return ConversationService{
 		repos:  repos,
@@ -132,6 +141,23 @@ func (s ConversationService) ListMessages(ctx context.Context, input ListMessage
 		return ListMessagesResult{}, err
 	}
 	return ListMessagesResult{Messages: messages}, nil
+}
+
+func (s ConversationService) DeleteConversation(ctx context.Context, input DeleteConversationInput) (DeleteConversationResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DeleteConversationResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.ConversationID)) == "" {
+		return DeleteConversationResult{}, fmt.Errorf("delete conversation: %w", domain.ErrInvalidEntity)
+	}
+	conversation, err := s.repos.GetConversation(ctx, input.TenantID, input.ConversationID)
+	if err != nil {
+		return DeleteConversationResult{}, err
+	}
+	if err := s.repos.DeleteConversation(ctx, input.TenantID, input.ConversationID); err != nil {
+		return DeleteConversationResult{}, err
+	}
+	return DeleteConversationResult{Conversation: conversation}, nil
 }
 
 func (s ConversationService) Ask(ctx context.Context, input AskInput) (AskResult, error) {

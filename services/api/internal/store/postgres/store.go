@@ -378,6 +378,20 @@ func (s *Store) ListConversations(ctx context.Context, tenantID domain.TenantID)
 	return conversations, rows.Err()
 }
 
+func (s *Store) DeleteConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM conversations
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) SaveMessage(ctx context.Context, message domain.Message) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO messages (

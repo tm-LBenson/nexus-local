@@ -317,6 +317,26 @@ func (s *Store) ListConversations(ctx context.Context, tenantID domain.TenantID)
 	return conversations, nil
 }
 
+func (s *Store) DeleteConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := tenantConversationKey{tenantID: tenantID, conversationID: id}
+	if _, ok := s.conversations[key]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.conversations, key)
+	for messageKey, message := range s.messages {
+		if message.TenantID == tenantID && message.ConversationID == id {
+			delete(s.messages, messageKey)
+		}
+	}
+	return nil
+}
+
 func (s *Store) SaveMessage(ctx context.Context, message domain.Message) error {
 	if err := ctx.Err(); err != nil {
 		return err

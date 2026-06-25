@@ -14,6 +14,7 @@ import {
   askConversationStream,
   apiBase,
   createTenant,
+  deleteConversation,
   deleteDocument,
   getCurrentUser,
   getHealth,
@@ -64,6 +65,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
+  const [deletingConversationID, setDeletingConversationID] = useState('');
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
 
@@ -242,6 +244,31 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setDeletingDocumentID('');
+    }
+  }
+
+  async function removeConversation(conversation: ListConversationsResponse['conversations'][number]) {
+    if (!window.confirm(`Delete ${conversation.title || conversation.id}?`)) {
+      return;
+    }
+    setDeletingConversationID(conversation.id);
+    setError(null);
+    try {
+      await deleteConversation(tenantID, conversation.id);
+      await refreshConversations(tenantID);
+      if (selectedConversationID === conversation.id) {
+        setSelectedConversationID('');
+        setConversationMessages(null);
+      }
+      if (askForm.conversation_id === conversation.id) {
+        setAskForm((current) => ({ ...current, conversation_id: '' }));
+        setAskResult(null);
+        setStreamAnswer('');
+      }
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDeletingConversationID('');
     }
   }
 
@@ -500,13 +527,16 @@ export function App() {
                   <small>{formatBytes(document.size_bytes)}</small>
                   <details className="rowMenu">
                     <summary>More</summary>
-                    <button
-                      disabled={deletingDocumentID === document.id}
-                      onClick={() => void removeDocument(document.id, document.name)}
-                      type="button"
-                    >
-                      {deletingDocumentID === document.id ? 'Deleting' : 'Delete'}
-                    </button>
+                    <div className="rowMenuActions">
+                      <button
+                        className="dangerButton"
+                        disabled={deletingDocumentID === document.id}
+                        onClick={() => void removeDocument(document.id, document.name)}
+                        type="button"
+                      >
+                        {deletingDocumentID === document.id ? 'Deleting' : 'Delete'}
+                      </button>
+                    </div>
                   </details>
                 </div>
               ))}
@@ -565,9 +595,22 @@ export function App() {
                   <time dateTime={conversation.updated_at}>
                     {formatDateTime(conversation.updated_at)}
                   </time>
-                  <button onClick={() => resumeConversation(conversation)} type="button">
-                    Resume
-                  </button>
+                  <details className="rowMenu">
+                    <summary>More</summary>
+                    <div className="rowMenuActions">
+                      <button onClick={() => resumeConversation(conversation)} type="button">
+                        Resume
+                      </button>
+                      <button
+                        className="dangerButton"
+                        disabled={deletingConversationID === conversation.id}
+                        onClick={() => void removeConversation(conversation)}
+                        type="button"
+                      >
+                        {deletingConversationID === conversation.id ? 'Deleting' : 'Delete'}
+                      </button>
+                    </div>
+                  </details>
                 </div>
               ))}
               {conversations && conversations.conversations.length === 0 && (

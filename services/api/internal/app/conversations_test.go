@@ -10,6 +10,7 @@ import (
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 	embeddinghash "github.com/tm-lbenson/nexus-local/services/api/internal/providers/embeddings/hash"
 	vectormemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/vector/memory"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
 
@@ -228,6 +229,50 @@ func TestListConversationMessagesRequiresExistingConversation(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("err = nil, want not found")
+	}
+}
+
+func TestDeleteConversationRemovesHistory(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	embedder := embeddinghash.New("test", 16)
+	search := NewSearchService(embedder, vectormemory.New())
+	gateway := &stubModelGateway{response: providers.ChatCompletion{Content: "done"}}
+	service := NewConversationService(repos, &askIDs{}, fixedClock{}, search, gateway)
+
+	askResult, err := service.Ask(ctx, AskInput{
+		TenantID: domain.TenantID("tenant_1"),
+		OwnerID:  domain.UserID("user_1"),
+		Question: "What should be deleted?",
+	})
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+
+	deleted, err := service.DeleteConversation(ctx, DeleteConversationInput{
+		TenantID:       domain.TenantID("tenant_1"),
+		ConversationID: askResult.Conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("delete conversation: %v", err)
+	}
+	if deleted.Conversation.ID != askResult.Conversation.ID {
+		t.Fatalf("deleted id = %q, want %q", deleted.Conversation.ID, askResult.Conversation.ID)
+	}
+
+	conversations, err := service.ListConversations(ctx, ListConversationsInput{TenantID: domain.TenantID("tenant_1")})
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if len(conversations.Conversations) != 0 {
+		t.Fatalf("conversations len = %d, want 0", len(conversations.Conversations))
+	}
+	_, err = service.ListMessages(ctx, ListMessagesInput{
+		TenantID:       domain.TenantID("tenant_1"),
+		ConversationID: askResult.Conversation.ID,
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 

@@ -42,6 +42,7 @@ type ConversationRepository interface {
 	SaveConversation(ctx context.Context, conversation domain.Conversation) error
 	GetConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) (domain.Conversation, error)
 	ListConversations(ctx context.Context, tenantID domain.TenantID) ([]domain.Conversation, error)
+	DeleteConversation(ctx context.Context, tenantID domain.TenantID, id domain.ConversationID) error
 	SaveMessage(ctx context.Context, message domain.Message) error
 	ListMessages(ctx context.Context, tenantID domain.TenantID, conversationID domain.ConversationID) ([]domain.Message, error)
 }

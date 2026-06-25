@@ -568,6 +568,61 @@ func TestConversationHistoryEndpoints(t *testing.T) {
 	}
 }
 
+func TestDeleteConversationEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	ask := httptest.NewRecorder()
+	askReq := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"question": "What is the alpha beta plan?",
+		"limit": 1
+	}`))
+	server.ServeHTTP(ask, askReq)
+	if ask.Code != http.StatusOK {
+		t.Fatalf("ask status = %d, want %d, body = %s", ask.Code, http.StatusOK, ask.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/conversations/conv_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Conversation conversationPayload `json:"conversation"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode delete body: %v", err)
+	}
+	if body.Conversation.ID != "conv_http" {
+		t.Fatalf("conversation id = %q, want conv_http", body.Conversation.ID)
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/conversations?tenant_id=tenant_1&limit=5", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", list.Code, http.StatusOK, list.Body.String())
+	}
+	var listBody struct {
+		Conversations []conversationPayload `json:"conversations"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if len(listBody.Conversations) != 0 {
+		t.Fatalf("conversations len = %d, want 0", len(listBody.Conversations))
+	}
+
+	messages := httptest.NewRecorder()
+	messagesReq := httptest.NewRequest(http.MethodGet, "/v1/conversations/conv_http/messages?tenant_id=tenant_1", nil)
+	server.ServeHTTP(messages, messagesReq)
+	if messages.Code != http.StatusNotFound {
+		t.Fatalf("messages status = %d, want %d, body = %s", messages.Code, http.StatusNotFound, messages.Body.String())
+	}
+}
+
 func TestConversationHistoryEndpointRejectsInvalidLimit(t *testing.T) {
 	server := newTestServer(t)
 

@@ -158,6 +158,7 @@ Useful endpoints during development:
 - `POST /v1/conversations/ask/stream`
 - `GET /v1/conversations?tenant_id=tenant_1`
 - `GET /v1/conversations/{conversation_id}/messages?tenant_id=tenant_1`
+- `DELETE /v1/conversations/{conversation_id}?tenant_id=tenant_1`
 
 The stream endpoint returns server-sent events: `status`, `delta`, `error`, and `done`.
 

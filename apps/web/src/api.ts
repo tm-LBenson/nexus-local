@@ -361,6 +361,14 @@ export async function listConversations(tenantId: string, limit = 25) {
   return request<ListConversationsResponse>(`/v1/conversations?${params.toString()}`);
 }
 
+export async function deleteConversation(tenantId: string, conversationId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<{ conversation: Conversation }>(
+    `/v1/conversations/${encodeURIComponent(conversationId)}?${params.toString()}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function listConversationMessages(tenantId: string, conversationId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListConversationMessagesResponse>(

@@ -322,22 +322,35 @@ h2 {
   justify-self: end;
 }
 
-.rowMenu button {
+.rowMenuActions {
   position: absolute;
   z-index: 4;
   top: calc(100% + 6px);
   right: 0;
-  min-width: 92px;
-  border-color: #b84b42;
-  background: #b84b42;
+  display: grid;
+  gap: 6px;
+  min-width: 104px;
+  border: 1px solid #cfdadb;
+  border-radius: 8px;
+  padding: 6px;
+  background: #ffffff;
   box-shadow: 0 12px 30px rgba(23, 32, 38, 0.14);
 }
 
-.rowMenu button:hover {
+.rowMenuActions button {
+  width: 100%;
+}
+
+.dangerButton {
+  border-color: #b84b42;
+  background: #b84b42;
+}
+
+.dangerButton:hover {
   background: #993d35;
 }
 
-.rowMenu:not([open]) button {
+.rowMenu:not([open]) .rowMenuActions {
   display: none;
 }
 
@@ -686,7 +699,7 @@ h2 {
     justify-self: stretch;
   }
 
-  .rowMenu button {
+  .rowMenuActions {
     position: static;
     width: 100%;
     margin-top: 8px;

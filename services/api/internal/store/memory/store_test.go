@@ -192,6 +192,37 @@ func TestMessagesAreConversationScopedAndOrdered(t *testing.T) {
 	}
 }
 
+func TestDeleteConversationRemovesMessages(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+
+	conversation := newTestConversation(t, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"), fixedTime())
+	if err := repo.SaveConversation(ctx, conversation); err != nil {
+		t.Fatalf("save conversation: %v", err)
+	}
+	message := newTestMessage(t, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"), domain.MessageID("msg_1"), domain.MessageRoleUser, "first", fixedTime())
+	if err := repo.SaveMessage(ctx, message); err != nil {
+		t.Fatalf("save message: %v", err)
+	}
+
+	if err := repo.DeleteConversation(ctx, domain.TenantID("tenant_a"), domain.ConversationID("conv_1")); err != nil {
+		t.Fatalf("delete conversation: %v", err)
+	}
+	if _, err := repo.GetConversation(ctx, domain.TenantID("tenant_a"), domain.ConversationID("conv_1")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	messages, err := repo.ListMessages(ctx, domain.TenantID("tenant_a"), domain.ConversationID("conv_1"))
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("messages len = %d, want 0", len(messages))
+	}
+	if err := repo.DeleteConversation(ctx, domain.TenantID("tenant_a"), domain.ConversationID("missing")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
 func newTestDocument(t *testing.T, tenantID domain.TenantID, documentID domain.DocumentID) domain.Document {
 	t.Helper()
 

@@ -48,6 +48,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
 	mux.HandleFunc("GET /v1/conversations", listConversationsHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("GET /v1/conversations/{conversation_id}/messages", listConversationMessagesHandler(deps.Conversations, deps.Authorizer))
+	mux.HandleFunc("DELETE /v1/conversations/{conversation_id}", deleteConversationHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("POST /v1/conversations/ask/stream", askConversationStreamHandler(deps.Conversations, deps.Authorizer))
 
@@ -562,6 +563,34 @@ func listConversationMessagesHandler(service app.ConversationService, authorizer
 			messages = append(messages, encodeMessage(message))
 		}
 		writeJSON(w, http.StatusOK, envelope{"messages": messages})
+	}
+}
+
+func deleteConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
+			return
+		}
+		conversationID := domain.ConversationID(r.PathValue("conversation_id"))
+
+		result, err := service.DeleteConversation(r.Context(), app.DeleteConversationInput{
+			TenantID:       tenantID,
+			ConversationID: conversationID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("delete conversation: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, envelope{"conversation": encodeConversation(result.Conversation)})
 	}
 }
 
