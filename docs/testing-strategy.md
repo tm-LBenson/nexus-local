@@ -25,3 +25,12 @@ Use TDD for the contracts that keep the system portable. Do not use strict TDD f
 
 If changing it later would break portability, security, tenancy, data integrity, or deployments, test it early. If it is just a first-draft UI expression, move fast and add tests when the workflow stabilizes.
 
+## End-to-End Smoke Gate
+
+Use the smoke script against a running stack before calling a build demo-ready:
+
+```powershell
+.\scripts\dev-smoke.ps1
+```
+
+The script creates a workspace, uploads `fixtures/smoke/nexus-smoke.md`, waits for ingestion, searches for a unique run phrase, asks over the uploaded document, and verifies that conversation history contains the turn. It deletes the temporary document, but the smoke workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` only when the model gateway is intentionally unavailable and you want to verify ingestion and search by themselves.

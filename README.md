@@ -83,7 +83,7 @@ Run an end-to-end smoke test:
 .\scripts\dev-check.ps1 -Smoke
 ```
 
-The smoke test uploads a temporary text file, waits for worker ingestion, searches the indexed chunks, and deletes the temporary document. Add `-IncludeAsk` when an OpenAI-compatible model gateway is configured and reachable.
+The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, and deletes the temporary document. The workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
 Stop the stack:
 
@@ -220,7 +220,7 @@ Example smoke test:
 
 ```powershell
 .\scripts\dev-smoke.ps1
-.\scripts\dev-smoke.ps1 -IncludeAsk
+.\scripts\dev-smoke.ps1 -SkipAsk
 ```
 
 Example question:

@@ -83,4 +83,5 @@ if ($embeddingRuntime -in @("cpu", "gpu")) {
 }
 Write-Host ""
 Write-Host "Run scripts\dev-check.ps1 for a service check."
-Write-Host "Run scripts\dev-check.ps1 -Smoke to verify upload, ingestion, and search."
+Write-Host "Run scripts\dev-check.ps1 -Smoke for the full E2E release gate."
+Write-Host "Run scripts\dev-check.ps1 -Smoke -SkipAsk when no model gateway is running."

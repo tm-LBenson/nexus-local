@@ -1,8 +1,14 @@
 param(
   [switch]$Smoke,
+  [switch]$SkipAsk,
   [switch]$IncludeAsk,
   [string]$ApiUrl = "http://localhost:8080",
-  [string]$TenantId = "tenant_1",
+  [string]$TenantId = "",
+  [string]$WorkspaceName = "",
+  [string]$FixturePath = "",
+  [string]$ModelTarget = "general",
+  [string]$UserId = "",
+  [string]$UserEmail = "",
   [int]$SmokeTimeoutSeconds = 90
 )
 
@@ -179,9 +185,29 @@ if ($Smoke) {
   try {
     $smokeArgs = @(
       "-ApiUrl", $ApiUrl,
-      "-TenantId", $TenantId,
       "-TimeoutSeconds", $SmokeTimeoutSeconds
     )
+    if (-not [string]::IsNullOrWhiteSpace($TenantId)) {
+      $smokeArgs += @("-TenantId", $TenantId)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceName)) {
+      $smokeArgs += @("-WorkspaceName", $WorkspaceName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($FixturePath)) {
+      $smokeArgs += @("-FixturePath", $FixturePath)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ModelTarget)) {
+      $smokeArgs += @("-ModelTarget", $ModelTarget)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserId)) {
+      $smokeArgs += @("-UserId", $UserId)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserEmail)) {
+      $smokeArgs += @("-UserEmail", $UserEmail)
+    }
+    if ($SkipAsk) {
+      $smokeArgs += "-SkipAsk"
+    }
     if ($IncludeAsk) {
       $smokeArgs += "-IncludeAsk"
     }

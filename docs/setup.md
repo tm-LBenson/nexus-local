@@ -130,3 +130,15 @@ For the default CPU profile:
 ```
 
 For other profiles, use the command printed by the setup script. The helper scripts automatically pass the root `.env` file when it exists.
+
+After the stack is running, use the end-to-end smoke gate:
+
+```powershell
+.\scripts\dev-check.ps1 -Smoke
+```
+
+This requires a reachable OpenAI-compatible model gateway. For an ingestion/search-only check, run:
+
+```powershell
+.\scripts\dev-check.ps1 -Smoke -SkipAsk
+```
