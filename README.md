@@ -155,6 +155,7 @@ Useful endpoints during development:
 - `GET /v1/jobs?tenant_id=tenant_1`
 - `POST /v1/search`
 - `POST /v1/conversations/ask`
+- `POST /v1/conversations/ask/stream`
 - `GET /v1/conversations?tenant_id=tenant_1`
 - `GET /v1/conversations/{conversation_id}/messages?tenant_id=tenant_1`
 

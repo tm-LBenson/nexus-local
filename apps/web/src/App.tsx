@@ -11,7 +11,7 @@ import {
   Readiness,
   RegisterDocumentResponse,
   SearchDocumentsResponse,
-  askConversation,
+  askConversationStream,
   apiBase,
   createTenant,
   deleteDocument,
@@ -58,6 +58,8 @@ export function App() {
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [askForm, setAskForm] = useState(initialAsk);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
+  const [streamAnswer, setStreamAnswer] = useState('');
+  const [streamStatus, setStreamStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
@@ -74,6 +76,10 @@ export function App() {
       jobs?.jobs.filter((job) => ['queued', 'running', 'retrying'].includes(job.state)).length ?? 0,
     [jobs],
   );
+  const visibleAskAnswer = askResult?.assistant_message.content || streamAnswer;
+  const visibleAskTitle =
+    askResult?.conversation.title || askResult?.conversation.id || streamStatus || 'Working';
+  const visibleAskModel = askResult?.completion.model || askForm.model_target;
 
   useEffect(() => {
     Promise.all([getHealth(), getReadiness(), getModelTargets(), getCurrentUser()])
@@ -270,14 +276,30 @@ export function App() {
     }
     setAsking(true);
     setError(null);
+    setAskResult(null);
+    setStreamAnswer('');
+    setStreamStatus('Starting');
     try {
-      const result = await askConversation({
+      let streamedResult: AskConversationResponse | undefined;
+      await askConversationStream({
         tenant_id: tenantID,
         conversation_id: askForm.conversation_id || undefined,
         model_target: askForm.model_target,
         question: askForm.question,
         limit: Number(askForm.limit),
+      }, {
+        onStatus: setStreamStatus,
+        onDelta: (content) => setStreamAnswer((current) => current + content),
+        onDone: (response) => {
+          streamedResult = response;
+          setAskResult(response);
+          setStreamAnswer(response.assistant_message.content);
+        },
       });
+      if (!streamedResult) {
+        return;
+      }
+      const result = streamedResult;
       setAskResult(result);
       setAskForm((current) => ({
         ...current,
@@ -293,6 +315,7 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setAsking(false);
+      setStreamStatus('');
     }
   }
 
@@ -409,27 +432,29 @@ export function App() {
                   </div>
                 </details>
                 <button disabled={asking} type="submit">
-                  {asking ? 'Asking' : 'Ask'}
+                  {asking ? streamStatus || 'Asking' : 'Ask'}
                 </button>
               </div>
             </form>
 
-            {askResult && (
+            {(askResult || visibleAskAnswer || streamStatus) && (
               <div className="answerBox">
                 <div className="answerMeta">
-                  <strong>{askResult.conversation.title || askResult.conversation.id}</strong>
-                  <span>{askResult.completion.model || askResult.conversation.model_target}</span>
+                  <strong>{visibleAskTitle}</strong>
+                  <span>{visibleAskModel}</span>
                 </div>
-                <p>{askResult.assistant_message.content}</p>
-                <details className="inlineDetails">
-                  <summary>Sources</summary>
-                  <div className="resultStack">
-                    {askResult.hits.map((hit) => (
-                      <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
-                    ))}
-                    {askResult.hits.length === 0 && <p className="muted">No sources</p>}
-                  </div>
-                </details>
+                <p>{visibleAskAnswer || streamStatus}</p>
+                {askResult && (
+                  <details className="inlineDetails">
+                    <summary>Sources</summary>
+                    <div className="resultStack">
+                      {askResult.hits.map((hit) => (
+                        <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
+                      ))}
+                      {askResult.hits.length === 0 && <p className="muted">No sources</p>}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
           </div>

@@ -49,6 +49,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/conversations", listConversationsHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("GET /v1/conversations/{conversation_id}/messages", listConversationMessagesHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
+	mux.HandleFunc("POST /v1/conversations/ask/stream", askConversationStreamHandler(deps.Conversations, deps.Authorizer))
 
 	return loggingMiddleware(corsMiddleware(cfg, authMiddleware(deps.Authenticator, mux)))
 }
@@ -574,55 +575,167 @@ func queryInt(r *http.Request, key string) (int, error) {
 
 func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req askConversationRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
-			return
-		}
-		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments)
+		req, tenantID, principal, ok := prepareAskConversation(w, r, authorizer)
 		if !ok {
 			return
 		}
-		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
-			return
-		}
-
-		result, err := service.Ask(r.Context(), app.AskInput{
-			TenantID:       tenantID,
-			OwnerID:        principal.UserID,
-			ConversationID: domain.ConversationID(req.ConversationID),
-			ModelTarget:    req.ModelTarget,
-			Question:       req.Question,
-			Limit:          req.Limit,
-		})
+		result, err := service.Ask(r.Context(), askConversationInput(req, tenantID, principal.UserID))
 		if err != nil {
-			status := http.StatusInternalServerError
-			if errors.Is(err, domain.ErrInvalidEntity) {
-				status = http.StatusBadRequest
-			}
-			if errors.Is(err, store.ErrNotFound) || errors.Is(err, providers.ErrUnknownTarget) {
-				status = http.StatusNotFound
-			}
-			if errors.Is(err, app.ErrSearchUnavailable) || errors.Is(err, app.ErrConversationModelUnavailable) {
-				status = http.StatusServiceUnavailable
-			}
-			writeError(w, status, fmt.Sprintf("ask conversation: %v", err))
+			writeError(w, askConversationStatus(err), fmt.Sprintf("ask conversation: %v", err))
 			return
 		}
 
-		hits := make([]searchHitPayload, 0, len(result.Hits))
-		for _, hit := range result.Hits {
-			hits = append(hits, encodeSearchHit(hit))
-		}
-		writeJSON(w, http.StatusOK, envelope{
-			"conversation":      encodeConversation(result.Conversation),
-			"user_message":      encodeMessage(result.UserMessage),
-			"assistant_message": encodeMessage(result.AssistantMessage),
-			"hits":              hits,
-			"completion":        result.Completion,
-		})
+		writeJSON(w, http.StatusOK, encodeAskConversationResult(result))
 	}
+}
+
+func askConversationStreamHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeError(w, http.StatusInternalServerError, "streaming is not supported")
+			return
+		}
+
+		req, tenantID, principal, ok := prepareAskConversation(w, r, authorizer)
+		if !ok {
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(http.StatusOK)
+
+		if err := writeSSE(w, "status", envelope{"message": "Retrieving"}); err != nil {
+			log.Printf("write sse status: %v", err)
+			return
+		}
+		flusher.Flush()
+
+		if err := writeSSE(w, "status", envelope{"message": "Generating"}); err != nil {
+			log.Printf("write sse status: %v", err)
+			return
+		}
+		flusher.Flush()
+
+		result, err := service.Ask(r.Context(), askConversationInput(req, tenantID, principal.UserID))
+		if err != nil {
+			if writeErr := writeSSE(w, "error", envelope{"message": fmt.Sprintf("ask conversation: %v", err)}); writeErr != nil {
+				log.Printf("write sse error: %v", writeErr)
+			}
+			flusher.Flush()
+			return
+		}
+
+		if err := writeSSE(w, "status", envelope{"message": "Streaming"}); err != nil {
+			log.Printf("write sse status: %v", err)
+			return
+		}
+		flusher.Flush()
+
+		for _, chunk := range streamTextChunks(result.AssistantMessage.Content, 72) {
+			if err := writeSSE(w, "delta", envelope{"content": chunk}); err != nil {
+				log.Printf("write sse delta: %v", err)
+				return
+			}
+			flusher.Flush()
+		}
+
+		if err := writeSSE(w, "done", encodeAskConversationResult(result)); err != nil {
+			log.Printf("write sse done: %v", err)
+			return
+		}
+		flusher.Flush()
+	}
+}
+
+func prepareAskConversation(w http.ResponseWriter, r *http.Request, authorizer internalauth.Authorizer) (askConversationRequest, domain.TenantID, internalauth.Principal, bool) {
+	var req askConversationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return askConversationRequest{}, "", internalauth.Principal{}, false
+	}
+	tenantID := domain.TenantID(req.TenantID)
+	principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments)
+	if !ok {
+		return askConversationRequest{}, "", internalauth.Principal{}, false
+	}
+	if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUseAI); !ok {
+		return askConversationRequest{}, "", internalauth.Principal{}, false
+	}
+	return req, tenantID, principal, true
+}
+
+func askConversationInput(req askConversationRequest, tenantID domain.TenantID, ownerID domain.UserID) app.AskInput {
+	return app.AskInput{
+		TenantID:       tenantID,
+		OwnerID:        ownerID,
+		ConversationID: domain.ConversationID(req.ConversationID),
+		ModelTarget:    req.ModelTarget,
+		Question:       req.Question,
+		Limit:          req.Limit,
+	}
+}
+
+func askConversationStatus(err error) int {
+	status := http.StatusInternalServerError
+	if errors.Is(err, domain.ErrInvalidEntity) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, providers.ErrUnknownTarget) {
+		status = http.StatusNotFound
+	}
+	if errors.Is(err, app.ErrSearchUnavailable) || errors.Is(err, app.ErrConversationModelUnavailable) {
+		status = http.StatusServiceUnavailable
+	}
+	return status
+}
+
+func encodeAskConversationResult(result app.AskResult) envelope {
+	hits := make([]searchHitPayload, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		hits = append(hits, encodeSearchHit(hit))
+	}
+	return envelope{
+		"conversation":      encodeConversation(result.Conversation),
+		"user_message":      encodeMessage(result.UserMessage),
+		"assistant_message": encodeMessage(result.AssistantMessage),
+		"hits":              hits,
+		"completion":        result.Completion,
+	}
+}
+
+func writeSSE(w http.ResponseWriter, event string, payload any) error {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "data: %s\n\n", encoded)
+	return err
+}
+
+func streamTextChunks(text string, chunkSize int) []string {
+	if text == "" {
+		return nil
+	}
+	if chunkSize <= 0 {
+		chunkSize = 72
+	}
+	runes := []rune(text)
+	chunks := make([]string, 0, (len(runes)/chunkSize)+1)
+	for len(runes) > 0 {
+		next := chunkSize
+		if len(runes) < next {
+			next = len(runes)
+		}
+		chunks = append(chunks, string(runes[:next]))
+		runes = runes[next:]
+	}
+	return chunks
 }
 
 func encodeDocument(document domain.Document) documentPayload {

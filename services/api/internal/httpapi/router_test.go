@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -474,6 +475,39 @@ func TestAskConversationEndpoint(t *testing.T) {
 	}
 	if len(body.Hits) != 1 || body.Hits[0].DocumentID != "doc_search" {
 		t.Fatalf("hits = %#v", body.Hits)
+	}
+}
+
+func TestAskConversationStreamEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask/stream", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"question": "What is the alpha beta plan?",
+		"limit": 1
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if contentType := resp.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("content type = %q, want text/event-stream", contentType)
+	}
+
+	body := resp.Body.String()
+	for _, want := range []string{
+		"event: status",
+		`"message":"Retrieving"`,
+		"event: delta",
+		`"content":"Answer from fake model"`,
+		"event: done",
+		`"assistant_message"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream body missing %q: %s", want, body)
+		}
 	}
 }
 
