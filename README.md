@@ -66,6 +66,7 @@ cd nexus-local
 Start the full local stack:
 
 ```powershell
+.\scripts\setup.ps1 -Profile cpu-lite
 .\scripts\dev-up.ps1
 ```
 
@@ -90,6 +91,8 @@ Stop the stack:
 ```
 
 Use `.\scripts\dev-down.ps1 -Volumes` when you want to remove local Postgres, MinIO, Qdrant, NATS, and Valkey data volumes too.
+
+See [Guided Setup](docs/setup.md) for split NAS/GPU, local GPU, and production auth profile generation.
 
 ## Local Development
 

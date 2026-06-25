@@ -1,0 +1,80 @@
+# Guided Setup
+
+Use `scripts/setup.ps1` to generate a deployment-ready `.env` file and validate the selected Compose profile.
+
+```powershell
+.\scripts\setup.ps1
+```
+
+The script asks for a profile, writes `.env`, checks common host ports, validates Docker Compose when Docker is available, and prints the exact start command.
+
+## Profiles
+
+```powershell
+.\scripts\setup.ps1 -Profile cpu-lite
+.\scripts\setup.ps1 -Profile split-nas-gpu
+.\scripts\setup.ps1 -Profile gpu-local
+.\scripts\setup.ps1 -Profile prod-auth
+```
+
+Profile behavior:
+
+- `cpu-lite`: NAS or CPU-only install with remote or optional model gateway.
+- `split-nas-gpu`: core app on NAS, inference on a desktop or rented GPU endpoint.
+- `gpu-local`: full stack plus local vLLM-compatible gateway through the GPU Compose overlay.
+- `prod-auth`: Caddy entrypoint with trusted-header auth behind an Authelia-compatible gateway.
+
+## Useful Options
+
+Generate without prompts:
+
+```powershell
+.\scripts\setup.ps1 -NonInteractive -Profile cpu-lite -Force
+```
+
+Set a desktop or rented GPU endpoint:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile split-nas-gpu `
+  -ModelGatewayBaseUrl "http://desktop-gpu.local:8000/v1"
+```
+
+Generate production auth config:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile prod-auth `
+  -PublicUrl "https://nexus.example.com" `
+  -AutheliaInternalUrl "http://authelia:9091" `
+  -NexusHttpPort 80 `
+  -NexusHttpsPort 443
+```
+
+Write somewhere other than `.env`:
+
+```powershell
+.\scripts\setup.ps1 -Profile cpu-lite -OutputPath .\.env.local -Force
+```
+
+## What It Writes
+
+The generated `.env` includes:
+
+- app/auth mode
+- Postgres and MinIO credentials
+- object, vector, queue, and cache settings
+- model gateway URL and model ID
+- production Caddy/auth settings when selected
+
+Secrets are generated locally as random hex strings unless you pass explicit values.
+
+## Start After Setup
+
+For the default CPU profile:
+
+```powershell
+.\scripts\dev-up.ps1
+```
+
+For other profiles, use the command printed by the setup script. The helper scripts automatically pass the root `.env` file when it exists.

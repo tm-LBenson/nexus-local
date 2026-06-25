@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
+$envFile = Join-Path $root ".env"
 
 function Require-Command($name) {
   if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
@@ -32,7 +33,11 @@ function Wait-Http($name, $url, $timeoutSeconds) {
 
 Require-Command docker
 
-$composeArgs = @("compose", "-f", $composeFile, "up", "-d")
+$composeArgs = @("compose")
+if (Test-Path $envFile) {
+  $composeArgs += @("--env-file", $envFile)
+}
+$composeArgs += @("-f", $composeFile, "up", "-d")
 if (-not $NoBuild) {
   $composeArgs += "--build"
 }

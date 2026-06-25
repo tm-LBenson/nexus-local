@@ -1,5 +1,7 @@
 # Deployment Profiles
 
+Run `scripts\setup.ps1` to generate `.env` for any Compose profile before starting the stack. See [Guided Setup](setup.md) for profile-specific examples.
+
 ## cpu-lite
 
 Runs the app without a local GPU. Useful for NAS-only installs, demos, admin work, document management, and remote model providers.

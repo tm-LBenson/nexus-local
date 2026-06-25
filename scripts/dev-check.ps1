@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
+$envFile = Join-Path $root ".env"
 $smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
 $failures = 0
 
@@ -105,7 +106,12 @@ if ($hasDocker) {
   }
 
   try {
-    & docker compose -f $composeFile config --quiet
+    $composeArgs = @("compose")
+    if (Test-Path $envFile) {
+      $composeArgs += @("--env-file", $envFile)
+    }
+    $composeArgs += @("-f", $composeFile, "config", "--quiet")
+    & docker @composeArgs
     Pass "compose config" $composeFile
   } catch {
     Fail "compose config" $_.Exception.Message
@@ -113,7 +119,12 @@ if ($hasDocker) {
 
   try {
     Write-Host ""
-    & docker compose -f $composeFile ps
+    $composeArgs = @("compose")
+    if (Test-Path $envFile) {
+      $composeArgs += @("--env-file", $envFile)
+    }
+    $composeArgs += @("-f", $composeFile, "ps")
+    & docker @composeArgs
   } catch {
     Warn "compose ps" $_.Exception.Message
   }
