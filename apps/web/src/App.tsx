@@ -713,26 +713,64 @@ export function App() {
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brandBlock">
+    <main className="appShell">
+      <aside className="sidebar">
+        <div className="sideBrand">
           <p className="eyebrow">Nexus Local</p>
           <h1>Workspace</h1>
+          <span className={health ? 'sideStatus sideStatusReady' : 'sideStatus'}>
+            {health ? 'Online' : 'Connecting'}
+          </span>
         </div>
-        <nav className="tabs" aria-label="Workspace">
-          {(['ask', 'documents', 'search', 'activity', 'history', 'status', 'settings'] as View[]).map((view) => (
-            <button
-              aria-pressed={activeView === view}
-              className={activeView === view ? 'tab tabActive' : 'tab'}
-              key={view}
-              onClick={() => setActiveView(view)}
-              type="button"
-            >
-              {titleCase(view)}
-            </button>
-          ))}
+
+        <nav className="sideNav" aria-label="Primary">
+          <button
+            aria-pressed={activeView === 'ask'}
+            className={activeView === 'ask' ? 'sideNavButton sideNavActive' : 'sideNavButton'}
+            onClick={() => setActiveView('ask')}
+            type="button"
+          >
+            Ask
+          </button>
+          <button
+            aria-pressed={activeView === 'search'}
+            className={
+              activeView === 'search' ? 'sideNavButton sideNavActive' : 'sideNavButton'
+            }
+            onClick={() => setActiveView('search')}
+            type="button"
+          >
+            Search
+          </button>
+          <button
+            aria-pressed={activeView === 'documents'}
+            className={
+              activeView === 'documents' ? 'sideNavButton sideNavActive' : 'sideNavButton'
+            }
+            onClick={() => setActiveView('documents')}
+            type="button"
+          >
+            Documents
+          </button>
+          <button
+            aria-pressed={activeView === 'activity'}
+            className={
+              activeView === 'activity' ? 'sideNavButton sideNavActive' : 'sideNavButton'
+            }
+            onClick={() => setActiveView('activity')}
+            type="button"
+          >
+            Activity
+          </button>
         </nav>
-        <div className="topActions">
+
+        <section className="sideSection">
+          <div className="sideSectionHeader">
+            <span>Workspace</span>
+            <button onClick={() => setActiveView('settings')} type="button">
+              Settings
+            </button>
+          </div>
           <select
             aria-label="Workspace"
             className="tenantSelect"
@@ -748,124 +786,287 @@ export function App() {
               <option value="">No workspace</option>
             )}
           </select>
-          <span className={health ? 'status statusReady' : 'status'}>
-            {health ? 'Online' : 'Connecting'}
-          </span>
-        </div>
-      </header>
+        </section>
 
-      {error && <div className="toast">{error}</div>}
-
-      <section className="workspace">
-        {activeView === 'ask' && (
-          <div className="workSurface">
-            <div className="surfaceHeader">
-              <h2>Ask</h2>
-              <span>{workspaceLabel}</span>
-            </div>
-            <form className="askComposer" onSubmit={submitAsk}>
-              <textarea
-                aria-label="Question"
-                onChange={(event) =>
-                  setAskForm((current) => ({ ...current, question: event.target.value }))
+        <section className="sideSection sideBrowse">
+          <div className="sideSectionHeader">
+            <span>Documents</span>
+            <button onClick={() => setActiveView('documents')} type="button">
+              Open
+            </button>
+          </div>
+          <div className="sideList">
+            {documents?.documents.slice(0, 6).map((document) => (
+              <button
+                className={
+                  documentDetail?.document.id === document.id
+                    ? 'sideListItem sideListItemActive'
+                    : 'sideListItem'
                 }
-                placeholder="Ask a question"
-                value={askForm.question}
-              />
-              <div className="composerActions">
-                <details className="menuPanel">
-                  <summary>Options</summary>
-                  <div className="menuFields">
-                    <label>
-                      Target
-                      <select
-                        value={askForm.model_target}
-                        onChange={(event) =>
-                          setAskForm((current) => ({
-                            ...current,
-                            model_target: event.target.value,
-                          }))
-                        }
-                      >
-                        {targets.length === 0 && <option value="general">general</option>}
-                        {targets.map((target) => (
-                          <option key={target.name} value={target.name}>
-                            {target.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Source
-                      <DocumentSelect
-                        documents={documents?.documents ?? []}
-                        value={askForm.document_id}
-                        onChange={(value) =>
-                          setAskForm((current) => ({ ...current, document_id: value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Limit
-                      <input
-                        max="20"
-                        min="1"
-                        type="number"
-                        value={askForm.limit}
-                        onChange={(event) =>
-                          setAskForm((current) => ({
-                            ...current,
-                            limit: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Conversation
-                      <input
-                        value={askForm.conversation_id}
-                        onChange={(event) =>
-                          setAskForm((current) => ({
-                            ...current,
-                            conversation_id: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                </details>
-                <button disabled={asking || !workspaceReady} type="submit">
-                  {asking ? streamStatus || 'Asking' : 'Ask'}
-                </button>
-              </div>
-            </form>
-
-            {(askResult || visibleAskAnswer || streamStatus) && (
-              <div className="answerBox">
-                <div className="answerMeta">
-                  <strong>{visibleAskTitle}</strong>
-                  <span>{visibleAskModel}</span>
-                </div>
-                <p>{visibleAskAnswer || streamStatus}</p>
-                {askResult && (
-                  <details className="inlineDetails">
-                    <summary>Sources</summary>
-                    <div className="resultStack">
-                      {askResult.hits.map((hit, index) => (
-                        <ResultHit
-                          hit={hit}
-                          index={index}
-                          key={`${hit.document_id}:${hit.chunk_id}`}
-                        />
-                      ))}
-                      {askResult.hits.length === 0 && <p className="muted">No sources</p>}
-                    </div>
-                  </details>
-                )}
-              </div>
+                key={document.id}
+                onClick={() => {
+                  setActiveView('documents');
+                  void openDocument(document);
+                }}
+                type="button"
+              >
+                <span>{document.name}</span>
+                <em>{document.status}</em>
+              </button>
+            ))}
+            {documents && documents.documents.length === 0 && (
+              <p className="sideEmpty">No documents</p>
             )}
           </div>
-        )}
+        </section>
+
+        <section className="sideSection sideGrow">
+          <div className="sideSectionHeader">
+            <span>History</span>
+            <button onClick={() => setActiveView('history')} type="button">
+              Open
+            </button>
+          </div>
+          <div className="sideList">
+            {conversations?.conversations.slice(0, 8).map((conversation) => (
+              <button
+                className={
+                  selectedConversationID === conversation.id
+                    ? 'sideListItem sideListItemActive'
+                    : 'sideListItem'
+                }
+                key={conversation.id}
+                onClick={() => {
+                  setActiveView('ask');
+                  void openConversation(conversation);
+                }}
+                type="button"
+              >
+                <span>{conversation.title || conversation.id}</span>
+                <em>{formatDateTime(conversation.updated_at)}</em>
+              </button>
+            ))}
+            {conversations && conversations.conversations.length === 0 && (
+              <p className="sideEmpty">No conversations</p>
+            )}
+          </div>
+        </section>
+
+        <footer className="sideFooter">
+          <span>{currentUser?.user.email ?? 'dev@example.local'}</span>
+          <button
+            aria-pressed={activeView === 'settings'}
+            className={activeView === 'settings' ? 'sideNavButton sideNavActive' : 'sideNavButton'}
+            onClick={() => setActiveView('settings')}
+            type="button"
+          >
+            Settings
+          </button>
+        </footer>
+      </aside>
+
+      <section className="contentShell">
+        <header className="contentHeader">
+          <div>
+            <p className="eyebrow">{workspaceLabel}</p>
+            <h2>{activeView === 'documents' ? 'Documents' : titleCase(activeView)}</h2>
+          </div>
+          <span className={trackingIngestion ? 'syncStatus syncActive' : 'syncStatus'}>
+            {activeView === 'settings' ? readiness?.provider_preset ?? 'starter' : ingestionLabel}
+          </span>
+        </header>
+
+        {error && <div className="toast">{error}</div>}
+
+        <section className="workspace">
+          {activeView === 'ask' && (
+            <div className="workspaceSplit">
+              <div className="workSurface chatSurface">
+                <div className="surfaceHeader">
+                  <h2>Ask</h2>
+                  <span>{workspaceLabel}</span>
+                </div>
+                <form className="askComposer" onSubmit={submitAsk}>
+                  <textarea
+                    aria-label="Question"
+                    onChange={(event) =>
+                      setAskForm((current) => ({ ...current, question: event.target.value }))
+                    }
+                    placeholder="Ask a question"
+                    value={askForm.question}
+                  />
+                  <div className="composerActions">
+                    <details className="menuPanel">
+                      <summary>Options</summary>
+                      <div className="menuFields">
+                        <label>
+                          Target
+                          <select
+                            value={askForm.model_target}
+                            onChange={(event) =>
+                              setAskForm((current) => ({
+                                ...current,
+                                model_target: event.target.value,
+                              }))
+                            }
+                          >
+                            {targets.length === 0 && <option value="general">general</option>}
+                            {targets.map((target) => (
+                              <option key={target.name} value={target.name}>
+                                {target.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Source
+                          <DocumentSelect
+                            documents={documents?.documents ?? []}
+                            value={askForm.document_id}
+                            onChange={(value) =>
+                              setAskForm((current) => ({ ...current, document_id: value }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Limit
+                          <input
+                            max="20"
+                            min="1"
+                            type="number"
+                            value={askForm.limit}
+                            onChange={(event) =>
+                              setAskForm((current) => ({
+                                ...current,
+                                limit: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Conversation
+                          <input
+                            value={askForm.conversation_id}
+                            onChange={(event) =>
+                              setAskForm((current) => ({
+                                ...current,
+                                conversation_id: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    </details>
+                    <button disabled={asking || !workspaceReady} type="submit">
+                      {asking ? streamStatus || 'Asking' : 'Ask'}
+                    </button>
+                  </div>
+                </form>
+
+                {(askResult || visibleAskAnswer || streamStatus) && (
+                  <div className="answerBox">
+                    <div className="answerMeta">
+                      <strong>{visibleAskTitle}</strong>
+                      <span>{visibleAskModel}</span>
+                    </div>
+                    <p>{visibleAskAnswer || streamStatus}</p>
+                    {askResult && (
+                      <details className="inlineDetails">
+                        <summary>Sources</summary>
+                        <div className="resultStack">
+                          {askResult.hits.map((hit, index) => (
+                            <ResultHit
+                              hit={hit}
+                              index={index}
+                              key={`${hit.document_id}:${hit.chunk_id}`}
+                            />
+                          ))}
+                          {askResult.hits.length === 0 && <p className="muted">No sources</p>}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <aside className="workSurface contextPanel">
+                <div className="surfaceHeader">
+                  <h2>Context</h2>
+                  <span>{askForm.document_id ? 'Scoped' : 'All documents'}</span>
+                </div>
+
+                <form className="uploadBar compactUpload" onSubmit={submitUpload}>
+                  <input
+                    aria-label="Document"
+                    accept={supportedDocumentAccept}
+                    type="file"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                  <button
+                    disabled={submitting || uploadingSample || !workspaceReady}
+                    onClick={() => void uploadSampleDocument()}
+                    type="button"
+                  >
+                    {uploadingSample ? 'Adding' : 'Sample'}
+                  </button>
+                  <button disabled={submitting || uploadingSample || !workspaceReady} type="submit">
+                    {submitting ? 'Uploading' : 'Upload'}
+                  </button>
+                </form>
+
+                {registration && (
+                  <div className="resultBand">
+                    <span>{registration.document.name}</span>
+                    <strong className={stateClass(registration.document.status)}>
+                      {registration.document.status}
+                    </strong>
+                    <em className={stateClass(registration.job.state)}>{registration.job.state}</em>
+                  </div>
+                )}
+
+                <div className="contextList">
+                  {askForm.document_id && (
+                    <button
+                      className="contextDoc"
+                      onClick={() =>
+                        setAskForm((current) => ({
+                          ...current,
+                          document_id: '',
+                        }))
+                      }
+                      type="button"
+                    >
+                      <strong>All documents</strong>
+                      <span>source</span>
+                    </button>
+                  )}
+                  {documents?.documents.map((document) => (
+                    <button
+                      className={
+                        askForm.document_id === document.id
+                          ? 'contextDoc contextDocActive'
+                          : 'contextDoc'
+                      }
+                      key={document.id}
+                      onClick={() =>
+                        setAskForm((current) => ({
+                          ...current,
+                          document_id: document.id,
+                        }))
+                      }
+                      type="button"
+                    >
+                      <strong>{document.name}</strong>
+                      <span className={stateClass(document.status)}>{document.status}</span>
+                    </button>
+                  ))}
+                  {documents && documents.documents.length === 0 && (
+                    <p className="muted">No documents</p>
+                  )}
+                </div>
+              </aside>
+            </div>
+          )}
 
         {activeView === 'documents' && (
           <div className="workSurface">
@@ -1504,8 +1705,91 @@ export function App() {
                 </div>
               </details>
             </section>
+
+            <section className="workSurface settingsWide">
+              <div className="surfaceHeader">
+                <h2>Diagnostics</h2>
+                <button onClick={() => void refreshRuntime()} type="button">
+                  Refresh
+                </button>
+              </div>
+
+              <div className="statusGrid">
+                <StatusTile
+                  detail={health?.version ?? apiBase()}
+                  label="API"
+                  ready={health?.status === 'ok'}
+                  value={health?.status ?? 'offline'}
+                />
+                <StatusTile
+                  detail={readiness?.run_migrations ? 'migrations on' : 'migrations off'}
+                  label="Database"
+                  ready={readiness?.status === 'ready'}
+                  value={readiness?.persistence_backend ?? 'unknown'}
+                />
+                <StatusTile
+                  detail={readiness?.object_store_configured ? 'configured' : 'local profile'}
+                  label="Objects"
+                  ready={readiness?.status === 'ready'}
+                  value={readiness?.object_storage_backend ?? 'unknown'}
+                />
+                <StatusTile
+                  detail={readiness?.vector_collection ?? 'documents'}
+                  label="Vectors"
+                  ready={readiness?.status === 'ready'}
+                  value={readiness?.vector_backend ?? 'unknown'}
+                />
+                <StatusTile
+                  detail={readiness?.embedding_model ?? 'unknown'}
+                  label="Embeddings"
+                  ready={readiness?.status === 'ready'}
+                  value={readiness?.embedding_backend ?? 'unknown'}
+                />
+                <StatusTile
+                  detail={readiness?.model_gateway_auth ? 'auth configured' : 'no gateway auth'}
+                  label="Model Gateway"
+                  ready={readiness?.status === 'ready'}
+                  value={readiness?.model_gateway ?? 'unknown'}
+                />
+                <StatusTile
+                  detail={`${jobs?.jobs.length ?? 0} recent jobs`}
+                  label="Worker"
+                  ready={Boolean(jobs)}
+                  value={activeJobCount > 0 ? `${activeJobCount} active` : 'idle'}
+                />
+                <StatusTile
+                  detail={`${targets.length} configured`}
+                  label="Targets"
+                  ready={targets.length > 0}
+                  value={targets[0]?.name ?? 'none'}
+                />
+              </div>
+
+              <details className="inlineDetails">
+                <summary>Endpoints</summary>
+                <dl className="runtimeList">
+                  <div>
+                    <dt>API</dt>
+                    <dd>{apiBase()}</dd>
+                  </div>
+                  <div>
+                    <dt>Queue</dt>
+                    <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Models</dt>
+                    <dd>{readiness?.model_gateway ?? 'unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Embeddings</dt>
+                    <dd>{readiness?.embedding_gateway ?? 'unknown'}</dd>
+                  </div>
+                </dl>
+              </details>
+            </section>
           </div>
         )}
+        </section>
       </section>
     </main>
   );
