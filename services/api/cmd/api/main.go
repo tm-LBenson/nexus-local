@@ -52,7 +52,9 @@ func main() {
 	authenticator := internalauth.NewAuthenticator(cfg)
 	authorizer := internalauth.NewAuthorizer(cfg, repos)
 	tenantService := app.NewTenantService(repos, ids, clock)
-	documentService := app.NewDocumentService(repos, ids, clock).WithObjectStore(objectStore)
+	documentService := app.NewDocumentService(repos, ids, clock).
+		WithObjectStore(objectStore).
+		WithVectorIndex(vectorIndex)
 	jobService := app.NewJobService(repos)
 	searchService := app.NewSearchService(embedder, vectorIndex)
 	conversationService := app.NewConversationService(repos, ids, clock, searchService, modelGateway)

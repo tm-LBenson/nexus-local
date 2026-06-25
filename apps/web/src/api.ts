@@ -192,6 +192,14 @@ export async function listDocuments(tenantId: string) {
   return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
 }
 
+export async function deleteDocument(tenantId: string, documentId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<{ document: RegisteredDocument }>(
+    `/v1/documents/${encodeURIComponent(documentId)}?${params.toString()}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function listJobs(tenantId: string, limit = 25) {
   const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
   return request<ListJobsResponse>(`/v1/jobs?${params.toString()}`);

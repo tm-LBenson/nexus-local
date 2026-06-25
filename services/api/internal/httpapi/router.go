@@ -43,6 +43,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
 	mux.HandleFunc("GET /v1/conversations", listConversationsHandler(deps.Conversations, deps.Authorizer))
@@ -397,6 +398,34 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 			"document": encodeDocument(result.Document),
 			"job":      encodeJob(result.Job),
 		})
+	}
+}
+
+func deleteDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments); !ok {
+			return
+		}
+		documentID := domain.DocumentID(r.PathValue("document_id"))
+
+		result, err := service.DeleteDocument(r.Context(), app.DeleteDocumentInput{
+			TenantID:   tenantID,
+			DocumentID: documentID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("delete document: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, envelope{"document": encodeDocument(result.Document)})
 	}
 }
 
@@ -758,7 +787,7 @@ func corsMiddleware(cfg config.Config, next http.Handler) http.Handler {
 		if origin != "" && origin == cfg.CORSAllowedOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-User-Email")
 		}
 

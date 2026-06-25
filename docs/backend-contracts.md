@@ -70,6 +70,8 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 `POST /v1/documents/upload` accepts a multipart file, stores it through the configured `ObjectStore`, creates the document record, and queues a `document_ingestion` job.
 
+`DELETE /v1/documents/<document_id>?tenant_id=<tenant_id>` soft-deletes a document, removes its stored object when object storage is configured, and removes vectors when a vector index is configured. Normal document lists omit deleted documents.
+
 `GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100.
 
 `GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows.

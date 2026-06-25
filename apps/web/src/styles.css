@@ -253,12 +253,14 @@ h2 {
 }
 
 .menuPanel,
-.inlineDetails {
+.inlineDetails,
+.rowMenu {
   position: relative;
 }
 
 .menuPanel summary,
-.inlineDetails summary {
+.inlineDetails summary,
+.rowMenu summary {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
@@ -274,12 +276,14 @@ h2 {
 }
 
 .menuPanel summary::-webkit-details-marker,
-.inlineDetails summary::-webkit-details-marker {
+.inlineDetails summary::-webkit-details-marker,
+.rowMenu summary::-webkit-details-marker {
   display: none;
 }
 
 .menuPanel[open] summary,
-.inlineDetails[open] summary {
+.inlineDetails[open] summary,
+.rowMenu[open] summary {
   border-color: #9eb7be;
   background: #eef6f4;
 }
@@ -311,6 +315,29 @@ h2 {
 
 .menuPanel:not([open]) .menuFields,
 .compactMenu:not([open]) label {
+  display: none;
+}
+
+.rowMenu {
+  justify-self: end;
+}
+
+.rowMenu button {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 92px;
+  border-color: #b84b42;
+  background: #b84b42;
+  box-shadow: 0 12px 30px rgba(23, 32, 38, 0.14);
+}
+
+.rowMenu button:hover {
+  background: #993d35;
+}
+
+.rowMenu:not([open]) button {
   display: none;
 }
 
@@ -405,7 +432,7 @@ h2 {
 }
 
 .documentRow {
-  grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px;
+  grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px 78px;
   gap: 10px;
 }
 
@@ -604,6 +631,17 @@ h2 {
   .compactMenu[open] label {
     position: static;
     min-width: 0;
+    margin-top: 8px;
+    box-shadow: none;
+  }
+
+  .rowMenu {
+    justify-self: stretch;
+  }
+
+  .rowMenu button {
+    position: static;
+    width: 100%;
     margin-top: 8px;
     box-shadow: none;
   }

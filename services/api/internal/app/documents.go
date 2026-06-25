@@ -30,6 +30,7 @@ type DocumentService struct {
 	ids     DocumentIDs
 	clock   Clock
 	objects providers.ObjectStore
+	vectors providers.VectorIndex
 }
 
 type RegisterDocumentInput struct {
@@ -62,6 +63,15 @@ type ListDocumentsResult struct {
 	Documents []domain.Document
 }
 
+type DeleteDocumentInput struct {
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+}
+
+type DeleteDocumentResult struct {
+	Document domain.Document
+}
+
 func NewDocumentService(repos store.RepositorySet, ids DocumentIDs, clock Clock) DocumentService {
 	return DocumentService{
 		repos: repos,
@@ -72,6 +82,11 @@ func NewDocumentService(repos store.RepositorySet, ids DocumentIDs, clock Clock)
 
 func (s DocumentService) WithObjectStore(objects providers.ObjectStore) DocumentService {
 	s.objects = objects
+	return s
+}
+
+func (s DocumentService) WithVectorIndex(vectors providers.VectorIndex) DocumentService {
+	s.vectors = vectors
 	return s
 }
 
@@ -126,7 +141,43 @@ func (s DocumentService) ListDocuments(ctx context.Context, input ListDocumentsI
 	if err != nil {
 		return ListDocumentsResult{}, err
 	}
+	documents = filterActiveDocuments(documents)
 	return ListDocumentsResult{Documents: documents}, nil
+}
+
+func (s DocumentService) DeleteDocument(ctx context.Context, input DeleteDocumentInput) (DeleteDocumentResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DeleteDocumentResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DocumentID)) == "" {
+		return DeleteDocumentResult{}, fmt.Errorf("delete document: %w", domain.ErrInvalidEntity)
+	}
+
+	document, err := s.repos.GetDocument(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return DeleteDocumentResult{}, err
+	}
+	if document.Status == domain.DocumentStatusDeleted {
+		return DeleteDocumentResult{Document: document}, nil
+	}
+
+	if s.vectors != nil {
+		if err := s.vectors.DeleteDocument(ctx, document.TenantID, document.ID); err != nil {
+			return DeleteDocumentResult{}, err
+		}
+	}
+	if s.objects != nil {
+		if err := s.objects.DeleteObject(ctx, document.TenantID, document.StorageKey); err != nil {
+			return DeleteDocumentResult{}, err
+		}
+	}
+	if err := document.Transition(domain.DocumentStatusDeleted, s.clock.Now()); err != nil {
+		return DeleteDocumentResult{}, err
+	}
+	if err := s.repos.SaveDocument(ctx, document); err != nil {
+		return DeleteDocumentResult{}, err
+	}
+	return DeleteDocumentResult{Document: document}, nil
 }
 
 func (s DocumentService) registerDocument(ctx context.Context, input RegisterDocumentInput, documentID domain.DocumentID, jobID domain.JobID, now time.Time) (RegisterDocumentResult, error) {
@@ -179,6 +230,16 @@ func safeFileName(name string) string {
 		return "upload.bin"
 	}
 	return base
+}
+
+func filterActiveDocuments(documents []domain.Document) []domain.Document {
+	active := documents[:0]
+	for _, document := range documents {
+		if document.Status != domain.DocumentStatusDeleted {
+			active = append(active, document)
+		}
+	}
+	return active
 }
 
 type SystemClock struct{}

@@ -156,6 +156,47 @@ func TestListDocumentsRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentMarksDeletedAndRemovesObject(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{}).WithObjectStore(objects)
+
+	uploaded, err := service.UploadDocument(ctx, UploadDocumentInput{
+		TenantID:    domain.TenantID("tenant_1"),
+		OwnerID:     domain.UserID("user_1"),
+		Name:        "Handbook.md",
+		ContentType: "text/markdown",
+		SizeBytes:   11,
+		Body:        strings.NewReader("hello world"),
+	})
+	if err != nil {
+		t.Fatalf("upload document: %v", err)
+	}
+
+	result, err := service.DeleteDocument(ctx, DeleteDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		DocumentID: uploaded.Document.ID,
+	})
+	if err != nil {
+		t.Fatalf("delete document: %v", err)
+	}
+	if result.Document.Status != domain.DocumentStatusDeleted {
+		t.Fatalf("status = %q, want deleted", result.Document.Status)
+	}
+	if keys := objects.Keys(); len(keys) != 0 {
+		t.Fatalf("object keys = %v, want none", keys)
+	}
+
+	list, err := service.ListDocuments(ctx, ListDocumentsInput{TenantID: domain.TenantID("tenant_1")})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(list.Documents) != 0 {
+		t.Fatalf("documents len = %d, want 0", len(list.Documents))
+	}
+}
+
 type fixedIDs struct{}
 
 func (fixedIDs) NewDocumentID() domain.DocumentID {

@@ -14,6 +14,7 @@ import {
   askConversation,
   apiBase,
   createTenant,
+  deleteDocument,
   getCurrentUser,
   getHealth,
   getModelTargets,
@@ -60,6 +61,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
+  const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
 
@@ -196,6 +198,22 @@ export function App() {
       question: '',
     }));
     setActiveView('ask');
+  }
+
+  async function removeDocument(documentID: string, name: string) {
+    if (!window.confirm(`Delete ${name}?`)) {
+      return;
+    }
+    setDeletingDocumentID(documentID);
+    setError(null);
+    try {
+      await deleteDocument(tenantID, documentID);
+      await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDeletingDocumentID('');
+    }
   }
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -429,6 +447,16 @@ export function App() {
                   <span>{document.status}</span>
                   <em>{document.id}</em>
                   <small>{formatBytes(document.size_bytes)}</small>
+                  <details className="rowMenu">
+                    <summary>More</summary>
+                    <button
+                      disabled={deletingDocumentID === document.id}
+                      onClick={() => void removeDocument(document.id, document.name)}
+                      type="button"
+                    >
+                      {deletingDocumentID === document.id ? 'Deleting' : 'Delete'}
+                    </button>
+                  </details>
                 </div>
               ))}
               {documents && documents.documents.length === 0 && <p className="muted">No documents</p>}

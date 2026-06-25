@@ -247,6 +247,55 @@ func TestListDocumentsEndpointRejectsInvalidTenant(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"name": "Handbook.md",
+		"storage_key": "tenants/tenant_1/documents/source.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(register, registerReq)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d, body = %s", register.Code, http.StatusCreated, register.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/documents/doc_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Document documentPayload `json:"document"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Document.Status != string(domain.DocumentStatusDeleted) {
+		t.Fatalf("status = %q, want deleted", body.Document.Status)
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/documents?tenant_id=tenant_1", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", list.Code, http.StatusOK, list.Body.String())
+	}
+	var listBody struct {
+		Documents []documentPayload `json:"documents"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if len(listBody.Documents) != 0 {
+		t.Fatalf("documents len = %d, want 0", len(listBody.Documents))
+	}
+}
+
 func TestListJobsEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -582,10 +631,12 @@ func newTestServerWithConfig(t *testing.T, authCfg config.Config) http.Handler {
 
 	repos := memory.New()
 	ids := &httpIDs{}
-	documents := app.NewDocumentService(repos, ids, httpClock{}).WithObjectStore(objectmemory.New())
-	jobs := app.NewJobService(repos)
 	embedder := embeddinghash.New("test", 16)
 	vectorIndex := vectormemory.New()
+	documents := app.NewDocumentService(repos, ids, httpClock{}).
+		WithObjectStore(objectmemory.New()).
+		WithVectorIndex(vectorIndex)
+	jobs := app.NewJobService(repos)
 	seed, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
 	if err != nil {
 		t.Fatalf("embed seed: %v", err)

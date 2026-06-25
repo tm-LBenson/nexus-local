@@ -54,6 +54,7 @@ Then open:
 - Create tenant: `POST http://localhost:8080/v1/tenants`
 - Model targets: `http://localhost:8080/v1/model-targets`
 - Documents: `GET http://localhost:8080/v1/documents?tenant_id=tenant_1`
+- Delete document: `DELETE http://localhost:8080/v1/documents/doc_123?tenant_id=tenant_1`
 - Jobs/activity: `GET http://localhost:8080/v1/jobs?tenant_id=tenant_1`
 - Document search: `POST http://localhost:8080/v1/search`
 - Ask over documents: `POST http://localhost:8080/v1/conversations/ask`
