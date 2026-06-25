@@ -10,6 +10,7 @@ The project is early, but the core shape is already in place: a replaceable back
 - Manage workspace members and roles for self-hosted team access.
 - Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
 - Chunk, embed, and index documents for semantic retrieval.
+- Run optional self-hosted TEI embeddings for real semantic search.
 - Search across indexed document chunks.
 - Ask questions over uploaded documents through an OpenAI-compatible model gateway.
 - Track ingestion jobs and background activity.
@@ -148,8 +149,10 @@ The API is configured through environment variables. Common settings:
 | `RUN_MIGRATIONS` | `false` | Runs embedded Postgres migrations on startup. |
 | `OBJECT_STORAGE_BACKEND` | `memory` | `memory` or `minio`. |
 | `VECTOR_BACKEND` | `memory` | `memory` or `qdrant`. |
+| `EMBEDDING_RUNTIME` | `none` | `none`, `external`, `cpu`, or `gpu`. |
 | `EMBEDDING_BACKEND` | `hash` | `hash` or OpenAI-compatible embeddings. |
 | `EMBEDDING_BASE_URL` | `http://localhost:8082/v1` | OpenAI-compatible embedding gateway when semantic embeddings are enabled. |
+| `EMBEDDING_GATEWAY_IMAGE` | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.9` | TEI image for self-hosted embeddings. |
 | `PROVIDER_PRESET` | `starter` | UI/setup label: `starter` for hash embeddings, `semantic` for OpenAI-compatible embeddings. |
 | `MODEL_GATEWAY_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible chat gateway. |
 | `GENERAL_MODEL_ID` | `Qwen/Qwen2.5-7B-Instruct` | Default model ID sent to the gateway. |

@@ -8,9 +8,12 @@ param(
   [string]$PublicUrl = "",
   [string]$ModelGatewayBaseUrl = "",
   [string]$ModelGatewayApiKey = "",
+  [string]$EmbeddingRuntime = "",
   [string]$EmbeddingBaseUrl = "",
   [string]$EmbeddingBackend = "",
   [string]$EmbeddingApiKey = "",
+  [string]$EmbeddingGatewayImage = "",
+  [string]$EmbeddingGatewayPort = "",
   [string]$EmbeddingModel = "",
   [string]$EmbeddingDimensions = "",
   [string]$GeneralModelId = "",
@@ -35,6 +38,13 @@ $providerPresetNames = @("starter", "semantic")
 $providerPresetDescriptions = @{
   "starter" = "OpenAI-compatible chat plus local hash embeddings"
   "semantic" = "OpenAI-compatible chat plus OpenAI-compatible embeddings"
+}
+$embeddingRuntimeNames = @("none", "external", "cpu", "gpu")
+$embeddingRuntimeDescriptions = @{
+  "none" = "Use hash embeddings; do not start an embedding service"
+  "external" = "Use an existing OpenAI-compatible embedding endpoint"
+  "cpu" = "Start the self-hosted TEI CPU embedding service"
+  "gpu" = "Start the self-hosted TEI GPU embedding service"
 }
 
 function New-RandomToken([int]$ByteLength = 24) {
@@ -150,6 +160,42 @@ function Select-ProviderPreset {
   }
 }
 
+function Select-EmbeddingRuntime($defaultRuntime) {
+  if (-not [string]::IsNullOrWhiteSpace($EmbeddingRuntime)) {
+    $normalized = $EmbeddingRuntime.Trim().ToLowerInvariant()
+    if ($embeddingRuntimeNames -notcontains $normalized) {
+      throw "Unknown embedding runtime '$EmbeddingRuntime'. Use one of: $($embeddingRuntimeNames -join ', ')"
+    }
+    return $normalized
+  }
+  if ($NonInteractive) {
+    return $defaultRuntime
+  }
+
+  Write-Host "Choose an embedding runtime:"
+  for ($i = 0; $i -lt $embeddingRuntimeNames.Count; $i++) {
+    $name = $embeddingRuntimeNames[$i]
+    Write-Host "  $($i + 1). $name - $($embeddingRuntimeDescriptions[$name])"
+  }
+  while ($true) {
+    $choice = Read-Host "Embedding runtime [$defaultRuntime]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+      return $defaultRuntime
+    }
+    $choice = $choice.Trim().ToLowerInvariant()
+    if ($choice -match '^\d+$') {
+      $index = [int]$choice - 1
+      if ($index -ge 0 -and $index -lt $embeddingRuntimeNames.Count) {
+        return $embeddingRuntimeNames[$index]
+      }
+    }
+    if ($embeddingRuntimeNames -contains $choice) {
+      return $choice
+    }
+    Write-Host "Use one of: $($embeddingRuntimeNames -join ', ')"
+  }
+}
+
 function Normalize-EmbeddingBackend($backend) {
   $normalized = $backend.Trim().ToLowerInvariant()
   switch ($normalized) {
@@ -245,8 +291,9 @@ function Write-EnvFile($path, $values) {
     @{ Title = "Storage and Retrieval"; Keys = @(
         "OBJECT_STORAGE_BACKEND", "OBJECT_STORAGE_ENDPOINT",
         "OBJECT_STORAGE_ACCESS_KEY", "OBJECT_STORAGE_SECRET_KEY",
-        "OBJECT_STORAGE_BUCKET", "EMBEDDING_BACKEND", "EMBEDDING_BASE_URL",
-        "EMBEDDING_API_KEY", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS",
+        "OBJECT_STORAGE_BUCKET", "EMBEDDING_RUNTIME", "EMBEDDING_BACKEND",
+        "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY", "EMBEDDING_GATEWAY_IMAGE",
+        "EMBEDDING_GATEWAY_PORT", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS",
         "VECTOR_BACKEND", "VECTOR_BASE_URL", "VECTOR_COLLECTION", "VECTOR_API_KEY",
         "QUEUE_BACKEND", "QUEUE_URL", "CACHE_URL"
       )
@@ -313,43 +360,51 @@ function Get-DisplayPath($path) {
 
 function Get-ComposeCommand($selectedProfile, $envPath) {
   $envArg = "--env-file `"$envPath`""
+  $fileArgs = (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue | ForEach-Object { "-f $_" }) -join " "
+  $profileArg = ""
+  if ($selectedProfile -eq "gpu-local") {
+    $profileArg = " --profile gpu"
+  }
+  return "docker compose $envArg $fileArgs$profileArg up -d --build"
+}
+
+function Get-ComposeFiles($selectedProfile, $embeddingRuntime) {
+  $files = [System.Collections.Generic.List[string]]::new()
   switch ($selectedProfile) {
     "cpu-lite" {
-      return "docker compose $envArg -f deploy\compose\compose.cpu.yml up -d --build"
+      $files.Add("deploy\compose\compose.cpu.yml")
     }
     "split-nas-gpu" {
-      return "docker compose $envArg -f deploy\compose\compose.cpu.yml -f deploy\compose\compose.split-nas-gpu.yml up -d --build"
+      $files.Add("deploy\compose\compose.cpu.yml")
+      $files.Add("deploy\compose\compose.split-nas-gpu.yml")
     }
     "gpu-local" {
-      return "docker compose $envArg -f deploy\compose\compose.cpu.yml -f deploy\compose\compose.gpu.yml --profile gpu up -d --build"
+      $files.Add("deploy\compose\compose.cpu.yml")
+      $files.Add("deploy\compose\compose.gpu.yml")
     }
     "prod-auth" {
-      return "docker compose $envArg -f deploy\compose\compose.prod-auth.yml up -d --build"
+      $files.Add("deploy\compose\compose.prod-auth.yml")
     }
   }
+  if ($embeddingRuntime -in @("cpu", "gpu")) {
+    $files.Add("deploy\compose\compose.embeddings.yml")
+  }
+  if ($embeddingRuntime -eq "gpu") {
+    $files.Add("deploy\compose\compose.embeddings.gpu.yml")
+  }
+  return $files
 }
 
 function Test-ComposeConfig($selectedProfile, $envPath) {
-  switch ($selectedProfile) {
-    "cpu-lite" {
-      & docker compose --env-file $envPath -f (Join-Path $root "deploy\compose\compose.cpu.yml") config --quiet
-    }
-    "split-nas-gpu" {
-      & docker compose --env-file $envPath `
-        -f (Join-Path $root "deploy\compose\compose.cpu.yml") `
-        -f (Join-Path $root "deploy\compose\compose.split-nas-gpu.yml") `
-        config --quiet
-    }
-    "gpu-local" {
-      & docker compose --env-file $envPath `
-        -f (Join-Path $root "deploy\compose\compose.cpu.yml") `
-        -f (Join-Path $root "deploy\compose\compose.gpu.yml") `
-        --profile gpu config --quiet
-    }
-    "prod-auth" {
-      & docker compose --env-file $envPath -f (Join-Path $root "deploy\compose\compose.prod-auth.yml") config --quiet
-    }
+  $args = @("--env-file", $envPath)
+  foreach ($file in (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue)) {
+    $args += @("-f", (Join-Path $root $file))
   }
+  if ($selectedProfile -eq "gpu-local") {
+    $args += @("--profile", "gpu")
+  }
+  $args += @("config", "--quiet")
+  & docker compose @args
 }
 
 if (-not (Test-Path $templatePath)) {
@@ -396,10 +451,38 @@ switch ($selectedProfile) {
   }
 }
 
+$defaultEmbeddingRuntime = "none"
+if ($providerPresetValue -eq "semantic") {
+  $defaultEmbeddingRuntime = "cpu"
+}
+if (-not [string]::IsNullOrWhiteSpace($EmbeddingBaseUrl)) {
+  $defaultEmbeddingRuntime = "external"
+}
+$embeddingRuntimeValue = Select-EmbeddingRuntime $defaultEmbeddingRuntime
+if ($providerPresetValue -eq "starter" -and $embeddingRuntimeValue -ne "none") {
+  throw "Embedding runtime '$embeddingRuntimeValue' requires -ProviderPreset semantic."
+}
+if ($providerPresetValue -eq "semantic" -and $embeddingRuntimeValue -eq "none") {
+  throw "Provider preset semantic requires embedding runtime external, cpu, or gpu."
+}
+if ($embeddingRuntimeValue -in @("cpu", "gpu")) {
+  $defaultEmbeddingGateway = "http://embedding-gateway:80/v1"
+}
+$defaultEmbeddingGatewayImage = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9"
+if ($embeddingRuntimeValue -eq "gpu") {
+  $defaultEmbeddingGatewayImage = "ghcr.io/huggingface/text-embeddings-inference:86-1.9"
+}
+
 $publicUrlValue = Read-SetupValue "Public URL" (Get-ProvidedOrDefault $PublicUrl $defaultPublicUrl) $PublicUrl
 $modelGatewayValue = Read-SetupValue "Model gateway base URL" (Get-ProvidedOrDefault $ModelGatewayBaseUrl $defaultModelGateway) $ModelGatewayBaseUrl
 $modelGatewayAPIKeyValue = Read-SetupValue "Model gateway API key" (Get-ProvidedOrDefault $ModelGatewayApiKey "") $ModelGatewayApiKey
 $embeddingGatewayValue = Read-SetupValue "Embedding base URL" (Get-ProvidedOrDefault $EmbeddingBaseUrl $defaultEmbeddingGateway) $EmbeddingBaseUrl
+$embeddingGatewayImageValue = Get-ProvidedOrDefault $EmbeddingGatewayImage $defaultEmbeddingGatewayImage
+$embeddingGatewayPortValue = Assert-PositiveInteger "Embedding gateway port" (Get-ProvidedOrDefault $EmbeddingGatewayPort "8082")
+if ($embeddingRuntimeValue -in @("cpu", "gpu")) {
+  $embeddingGatewayImageValue = Read-SetupValue "Embedding gateway image" $embeddingGatewayImageValue $EmbeddingGatewayImage
+  $embeddingGatewayPortValue = Assert-PositiveInteger "Embedding gateway port" (Read-SetupValue "Embedding gateway host port" $embeddingGatewayPortValue $EmbeddingGatewayPort)
+}
 $defaultEmbeddingBackend = "hash"
 $defaultEmbeddingDimensions = "384"
 if ($providerPresetValue -eq "semantic") {
@@ -446,9 +529,12 @@ Set-EnvValue $values "OBJECT_STORAGE_ENDPOINT" "http://minio:9000"
 Set-EnvValue $values "OBJECT_STORAGE_ACCESS_KEY" $objectAccessValue
 Set-EnvValue $values "OBJECT_STORAGE_SECRET_KEY" $objectSecretValue
 Set-EnvValue $values "OBJECT_STORAGE_BUCKET" "documents"
+Set-EnvValue $values "EMBEDDING_RUNTIME" $embeddingRuntimeValue
 Set-EnvValue $values "EMBEDDING_BACKEND" $embeddingBackendValue
 Set-EnvValue $values "EMBEDDING_BASE_URL" $embeddingGatewayValue
 Set-EnvValue $values "EMBEDDING_API_KEY" $embeddingAPIKeyValue
+Set-EnvValue $values "EMBEDDING_GATEWAY_IMAGE" $embeddingGatewayImageValue
+Set-EnvValue $values "EMBEDDING_GATEWAY_PORT" $embeddingGatewayPortValue
 Set-EnvValue $values "EMBEDDING_MODEL" $embeddingModelValue
 Set-EnvValue $values "EMBEDDING_DIMENSIONS" $embeddingDimensionsValue
 Set-EnvValue $values "VECTOR_BACKEND" "qdrant"

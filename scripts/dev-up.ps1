@@ -7,6 +7,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
+$embeddingsComposeFile = Join-Path $root "deploy\compose\compose.embeddings.yml"
+$embeddingsGPUComposeFile = Join-Path $root "deploy\compose\compose.embeddings.gpu.yml"
 $envFile = Join-Path $root ".env"
 
 function Require-Command($name) {
@@ -31,13 +33,34 @@ function Wait-Http($name, $url, $timeoutSeconds) {
   throw "$name did not become ready before timeout: $url"
 }
 
+function Read-EnvValue($path, $key) {
+  if (-not (Test-Path $path)) {
+    return ""
+  }
+  foreach ($line in Get-Content $path) {
+    if ($line -match "^\s*$([regex]::Escape($key))=(.*)$") {
+      return $matches[1].Trim()
+    }
+  }
+  return ""
+}
+
 Require-Command docker
+
+$embeddingRuntime = (Read-EnvValue $envFile "EMBEDDING_RUNTIME").ToLowerInvariant()
 
 $composeArgs = @("compose")
 if (Test-Path $envFile) {
   $composeArgs += @("--env-file", $envFile)
 }
-$composeArgs += @("-f", $composeFile, "up", "-d")
+$composeArgs += @("-f", $composeFile)
+if ($embeddingRuntime -in @("cpu", "gpu")) {
+  $composeArgs += @("-f", $embeddingsComposeFile)
+}
+if ($embeddingRuntime -eq "gpu") {
+  $composeArgs += @("-f", $embeddingsGPUComposeFile)
+}
+$composeArgs += @("up", "-d")
 if (-not $NoBuild) {
   $composeArgs += "--build"
 }
@@ -55,6 +78,9 @@ Write-Host "Web:          http://localhost:5173"
 Write-Host "API:          http://localhost:8080"
 Write-Host "MinIO:        http://localhost:9001"
 Write-Host "Qdrant:       http://localhost:6333"
+if ($embeddingRuntime -in @("cpu", "gpu")) {
+  Write-Host "Embeddings:  http://localhost:8082"
+}
 Write-Host ""
 Write-Host "Run scripts\dev-check.ps1 for a service check."
 Write-Host "Run scripts\dev-check.ps1 -Smoke to verify upload, ingestion, and search."

@@ -15,8 +15,10 @@ The concrete source of truth remains:
 - `MODEL_GATEWAY_API_KEY`
 - `GENERAL_MODEL_ID`
 - `EMBEDDING_BACKEND`
+- `EMBEDDING_RUNTIME`
 - `EMBEDDING_BASE_URL`
 - `EMBEDDING_API_KEY`
+- `EMBEDDING_GATEWAY_IMAGE`
 - `EMBEDDING_MODEL`
 - `EMBEDDING_DIMENSIONS`
 
@@ -73,7 +75,9 @@ Implemented embedding adapters:
 
 The hash embedder is not a semantic model. It lets the ingestion pipeline run anywhere while we wire the rest of the system. Use `EMBEDDING_BACKEND=openai-compatible`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL` for real retrieval quality.
 
-For a self-hosted semantic baseline, use a TEI or OpenAI-compatible embedding service with `BAAI/bge-small-en-v1.5` and `EMBEDDING_DIMENSIONS=384`. Hosted embedding providers are fine too; set dimensions to the provider/model output size.
+For a self-hosted semantic baseline, use the TEI Compose overlay with `BAAI/bge-small-en-v1.5` and `EMBEDDING_DIMENSIONS=384`. Hosted embedding providers are fine too; set dimensions to the provider/model output size.
+
+The TEI overlay lives at `deploy/compose/compose.embeddings.yml`. It exposes TEI's OpenAI-compatible embeddings API, so Nexus uses `EMBEDDING_BASE_URL=http://embedding-gateway:80/v1` inside Compose and posts to `/embeddings`. Add `deploy/compose/compose.embeddings.gpu.yml` on an NVIDIA host to use the GPU TEI image.
 
 When the API and worker run as separate processes, use a shared vector backend such as Qdrant. The memory vector adapter is useful for unit tests and single-process experiments, but it is not shared across API and worker containers.
 

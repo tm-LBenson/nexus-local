@@ -20,6 +20,8 @@ Core services:
 The Compose CPU profile uses Postgres persistence by default and runs embedded migrations at API startup.
 Use [Backup and Restore](backup-restore.md) before removing volumes or upgrading the stack.
 
+Add `deploy\compose\compose.embeddings.yml` for self-hosted semantic embeddings on CPU.
+
 ## split-nas-gpu
 
 Recommended for your current hardware.
@@ -48,10 +50,13 @@ Desktop:
 The app talks to the desktop through `MODEL_GATEWAY_BASE_URL`.
 
 Use the `starter` provider preset when the desktop only exposes chat completions. Use the `semantic` preset when you also run an OpenAI-compatible embedding service and can set `EMBEDDING_BASE_URL`.
+If the NAS should own embeddings too, use `-EmbeddingRuntime cpu`. If the desktop or rented GPU should own embeddings, use `-EmbeddingRuntime external` and point `EMBEDDING_BASE_URL` at that service.
 
 ## gpu-local
 
 One GPU machine runs the whole stack. Good for a lab box, power user desktop, or customer-owned appliance with a large GPU.
+
+Add `deploy\compose\compose.embeddings.yml` and `deploy\compose\compose.embeddings.gpu.yml` for GPU-backed TEI embeddings.
 
 ## prod-single-node
 

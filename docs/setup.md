@@ -31,11 +31,18 @@ Profiles decide where containers run. Provider presets decide how model and embe
 - `starter`: OpenAI-compatible chat endpoint with local hash embeddings. Best for first boot, demos, and hardware-light installs.
 - `semantic`: OpenAI-compatible chat and OpenAI-compatible embeddings. Best for real retrieval quality.
 
-Interactive setup asks for the preset. Non-interactive setup defaults to `starter`.
+Interactive setup asks for the preset and embedding runtime. Non-interactive setup defaults to `starter` with no embedding service. When you choose `semantic`, non-interactive setup defaults to a self-hosted CPU embedding service.
 
 ```powershell
 .\scripts\setup.ps1 -Profile split-nas-gpu -ProviderPreset semantic
 ```
+
+Embedding runtime options:
+
+- `none`: use hash embeddings; no embedding service.
+- `external`: use an existing OpenAI-compatible embedding endpoint.
+- `cpu`: start the self-hosted TEI CPU embedding service.
+- `gpu`: start the self-hosted TEI GPU embedding service.
 
 ## Useful Options
 
@@ -43,6 +50,24 @@ Generate without prompts:
 
 ```powershell
 .\scripts\setup.ps1 -NonInteractive -Profile cpu-lite -Force
+```
+
+Generate a self-hosted semantic embedding stack on CPU:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile cpu-lite `
+  -ProviderPreset semantic `
+  -EmbeddingRuntime cpu
+```
+
+Generate a self-hosted semantic embedding stack for an NVIDIA GPU host:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile gpu-local `
+  -ProviderPreset semantic `
+  -EmbeddingRuntime gpu
 ```
 
 Set a desktop or rented GPU endpoint:
@@ -60,6 +85,7 @@ Use a separate embedding service for semantic retrieval:
 .\scripts\setup.ps1 `
   -Profile split-nas-gpu `
   -ProviderPreset semantic `
+  -EmbeddingRuntime external `
   -EmbeddingBaseUrl "http://desktop-gpu.local:8082/v1" `
   -EmbeddingModel "BAAI/bge-small-en-v1.5" `
   -EmbeddingDimensions 384
@@ -90,7 +116,7 @@ The generated `.env` includes:
 - Postgres and MinIO credentials
 - object, vector, queue, and cache settings
 - provider preset, model gateway URL, API key, and model ID
-- embedding backend, endpoint, key, model, and dimensions
+- embedding runtime, backend, endpoint, key, gateway image, model, and dimensions
 - production Caddy/auth settings when selected
 
 Secrets are generated locally as random hex strings unless you pass explicit values.

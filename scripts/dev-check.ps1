@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
+$embeddingsComposeFile = Join-Path $root "deploy\compose\compose.embeddings.yml"
+$embeddingsGPUComposeFile = Join-Path $root "deploy\compose\compose.embeddings.gpu.yml"
 $envFile = Join-Path $root ".env"
 $smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
 $failures = 0
@@ -89,8 +91,22 @@ function Test-Tcp($name, $hostName, $port, $required = $true) {
   }
 }
 
+function Read-EnvValue($path, $key) {
+  if (-not (Test-Path $path)) {
+    return ""
+  }
+  foreach ($line in Get-Content $path) {
+    if ($line -match "^\s*$([regex]::Escape($key))=(.*)$") {
+      return $matches[1].Trim()
+    }
+  }
+  return ""
+}
+
 Write-Host "Nexus Local dev check"
 Write-Host ""
+
+$embeddingRuntime = (Read-EnvValue $envFile "EMBEDDING_RUNTIME").ToLowerInvariant()
 
 $hasDocker = Test-Command docker
 Test-Command go $false | Out-Null
@@ -110,7 +126,14 @@ if ($hasDocker) {
     if (Test-Path $envFile) {
       $composeArgs += @("--env-file", $envFile)
     }
-    $composeArgs += @("-f", $composeFile, "config", "--quiet")
+    $composeArgs += @("-f", $composeFile)
+    if ($embeddingRuntime -in @("cpu", "gpu")) {
+      $composeArgs += @("-f", $embeddingsComposeFile)
+    }
+    if ($embeddingRuntime -eq "gpu") {
+      $composeArgs += @("-f", $embeddingsGPUComposeFile)
+    }
+    $composeArgs += @("config", "--quiet")
     & docker @composeArgs
     Pass "compose config" $composeFile
   } catch {
@@ -123,7 +146,14 @@ if ($hasDocker) {
     if (Test-Path $envFile) {
       $composeArgs += @("--env-file", $envFile)
     }
-    $composeArgs += @("-f", $composeFile, "ps")
+    $composeArgs += @("-f", $composeFile)
+    if ($embeddingRuntime -in @("cpu", "gpu")) {
+      $composeArgs += @("-f", $embeddingsComposeFile)
+    }
+    if ($embeddingRuntime -eq "gpu") {
+      $composeArgs += @("-f", $embeddingsGPUComposeFile)
+    }
+    $composeArgs += "ps"
     & docker @composeArgs
   } catch {
     Warn "compose ps" $_.Exception.Message
@@ -140,6 +170,9 @@ Test-Tcp "minio api" "localhost" 9000 $false | Out-Null
 Test-Tcp "minio console" "localhost" 9001 $false | Out-Null
 Test-Tcp "nats" "localhost" 4222 $false | Out-Null
 Test-Tcp "valkey" "localhost" 6379 $false | Out-Null
+if ($embeddingRuntime -in @("cpu", "gpu")) {
+  Test-Http "embedding gateway" "http://localhost:8082/docs" $false | Out-Null
+}
 
 if ($Smoke) {
   Write-Host ""

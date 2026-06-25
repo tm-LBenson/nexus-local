@@ -1,0 +1,13 @@
+# Use with compose.embeddings.yml on a host with NVIDIA Container Toolkit.
+# For RTX 30-series and similar Ampere 8.6 GPUs, the default TEI image is 86-1.9.
+
+services:
+  embedding-gateway:
+    image: ${EMBEDDING_GATEWAY_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:86-1.9}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
