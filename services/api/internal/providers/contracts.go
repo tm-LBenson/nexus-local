@@ -47,10 +47,11 @@ type Vector struct {
 }
 
 type VectorSearch struct {
-	TenantID domain.TenantID
-	Query    []float32
-	Limit    int
-	Filters  map[string]string
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+	Query      []float32
+	Limit      int
+	Filters    map[string]string
 }
 
 type VectorHit struct {

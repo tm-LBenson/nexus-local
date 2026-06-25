@@ -579,6 +579,39 @@ func TestSearchEndpoint(t *testing.T) {
 	}
 }
 
+func TestSearchEndpointCanScopeToDocument(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/search", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"document_id": "doc_notes",
+		"query": "alpha beta",
+		"limit": 5
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Hits []searchHitPayload `json:"hits"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(body.Hits))
+	}
+	if body.Hits[0].DocumentID != "doc_notes" {
+		t.Fatalf("document id = %q, want doc_notes", body.Hits[0].DocumentID)
+	}
+	if body.Hits[0].Source.DocumentName != "Omega Notes.md" {
+		t.Fatalf("source name = %q, want Omega Notes.md", body.Hits[0].Source.DocumentName)
+	}
+}
+
 func TestSearchEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 
@@ -626,6 +659,36 @@ func TestAskConversationEndpoint(t *testing.T) {
 	}
 	if body.Hits[0].Source.DocumentName != "Alpha Plan.md" {
 		t.Fatalf("source name = %q, want Alpha Plan.md", body.Hits[0].Source.DocumentName)
+	}
+}
+
+func TestAskConversationEndpointCanScopeToDocument(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"document_id": "doc_notes",
+		"question": "What is the alpha beta plan?",
+		"limit": 5
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Hits []searchHitPayload `json:"hits"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(body.Hits))
+	}
+	if body.Hits[0].DocumentID != "doc_notes" {
+		t.Fatalf("document id = %q, want doc_notes", body.Hits[0].DocumentID)
 	}
 }
 
@@ -914,6 +977,18 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 			Metadata: map[string]string{
 				"document_name": "Alpha Plan.md",
 				"section":       "planning",
+				"chunk_index":   "0",
+			},
+		},
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_notes"),
+			ChunkID:    "chunk_2",
+			Values:     []float32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Text:       "omega archive notes",
+			Metadata: map[string]string{
+				"document_name": "Omega Notes.md",
+				"section":       "archive",
 				"chunk_index":   "0",
 			},
 		},

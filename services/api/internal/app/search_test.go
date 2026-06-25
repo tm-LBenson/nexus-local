@@ -71,6 +71,56 @@ func TestSearchReturnsTenantScopedVectorHits(t *testing.T) {
 	}
 }
 
+func TestSearchFiltersByDocumentID(t *testing.T) {
+	ctx := context.Background()
+	embedder := embeddinghash.New("test", 16)
+	index := vectormemory.New()
+	service := NewSearchService(embedder, index)
+
+	alphaVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
+	if err != nil {
+		t.Fatalf("embed alpha text: %v", err)
+	}
+	omegaVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"omega archive notes"}})
+	if err != nil {
+		t.Fatalf("embed omega text: %v", err)
+	}
+	if err := index.Upsert(ctx, []providers.Vector{
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_alpha"),
+			ChunkID:    "chunk_1",
+			Values:     alphaVector.Vectors[0],
+			Text:       "alpha beta launch plan",
+		},
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_omega"),
+			ChunkID:    "chunk_2",
+			Values:     omegaVector.Vectors[0],
+			Text:       "omega archive notes",
+		},
+	}); err != nil {
+		t.Fatalf("upsert vectors: %v", err)
+	}
+
+	result, err := service.Search(ctx, SearchInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		DocumentID: domain.DocumentID("doc_omega"),
+		Query:      "alpha beta",
+		Limit:      5,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(result.Hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(result.Hits))
+	}
+	if result.Hits[0].DocumentID != domain.DocumentID("doc_omega") {
+		t.Fatalf("document id = %q, want doc_omega", result.Hits[0].DocumentID)
+	}
+}
+
 func TestSearchRejectsInvalidInput(t *testing.T) {
 	service := NewSearchService(embeddinghash.New("test", 16), vectormemory.New())
 

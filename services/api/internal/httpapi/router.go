@@ -191,10 +191,11 @@ type jobPayload struct {
 }
 
 type searchRequest struct {
-	TenantID string            `json:"tenant_id"`
-	Query    string            `json:"query"`
-	Limit    int               `json:"limit"`
-	Filters  map[string]string `json:"filters"`
+	TenantID   string            `json:"tenant_id"`
+	DocumentID string            `json:"document_id"`
+	Query      string            `json:"query"`
+	Limit      int               `json:"limit"`
+	Filters    map[string]string `json:"filters"`
 }
 
 type searchHitPayload struct {
@@ -218,6 +219,7 @@ type askConversationRequest struct {
 	TenantID       string `json:"tenant_id"`
 	OwnerID        string `json:"owner_id"`
 	ConversationID string `json:"conversation_id"`
+	DocumentID     string `json:"document_id"`
 	ModelTarget    string `json:"model_target"`
 	Question       string `json:"question"`
 	Limit          int    `json:"limit"`
@@ -604,10 +606,11 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 		}
 
 		result, err := service.Search(r.Context(), app.SearchInput{
-			TenantID: domain.TenantID(req.TenantID),
-			Query:    req.Query,
-			Limit:    req.Limit,
-			Filters:  req.Filters,
+			TenantID:   domain.TenantID(req.TenantID),
+			DocumentID: domain.DocumentID(req.DocumentID),
+			Query:      req.Query,
+			Limit:      req.Limit,
+			Filters:    req.Filters,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -816,6 +819,7 @@ func askConversationInput(req askConversationRequest, tenantID domain.TenantID, 
 		TenantID:       tenantID,
 		OwnerID:        ownerID,
 		ConversationID: domain.ConversationID(req.ConversationID),
+		DocumentID:     domain.DocumentID(req.DocumentID),
 		ModelTarget:    req.ModelTarget,
 		Question:       req.Question,
 		Limit:          req.Limit,

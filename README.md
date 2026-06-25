@@ -165,6 +165,7 @@ Useful endpoints during development:
 
 The stream endpoint returns server-sent events: `status`, `delta`, `error`, and `done`.
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
+Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
 
 Example document upload:
 

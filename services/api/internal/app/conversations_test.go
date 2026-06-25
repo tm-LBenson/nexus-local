@@ -78,6 +78,66 @@ func TestAskCreatesConversationRetrievesContextAndStoresMessages(t *testing.T) {
 	}
 }
 
+func TestAskCanScopeRetrievalToDocument(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	embedder := embeddinghash.New("test", 16)
+	vectorIndex := vectormemory.New()
+	search := NewSearchService(embedder, vectorIndex)
+	gateway := &stubModelGateway{response: providers.ChatCompletion{Content: "Use the scoped notes."}}
+
+	alphaVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
+	if err != nil {
+		t.Fatalf("embed alpha text: %v", err)
+	}
+	omegaVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"omega archive notes"}})
+	if err != nil {
+		t.Fatalf("embed omega text: %v", err)
+	}
+	if err := vectorIndex.Upsert(ctx, []providers.Vector{
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_alpha"),
+			ChunkID:    "chunk_1",
+			Values:     alphaVector.Vectors[0],
+			Text:       "alpha beta launch plan",
+			Metadata:   map[string]string{"document_name": "Alpha Plan.md"},
+		},
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_omega"),
+			ChunkID:    "chunk_2",
+			Values:     omegaVector.Vectors[0],
+			Text:       "omega archive notes",
+			Metadata:   map[string]string{"document_name": "Omega Notes.md"},
+		},
+	}); err != nil {
+		t.Fatalf("upsert seed: %v", err)
+	}
+
+	service := NewConversationService(repos, &askIDs{}, fixedClock{}, search, gateway)
+	result, err := service.Ask(ctx, AskInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		DocumentID: domain.DocumentID("doc_omega"),
+		Question:   "What is the alpha beta plan?",
+		Limit:      5,
+	})
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	if len(result.Hits) != 1 {
+		t.Fatalf("hits len = %d, want 1", len(result.Hits))
+	}
+	if result.Hits[0].DocumentID != domain.DocumentID("doc_omega") {
+		t.Fatalf("hit document = %q, want doc_omega", result.Hits[0].DocumentID)
+	}
+	lastPrompt := gateway.request.Messages[len(gateway.request.Messages)-1].Content
+	if !strings.Contains(lastPrompt, "Omega Notes.md") || strings.Contains(lastPrompt, "Alpha Plan.md") {
+		t.Fatalf("prompt did not use scoped context: %q", lastPrompt)
+	}
+}
+
 func TestAskStreamEmitsDeltasAndStoresFinalMessage(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

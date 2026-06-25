@@ -38,6 +38,7 @@ type AskInput struct {
 	TenantID       domain.TenantID
 	OwnerID        domain.UserID
 	ConversationID domain.ConversationID
+	DocumentID     domain.DocumentID
 	ModelTarget    string
 	Question       string
 	Limit          int
@@ -249,9 +250,10 @@ func (s ConversationService) prepareAsk(ctx context.Context, input AskInput, emi
 	}
 
 	searchResult, err := s.search.Search(ctx, SearchInput{
-		TenantID: input.TenantID,
-		Query:    question,
-		Limit:    input.Limit,
+		TenantID:   input.TenantID,
+		DocumentID: input.DocumentID,
+		Query:      question,
+		Limit:      input.Limit,
 	})
 	if err != nil {
 		return askPreparation{}, err

@@ -165,6 +165,7 @@ export type AskConversationResponse = {
 export type AskConversationInput = {
   tenant_id: string;
   conversation_id?: string;
+  document_id?: string;
   model_target: string;
   question: string;
   limit: number;
@@ -276,6 +277,7 @@ export async function uploadDocument(input: {
 
 export async function searchDocuments(input: {
   tenant_id: string;
+  document_id?: string;
   query: string;
   limit: number;
 }) {

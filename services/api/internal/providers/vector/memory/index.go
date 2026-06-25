@@ -54,6 +54,9 @@ func (i *Index) Search(ctx context.Context, input providers.VectorSearch) ([]pro
 		if vector.TenantID != input.TenantID {
 			continue
 		}
+		if input.DocumentID != "" && vector.DocumentID != input.DocumentID {
+			continue
+		}
 		if !matchesFilters(vector.Metadata, input.Filters) {
 			continue
 		}

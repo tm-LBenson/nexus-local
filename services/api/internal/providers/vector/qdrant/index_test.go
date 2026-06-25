@@ -106,9 +106,10 @@ func TestIndexSearchUsesQueryEndpoint(t *testing.T) {
 	}
 
 	hits, err := index.Search(context.Background(), providers.VectorSearch{
-		TenantID: domain.TenantID("tenant_1"),
-		Query:    []float32{1, 0},
-		Limit:    3,
+		TenantID:   domain.TenantID("tenant_1"),
+		DocumentID: domain.DocumentID("doc_1"),
+		Query:      []float32{1, 0},
+		Limit:      3,
 	})
 	if err != nil {
 		t.Fatalf("search: %v", err)
@@ -118,6 +119,11 @@ func TestIndexSearchUsesQueryEndpoint(t *testing.T) {
 	}
 	if searchBody["limit"].(float64) != 3 {
 		t.Fatalf("limit = %v", searchBody["limit"])
+	}
+	filter := searchBody["filter"].(map[string]any)
+	must := filter["must"].([]any)
+	if len(must) != 2 {
+		t.Fatalf("filter must = %#v, want tenant and document filters", must)
 	}
 }
 

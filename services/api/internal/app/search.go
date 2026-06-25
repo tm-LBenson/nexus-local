@@ -23,10 +23,11 @@ type SearchService struct {
 }
 
 type SearchInput struct {
-	TenantID domain.TenantID
-	Query    string
-	Limit    int
-	Filters  map[string]string
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+	Query      string
+	Limit      int
+	Filters    map[string]string
 }
 
 type SearchResult struct {
@@ -70,10 +71,11 @@ func (s SearchService) Search(ctx context.Context, input SearchInput) (SearchRes
 	}
 
 	hits, err := s.vectors.Search(ctx, providers.VectorSearch{
-		TenantID: input.TenantID,
-		Query:    embedded.Vectors[0],
-		Limit:    limit,
-		Filters:  input.Filters,
+		TenantID:   input.TenantID,
+		DocumentID: input.DocumentID,
+		Query:      embedded.Vectors[0],
+		Limit:      limit,
+		Filters:    input.Filters,
 	})
 	if err != nil {
 		return SearchResult{}, err

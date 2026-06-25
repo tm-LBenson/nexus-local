@@ -123,7 +123,7 @@ func (i *Index) Search(ctx context.Context, input providers.VectorSearch) ([]pro
 		"query":        input.Query,
 		"limit":        limit,
 		"with_payload": true,
-		"filter":       filterFrom(input.TenantID, "", input.Filters),
+		"filter":       filterFrom(input.TenantID, input.DocumentID, input.Filters),
 	}
 
 	var response qdrantResponse[struct {

@@ -38,6 +38,7 @@ const fallbackTenantID = 'tenant_1';
 
 const initialAsk = {
   conversation_id: '',
+  document_id: '',
   model_target: 'general',
   question: '',
   limit: 5,
@@ -60,7 +61,7 @@ export function App() {
   const [conversationMessages, setConversationMessages] =
     useState<ListConversationMessagesResponse | null>(null);
   const [selectedConversationID, setSelectedConversationID] = useState('');
-  const [searchForm, setSearchForm] = useState({ query: '', limit: 5 });
+  const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [askForm, setAskForm] = useState(initialAsk);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
@@ -162,6 +163,8 @@ export function App() {
     setDocumentDetail(null);
     setSelectedConversationID('');
     setConversationMessages(null);
+    setAskForm((current) => ({ ...current, conversation_id: '', document_id: '' }));
+    setSearchForm((current) => ({ ...current, document_id: '' }));
     setError(null);
     try {
       const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
@@ -265,6 +268,12 @@ export function App() {
       if (documentDetail?.document.id === documentID) {
         setDocumentDetail(null);
       }
+      setAskForm((current) =>
+        current.document_id === documentID ? { ...current, document_id: '' } : current,
+      );
+      setSearchForm((current) =>
+        current.document_id === documentID ? { ...current, document_id: '' } : current,
+      );
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -344,6 +353,7 @@ export function App() {
       setSearchResult(
         await searchDocuments({
           tenant_id: tenantID,
+          document_id: searchForm.document_id || undefined,
           query: searchForm.query,
           limit: Number(searchForm.limit),
         }),
@@ -371,6 +381,7 @@ export function App() {
       await askConversationStream({
         tenant_id: tenantID,
         conversation_id: askForm.conversation_id || undefined,
+        document_id: askForm.document_id || undefined,
         model_target: askForm.model_target,
         question: askForm.question,
         limit: Number(askForm.limit),
@@ -491,6 +502,16 @@ export function App() {
                           </option>
                         ))}
                       </select>
+                    </label>
+                    <label>
+                      Source
+                      <DocumentSelect
+                        documents={documents?.documents ?? []}
+                        value={askForm.document_id}
+                        onChange={(value) =>
+                          setAskForm((current) => ({ ...current, document_id: value }))
+                        }
+                      />
                     </label>
                     <label>
                       Limit
@@ -788,21 +809,33 @@ export function App() {
               />
               <details className="menuPanel compactMenu">
                 <summary>Options</summary>
-                <label>
-                  Limit
-                  <input
-                    max="20"
-                    min="1"
-                    type="number"
-                    value={searchForm.limit}
-                    onChange={(event) =>
-                      setSearchForm((current) => ({
-                        ...current,
-                        limit: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
+                <div className="menuFields">
+                  <label>
+                    Source
+                    <DocumentSelect
+                      documents={documents?.documents ?? []}
+                      value={searchForm.document_id}
+                      onChange={(value) =>
+                        setSearchForm((current) => ({ ...current, document_id: value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Limit
+                    <input
+                      max="20"
+                      min="1"
+                      type="number"
+                      value={searchForm.limit}
+                      onChange={(event) =>
+                        setSearchForm((current) => ({
+                          ...current,
+                          limit: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
               </details>
               <button disabled={searching} type="submit">
                 {searching ? 'Searching' : 'Search'}
@@ -1000,6 +1033,27 @@ function ResultHit({ hit }: { hit: SearchDocumentsResponse['hits'][number] }) {
       <p>{hit.text}</p>
       <em>{hit.document_id} / {hit.chunk_id}</em>
     </div>
+  );
+}
+
+function DocumentSelect({
+  documents,
+  onChange,
+  value,
+}: {
+  documents: ListDocumentsResponse['documents'];
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <select onChange={(event) => onChange(event.target.value)} value={value}>
+      <option value="">All documents</option>
+      {documents.map((document) => (
+        <option key={document.id} value={document.id}>
+          {document.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
