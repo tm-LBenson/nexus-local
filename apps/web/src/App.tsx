@@ -851,8 +851,12 @@ export function App() {
                   <details className="inlineDetails">
                     <summary>Sources</summary>
                     <div className="resultStack">
-                      {askResult.hits.map((hit) => (
-                        <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
+                      {askResult.hits.map((hit, index) => (
+                        <ResultHit
+                          hit={hit}
+                          index={index}
+                          key={`${hit.document_id}:${hit.chunk_id}`}
+                        />
                       ))}
                       {askResult.hits.length === 0 && <p className="muted">No sources</p>}
                     </div>
@@ -1168,8 +1172,16 @@ export function App() {
             </form>
             {searchResult && (
               <div className="resultStack">
-                {searchResult.hits.map((hit) => (
-                  <ResultHit hit={hit} key={`${hit.document_id}:${hit.chunk_id}`} />
+                <div className="resultToolbar">
+                  <strong>{searchResult.hits.length} passages</strong>
+                  <span>{searchForm.query}</span>
+                </div>
+                {searchResult.hits.map((hit, index) => (
+                  <ResultHit
+                    hit={hit}
+                    index={index}
+                    key={`${hit.document_id}:${hit.chunk_id}`}
+                  />
                 ))}
                 {searchResult.hits.length === 0 && <p className="muted">No matches</p>}
               </div>
@@ -1276,29 +1288,45 @@ export function App() {
                   <span>Start with one workspace for documents, search, and chat.</span>
                 </div>
               )}
-              <form className="inlineForm" onSubmit={submitTenant}>
-                <input
-                  aria-label="Workspace name"
-                  onChange={(event) => setTenantName(event.target.value)}
-                  value={tenantName}
-                />
-                <button disabled={creatingTenant} type="submit">
-                  {creatingTenant ? 'Creating' : 'Create'}
-                </button>
-              </form>
-              <div className="tableList">
+              <details className="inlineDetails" open={needsWorkspace}>
+                <summary>New workspace</summary>
+                <form className="inlineForm" onSubmit={submitTenant}>
+                  <input
+                    aria-label="Workspace name"
+                    onChange={(event) => setTenantName(event.target.value)}
+                    value={tenantName}
+                  />
+                  <button disabled={creatingTenant} type="submit">
+                    {creatingTenant ? 'Creating' : 'Create'}
+                  </button>
+                </form>
+              </details>
+              <div className="dataTable workspaceTable">
+                <div className="dataHeader">
+                  <span>Name</span>
+                  <span>Role</span>
+                  <span></span>
+                </div>
                 {currentUser?.memberships.map((membership) => (
-                  <button
-                    className="tenantRow"
-                    aria-label={`${membership.tenant.name}, ${membership.role}`}
+                  <div
+                    className={
+                      membership.tenant.id === tenantID
+                        ? 'dataRow tenantRow selectedRow'
+                        : 'dataRow tenantRow'
+                    }
                     key={membership.tenant.id}
-                    onClick={() => void switchTenant(membership.tenant.id)}
                     title={membership.tenant.id}
-                    type="button"
                   >
                     <strong>{membership.tenant.name}</strong>
                     <span>{membership.role}</span>
-                  </button>
+                    <button
+                      disabled={membership.tenant.id === tenantID}
+                      onClick={() => void switchTenant(membership.tenant.id)}
+                      type="button"
+                    >
+                      {membership.tenant.id === tenantID ? 'Open' : 'Use'}
+                    </button>
+                  </div>
                 ))}
                 {currentUser && currentUser.memberships.length === 0 && (
                   <p className="muted">No workspaces</p>
@@ -1366,12 +1394,17 @@ export function App() {
                     </form>
                   </details>
 
-                  <div className="tableList">
+                  <div className="dataTable memberTable">
+                    <div className="dataHeader">
+                      <span>User</span>
+                      <span>Role</span>
+                      <span></span>
+                    </div>
                     {tenantMembers?.members.map((member) => {
                       const isCurrentUser = member.user.id === currentUser?.user.id;
                       const isLastOwner = member.role === 'owner' && ownerCount <= 1;
                       return (
-                        <div className="memberRow" key={member.user.id}>
+                        <div className="dataRow memberRow" key={member.user.id}>
                           <strong>{member.user.email}</strong>
                           <span>{member.role}</span>
                           <button
@@ -1433,11 +1466,17 @@ export function App() {
               </details>
               <details className="inlineDetails">
                 <summary>Model Targets</summary>
-                <div className="tableList">
+                <div className="dataTable targetTable">
+                  <div className="dataHeader">
+                    <span>Target</span>
+                    <span>Model</span>
+                    <span>Check</span>
+                    <span></span>
+                  </div>
                   {targets.map((target) => {
                     const check = targetChecks[target.name];
                     return (
-                      <div className="targetRow" key={target.name}>
+                      <div className="dataRow targetRow" key={target.name}>
                         <span>{target.name}</span>
                         <strong>{target.model}</strong>
                         <em
@@ -1472,19 +1511,29 @@ export function App() {
   );
 }
 
-function ResultHit({ hit }: { hit: SearchDocumentsResponse['hits'][number] }) {
+function ResultHit({
+  hit,
+  index,
+}: {
+  hit: SearchDocumentsResponse['hits'][number];
+  index: number;
+}) {
   const documentName = hit.source?.document_name || hit.metadata.document_name || hit.document_id;
   const chunkLabel = formatChunkLabel(hit);
+  const sourceTitle = `${hit.document_id} / ${hit.chunk_id}`;
 
   return (
-    <div className="searchHit">
+    <div className="searchHit" title={sourceTitle}>
       <div className="sourceHeader">
+        <span>#{index + 1}</span>
         <strong>{documentName}</strong>
-        <span>{chunkLabel}</span>
-        <em>{hit.score.toFixed(3)}</em>
+        <em>{chunkLabel}</em>
       </div>
-      <p>{hit.text}</p>
-      <em>{hit.document_id} / {hit.chunk_id}</em>
+      <p className="searchSnippet">{hit.text}</p>
+      <div className="sourceMeta">
+        <span>{hit.score.toFixed(3)}</span>
+        <span>{chunkLabel}</span>
+      </div>
     </div>
   );
 }
@@ -1620,7 +1669,22 @@ function titleCase(value: string) {
 }
 
 function messageFromError(err: unknown) {
-  return err instanceof Error ? err.message : 'Unknown API error';
+  const message = err instanceof Error ? err.message : 'Unknown API error';
+  return friendlyErrorMessage(message);
+}
+
+function friendlyErrorMessage(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes('model gateway') && lower.includes('404')) {
+    return 'Model gateway not found. Check the provider URL and model in Settings.';
+  }
+  if (lower.includes('model gateway') && lower.includes('status')) {
+    return 'Model gateway is not responding correctly. Check Settings, then test the target.';
+  }
+  if (lower.includes('failed to fetch')) {
+    return 'Cannot reach the API. Check that Nexus Local is running.';
+  }
+  return message;
 }
 
 function hasActiveIngestionJob(detail: DocumentDetailResponse) {

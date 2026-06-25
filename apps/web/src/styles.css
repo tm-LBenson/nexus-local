@@ -481,7 +481,8 @@ h3 {
 
 .inlineDetails .resultStack,
 .inlineDetails .memberForm,
-.inlineDetails .tableList {
+.inlineDetails .tableList,
+.inlineDetails .dataTable {
   width: 100%;
 }
 
@@ -516,12 +517,69 @@ h3 {
   gap: 8px;
 }
 
+.resultToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  border-bottom: 1px solid #e2e9e9;
+  padding-bottom: 8px;
+}
+
+.resultToolbar strong {
+  color: #172026;
+  font-size: 0.88rem;
+}
+
+.resultToolbar span {
+  min-width: 0;
+  overflow: hidden;
+  color: #69777d;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataTable {
+  display: grid;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.dataHeader,
+.dataRow {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  min-height: 38px;
+  padding: 9px 10px;
+}
+
+.dataHeader {
+  min-height: 32px;
+  color: #69777d;
+  background: #f3f7f6;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.dataRow {
+  border-top: 1px solid #e9eeee;
+  background: #ffffff;
+}
+
+.dataHeader + .dataRow {
+  border-top: 0;
+}
+
 .documentRow,
 .conversationRow,
 .jobRow,
-.tenantRow,
-.memberRow,
-.targetRow,
 .searchHit {
   display: grid;
   align-items: center;
@@ -580,31 +638,32 @@ h3 {
   gap: 10px;
 }
 
-.tenantRow {
-  grid-template-columns: minmax(0, 1fr) 100px;
+.workspaceTable .dataHeader,
+.workspaceTable .tenantRow {
+  grid-template-columns: minmax(0, 1fr) 100px 76px;
   gap: 10px;
-  width: 100%;
-  color: #172026;
-  text-align: left;
 }
 
+.memberTable .dataHeader,
 .memberRow {
   grid-template-columns: minmax(0, 1fr) 88px 92px;
   gap: 10px;
 }
 
+.targetTable .dataHeader,
 .targetRow {
   grid-template-columns: minmax(0, 120px) minmax(0, 1fr) minmax(120px, 190px) 76px;
   gap: 10px;
 }
 
 .searchHit {
-  gap: 8px;
+  gap: 10px;
+  background: #ffffff;
 }
 
 .sourceHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
 }
@@ -614,7 +673,6 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.sourceHeader span,
 .sourceHeader em {
   color: #0a684c;
   font-size: 0.78rem;
@@ -623,8 +681,39 @@ h3 {
   white-space: nowrap;
 }
 
+.sourceHeader > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  min-width: 28px;
+  border: 1px solid #d8e2e2;
+  border-radius: 999px;
+  color: #69777d;
+  background: #f8fbfa;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
 .sourceHeader em {
   color: #69777d;
+}
+
+.searchSnippet {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.sourceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 750;
 }
 
 .documentRow strong,
@@ -635,9 +724,7 @@ h3 {
 .jobRow em,
 .jobRow time,
 .tenantRow strong,
-.tenantRow em,
 .memberRow strong,
-.memberRow em,
 .targetRow span,
 .targetRow strong,
 .targetRow em,
@@ -663,8 +750,6 @@ h3 {
 .jobRow em,
 .jobRow small,
 .jobRow time,
-.tenantRow em,
-.memberRow em,
 .targetRow em,
 .searchHit em {
   color: #69777d;
@@ -681,6 +766,13 @@ h3 {
 .targetRow button {
   min-height: 34px;
   padding: 0 10px;
+}
+
+.dataRow button:disabled {
+  border-color: transparent;
+  color: #69777d;
+  background: transparent;
+  opacity: 1;
 }
 
 .targetRow .checkReady {
@@ -730,10 +822,8 @@ h3 {
   background: #fff4f1;
 }
 
-.tenantRow:hover {
-  border-color: #9eb7be;
-  color: #172026;
-  background: #eef6f4;
+.dataRow:hover {
+  background: #fbfdfc;
 }
 
 .messageStack {
@@ -891,15 +981,17 @@ h3 {
   display: grid;
   gap: 5px;
   min-height: 82px;
-  border: 1px solid #e2e9e9;
+  border: 1px solid #edf2f2;
+  border-left: 3px solid #d8e2e2;
   border-radius: 6px;
   padding: 10px;
-  background: #f8fbfa;
+  background: #ffffff;
 }
 
 .providerCardWarn {
-  border-color: #d8bf86;
-  background: #fffaf0;
+  border-color: #f0e4c3;
+  border-left-color: #d8bf86;
+  background: #fffdf8;
 }
 
 .providerCard span {
@@ -943,15 +1035,17 @@ h3 {
   display: grid;
   gap: 6px;
   min-height: 96px;
-  border: 1px solid #e0d5d2;
+  border: 1px solid #edf2f2;
+  border-left: 3px solid #d8e2e2;
   border-radius: 6px;
   padding: 10px;
-  background: #fbf8f7;
+  background: #ffffff;
 }
 
 .statusTileReady {
-  border-color: #d5e4dc;
-  background: #f7fbf8;
+  border-color: #edf2f2;
+  border-left-color: #9bc8b7;
+  background: #ffffff;
 }
 
 .statusTile span {
@@ -1086,6 +1180,8 @@ h3 {
   .documentRow,
   .conversationRow,
   .jobRow,
+  .dataHeader,
+  .dataRow,
   .tenantRow,
   .memberForm,
   .memberRow,

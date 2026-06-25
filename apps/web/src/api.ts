@@ -361,96 +361,114 @@ export async function askConversationStream(
   input: AskConversationInput,
   handlers: AskConversationStreamHandlers = {},
 ) {
-  const response = await fetch(`${apiBaseUrl}/v1/conversations/ask/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  });
+  const controller = new AbortController();
+  let timeoutID = window.setTimeout(() => controller.abort(), 90000);
+  const resetTimeout = () => {
+    window.clearTimeout(timeoutID);
+    timeoutID = window.setTimeout(() => controller.abort(), 90000);
+  };
 
-  if (!response.ok) {
-    throw await errorFromResponse(response);
-  }
-  if (!response.body) {
-    throw new Error('Streaming is not supported by this browser');
-  }
+  try {
+    const response = await fetch(`${apiBaseUrl}/v1/conversations/ask/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let streamError: Error | null = null;
+    if (!response.ok) {
+      throw await errorFromResponse(response);
+    }
+    if (!response.body) {
+      throw new Error('Streaming is not supported by this browser');
+    }
 
-  function consumeEvent(rawEvent: string) {
-    const lines = rawEvent.split(/\r?\n/);
-    let event = 'message';
-    const data: string[] = [];
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamError: Error | null = null;
 
-    for (const line of lines) {
-      if (line.startsWith('event:')) {
-        event = line.slice('event:'.length).trim();
+    function consumeEvent(rawEvent: string) {
+      const lines = rawEvent.split(/\r?\n/);
+      let event = 'message';
+      const data: string[] = [];
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          event = line.slice('event:'.length).trim();
+        }
+        if (line.startsWith('data:')) {
+          data.push(line.slice('data:'.length).trimStart());
+        }
       }
-      if (line.startsWith('data:')) {
-        data.push(line.slice('data:'.length).trimStart());
+      if (data.length === 0) {
+        return;
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(data.join('\n'));
+      } catch {
+        streamError = new Error('Invalid stream event');
+        return;
+      }
+
+      if (event === 'status' && isRecord(payload) && typeof payload.message === 'string') {
+        handlers.onStatus?.(payload.message);
+        return;
+      }
+      if (event === 'delta' && isRecord(payload) && typeof payload.content === 'string') {
+        handlers.onDelta?.(payload.content);
+        return;
+      }
+      if (event === 'done') {
+        handlers.onDone?.(payload as AskConversationResponse);
+        return;
+      }
+      if (event === 'error') {
+        const message =
+          isRecord(payload) && typeof payload.message === 'string'
+            ? payload.message
+            : 'Stream failed';
+        streamError = new Error(message);
       }
     }
-    if (data.length === 0) {
-      return;
-    }
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(data.join('\n'));
-    } catch {
-      streamError = new Error('Invalid stream event');
-      return;
-    }
-
-    if (event === 'status' && isRecord(payload) && typeof payload.message === 'string') {
-      handlers.onStatus?.(payload.message);
-      return;
-    }
-    if (event === 'delta' && isRecord(payload) && typeof payload.content === 'string') {
-      handlers.onDelta?.(payload.content);
-      return;
-    }
-    if (event === 'done') {
-      handlers.onDone?.(payload as AskConversationResponse);
-      return;
-    }
-    if (event === 'error') {
-      const message =
-        isRecord(payload) && typeof payload.message === 'string'
-          ? payload.message
-          : 'Stream failed';
-      streamError = new Error(message);
-    }
-  }
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      consumeEvent(buffer.slice(0, boundary));
-      if (streamError) {
-        throw streamError;
+    while (true) {
+      const { value, done } = await reader.read();
+      resetTimeout();
+      if (done) {
+        break;
       }
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
+      buffer += decoder.decode(value, { stream: true });
 
-  buffer += decoder.decode();
-  if (buffer.trim() !== '') {
-    consumeEvent(buffer);
-  }
-  if (streamError) {
-    throw streamError;
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        consumeEvent(buffer.slice(0, boundary));
+        if (streamError) {
+          throw streamError;
+        }
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim() !== '') {
+      consumeEvent(buffer);
+    }
+    if (streamError) {
+      throw streamError;
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Model gateway timed out. Check Settings, then test the target.');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutID);
   }
 }
 
