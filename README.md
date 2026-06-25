@@ -62,7 +62,29 @@ git clone https://github.com/tm-LBenson/nexus-local.git
 cd nexus-local
 ```
 
-Run the API with in-memory storage:
+Start the full local stack:
+
+```powershell
+.\scripts\dev-up.ps1
+```
+
+Check the stack:
+
+```powershell
+.\scripts\dev-check.ps1
+```
+
+Stop the stack:
+
+```powershell
+.\scripts\dev-down.ps1
+```
+
+Use `.\scripts\dev-down.ps1 -Volumes` when you want to remove local Postgres, MinIO, Qdrant, NATS, and Valkey data volumes too.
+
+## Local Development
+
+Run only the API with in-memory storage:
 
 ```powershell
 cd services\api
@@ -84,7 +106,7 @@ Open the Vite URL printed by the web dev server, usually:
 http://localhost:5173
 ```
 
-## Docker Compose
+## Docker Compose Details
 
 The CPU profile starts the API, web app, worker, Postgres, MinIO, Qdrant, NATS, and Valkey:
 

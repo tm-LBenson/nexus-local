@@ -27,7 +27,7 @@ import {
   uploadDocument,
 } from './api';
 
-type View = 'ask' | 'documents' | 'activity' | 'history' | 'search' | 'settings';
+type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' | 'settings';
 
 const fallbackTenantID = 'tenant_1';
 
@@ -68,6 +68,11 @@ export function App() {
   const selectedTenant = useMemo(
     () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
     [currentUser, tenantID],
+  );
+  const activeJobCount = useMemo(
+    () =>
+      jobs?.jobs.filter((job) => ['queued', 'running', 'retrying'].includes(job.state)).length ?? 0,
+    [jobs],
   );
 
   useEffect(() => {
@@ -113,6 +118,24 @@ export function App() {
     setError(null);
     try {
       setConversations(await listConversations(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function refreshRuntime() {
+    setError(null);
+    try {
+      const [healthResult, readinessResult, targetsResult, jobsResult] = await Promise.all([
+        getHealth(),
+        getReadiness(),
+        getModelTargets(),
+        listJobs(tenantID),
+      ]);
+      setHealth(healthResult);
+      setReadiness(readinessResult);
+      setTargets(targetsResult.targets);
+      setJobs(jobsResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -281,7 +304,7 @@ export function App() {
           <h1>Workspace</h1>
         </div>
         <nav className="tabs" aria-label="Workspace">
-          {(['ask', 'documents', 'search', 'settings'] as View[]).map((view) => (
+          {(['ask', 'documents', 'search', 'activity', 'history', 'status', 'settings'] as View[]).map((view) => (
             <button
               aria-pressed={activeView === view}
               className={activeView === view ? 'tab tabActive' : 'tab'}
@@ -585,6 +608,90 @@ export function App() {
           </div>
         )}
 
+        {activeView === 'status' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>Status</h2>
+              <button onClick={() => void refreshRuntime()} type="button">
+                Refresh
+              </button>
+            </div>
+
+            <div className="statusGrid">
+              <StatusTile
+                detail={health?.version ?? apiBase()}
+                label="API"
+                ready={health?.status === 'ok'}
+                value={health?.status ?? 'offline'}
+              />
+              <StatusTile
+                detail={readiness?.run_migrations ? 'migrations on' : 'migrations off'}
+                label="Database"
+                ready={readiness?.status === 'ready'}
+                value={readiness?.persistence_backend ?? 'unknown'}
+              />
+              <StatusTile
+                detail={readiness?.object_store_configured ? 'configured' : 'local profile'}
+                label="Objects"
+                ready={readiness?.status === 'ready'}
+                value={readiness?.object_storage_backend ?? 'unknown'}
+              />
+              <StatusTile
+                detail={readiness?.vector_collection ?? 'documents'}
+                label="Vectors"
+                ready={readiness?.status === 'ready'}
+                value={readiness?.vector_backend ?? 'unknown'}
+              />
+              <StatusTile
+                detail={readiness?.embedding_model ?? 'unknown'}
+                label="Embeddings"
+                ready={readiness?.status === 'ready'}
+                value={readiness?.embedding_backend ?? 'unknown'}
+              />
+              <StatusTile
+                detail={readiness?.model_gateway_auth ? 'auth configured' : 'no gateway auth'}
+                label="Model Gateway"
+                ready={readiness?.status === 'ready'}
+                value={readiness?.model_gateway ?? 'unknown'}
+              />
+              <StatusTile
+                detail={`${jobs?.jobs.length ?? 0} recent jobs`}
+                label="Worker"
+                ready={Boolean(jobs)}
+                value={activeJobCount > 0 ? `${activeJobCount} active` : 'idle'}
+              />
+              <StatusTile
+                detail={`${targets.length} configured`}
+                label="Targets"
+                ready={targets.length > 0}
+                value={targets[0]?.name ?? 'none'}
+              />
+            </div>
+
+            <details className="inlineDetails">
+              <summary>Endpoints</summary>
+              <dl className="runtimeList">
+                <div>
+                  <dt>API</dt>
+                  <dd>{apiBase()}</dd>
+                </div>
+                <div>
+                  <dt>Queue</dt>
+                  <dd>{readiness?.queue_backend ?? 'unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Models</dt>
+                  <dd>{readiness?.model_gateway ?? 'unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Embeddings</dt>
+                  <dd>{readiness?.embedding_gateway ?? 'unknown'}</dd>
+                </div>
+              </dl>
+            </details>
+          </div>
+        )}
+
         {activeView === 'settings' && (
           <div className="settingsGrid">
             <section className="workSurface">
@@ -677,6 +784,26 @@ function ResultHit({ hit }: { hit: SearchDocumentsResponse['hits'][number] }) {
       </div>
       <p>{hit.text}</p>
       <em>{hit.chunk_id}</em>
+    </div>
+  );
+}
+
+function StatusTile({
+  detail,
+  label,
+  ready,
+  value,
+}: {
+  detail: string;
+  label: string;
+  ready: boolean;
+  value: string;
+}) {
+  return (
+    <div className={ready ? 'statusTile statusTileReady' : 'statusTile'}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <em>{detail}</em>
     </div>
   );
 }

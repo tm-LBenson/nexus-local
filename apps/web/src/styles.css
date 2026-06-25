@@ -594,6 +594,52 @@ h2 {
   gap: 14px;
 }
 
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.statusTile {
+  display: grid;
+  gap: 6px;
+  min-height: 96px;
+  border: 1px solid #e0d5d2;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbf8f7;
+}
+
+.statusTileReady {
+  border-color: #d5e4dc;
+  background: #f7fbf8;
+}
+
+.statusTile span {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.statusTile strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172026;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusTile em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #69777d;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .muted {
   margin: 4px 0;
   color: #69777d;
@@ -605,7 +651,8 @@ h2 {
   }
 
   .topbar,
-  .settingsGrid {
+  .settingsGrid,
+  .statusGrid {
     grid-template-columns: 1fr;
   }
 
