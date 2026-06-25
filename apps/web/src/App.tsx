@@ -40,8 +40,6 @@ type TargetCheckState = {
   detail: string;
 };
 
-const fallbackTenantID = 'tenant_1';
-
 const initialAsk = {
   conversation_id: '',
   document_id: '',
@@ -57,7 +55,7 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
   const [targetChecks, setTargetChecks] = useState<Record<string, TargetCheckState>>({});
-  const [tenantID, setTenantID] = useState(fallbackTenantID);
+  const [tenantID, setTenantID] = useState('');
   const [tenantName, setTenantName] = useState('Personal Workspace');
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
@@ -92,6 +90,9 @@ export function App() {
     () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
     [currentUser, tenantID],
   );
+  const workspaceReady = tenantID !== '';
+  const needsWorkspace = currentUser !== null && currentUser.memberships.length === 0;
+  const workspaceLabel = selectedTenant?.tenant.name ?? (tenantID || 'No workspace');
   const activeJobCount = useMemo(
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)).length ?? 0,
     [jobs],
@@ -130,8 +131,15 @@ export function App() {
         setReadiness(readinessResult);
         setTargets(targetsResult.targets);
         setCurrentUser(currentUserResult);
-        const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? fallbackTenantID;
+        const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? '';
         setTenantID(initialTenantID);
+        if (!initialTenantID) {
+          setDocuments({ documents: [] });
+          setJobs({ jobs: [] });
+          setConversations({ conversations: [] });
+          setActiveView('settings');
+          return;
+        }
         const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
           listDocuments(initialTenantID),
           listJobs(initialTenantID),
@@ -193,6 +201,10 @@ export function App() {
 
   async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
+    if (!nextTenantID) {
+      setDocuments({ documents: [] });
+      return;
+    }
     try {
       setDocuments(await listDocuments(nextTenantID));
     } catch (err) {
@@ -202,6 +214,10 @@ export function App() {
 
   async function refreshJobs(nextTenantID = tenantID) {
     setError(null);
+    if (!nextTenantID) {
+      setJobs({ jobs: [] });
+      return;
+    }
     try {
       setJobs(await listJobs(nextTenantID));
     } catch (err) {
@@ -211,6 +227,10 @@ export function App() {
 
   async function refreshConversations(nextTenantID = tenantID) {
     setError(null);
+    if (!nextTenantID) {
+      setConversations({ conversations: [] });
+      return;
+    }
     try {
       setConversations(await listConversations(nextTenantID));
     } catch (err) {
@@ -225,7 +245,7 @@ export function App() {
         getHealth(),
         getReadiness(),
         getModelTargets(),
-        listJobs(tenantID),
+        tenantID ? listJobs(tenantID) : Promise.resolve({ jobs: [] }),
       ]);
       setHealth(healthResult);
       setReadiness(readinessResult);
@@ -266,12 +286,20 @@ export function App() {
 
   async function switchTenant(nextTenantID: string) {
     setTenantID(nextTenantID);
+    setRegistration(null);
     setDocumentDetail(null);
+    setSearchResult(null);
     setSelectedConversationID('');
     setConversationMessages(null);
     setAskForm((current) => ({ ...current, conversation_id: '', document_id: '' }));
     setSearchForm((current) => ({ ...current, document_id: '' }));
     setError(null);
+    if (!nextTenantID) {
+      setDocuments({ documents: [] });
+      setJobs({ jobs: [] });
+      setConversations({ conversations: [] });
+      return;
+    }
     try {
       const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
         listDocuments(nextTenantID),
@@ -288,6 +316,10 @@ export function App() {
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
     if (!file) {
       setError('Choose a file');
       return;
@@ -315,9 +347,13 @@ export function App() {
     setCreatingTenant(true);
     setError(null);
     try {
+      const hadNoWorkspace = needsWorkspace;
       const created = await createTenant({ name: tenantName });
       setCurrentUser(await getCurrentUser());
       await switchTenant(created.tenant.id);
+      if (hadNoWorkspace) {
+        setActiveView('documents');
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -449,6 +485,10 @@ export function App() {
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
     if (!searchForm.query.trim()) {
       setError('Enter a query');
       return;
@@ -473,6 +513,10 @@ export function App() {
 
   async function submitAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
     if (!askForm.question.trim()) {
       setError('Enter a question');
       return;
@@ -559,7 +603,7 @@ export function App() {
               </option>
             ))}
             {(!currentUser || currentUser.memberships.length === 0) && (
-              <option value={fallbackTenantID}>{fallbackTenantID}</option>
+              <option value="">No workspace</option>
             )}
           </select>
           <span className={health ? 'status statusReady' : 'status'}>
@@ -575,7 +619,7 @@ export function App() {
           <div className="workSurface">
             <div className="surfaceHeader">
               <h2>Ask</h2>
-              <span>{selectedTenant?.tenant.name ?? tenantID}</span>
+              <span>{workspaceLabel}</span>
             </div>
             <form className="askComposer" onSubmit={submitAsk}>
               <textarea
@@ -648,7 +692,7 @@ export function App() {
                     </label>
                   </div>
                 </details>
-                <button disabled={asking} type="submit">
+                <button disabled={asking || !workspaceReady} type="submit">
                   {asking ? streamStatus || 'Asking' : 'Ask'}
                 </button>
               </div>
@@ -697,7 +741,7 @@ export function App() {
                 type="file"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
-              <button disabled={submitting} type="submit">
+              <button disabled={submitting || !workspaceReady} type="submit">
                 {submitting ? 'Uploading' : 'Upload'}
               </button>
             </form>
@@ -916,7 +960,7 @@ export function App() {
           <div className="workSurface">
             <div className="surfaceHeader">
               <h2>Search</h2>
-              <span>{selectedTenant?.tenant.name ?? tenantID}</span>
+              <span>{workspaceLabel}</span>
             </div>
             <form className="searchBar" onSubmit={submitSearch}>
               <input
@@ -957,7 +1001,7 @@ export function App() {
                   </label>
                 </div>
               </details>
-              <button disabled={searching} type="submit">
+              <button disabled={searching || !workspaceReady} type="submit">
                 {searching ? 'Searching' : 'Search'}
               </button>
             </form>
@@ -1063,6 +1107,12 @@ export function App() {
                 <h2>Tenants</h2>
                 <span>{currentUser?.user.email ?? 'Unknown user'}</span>
               </div>
+              {needsWorkspace && (
+                <div className="setupNotice">
+                  <strong>Create workspace</strong>
+                  <span>Start with one workspace for documents, search, and chat.</span>
+                </div>
+              )}
               <form className="inlineForm" onSubmit={submitTenant}>
                 <input
                   aria-label="Tenant name"

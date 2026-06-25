@@ -210,6 +210,26 @@ h3 {
   font-weight: 750;
 }
 
+.setupNotice {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8bf86;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #7a4a08;
+  background: #fff7e6;
+}
+
+.setupNotice strong {
+  font-size: 0.9rem;
+}
+
+.setupNotice span {
+  color: #6b5a38;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .workspace {
   max-width: 1180px;
   margin: 0 auto;
