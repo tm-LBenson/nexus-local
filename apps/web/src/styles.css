@@ -21,6 +21,15 @@ textarea {
   font: inherit;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #70aeb9;
+  outline-offset: 2px;
+}
+
 button {
   min-height: 34px;
   border: 1px solid #1d5262;
@@ -243,6 +252,22 @@ h2 {
 .uploadBar input[type="file"] {
   min-height: 34px;
   padding: 5px 8px;
+}
+
+.uploadBar input[type="file"]::file-selector-button {
+  min-height: 24px;
+  border: 1px solid #c8d4d5;
+  border-radius: 5px;
+  margin-right: 10px;
+  padding: 0 10px;
+  color: #3d4b52;
+  background: #f7faf9;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.uploadBar input[type="file"]::file-selector-button:hover {
+  background: #eef6f4;
 }
 
 .searchBar input,
@@ -694,6 +719,24 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .topbar {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .tab {
+    justify-content: center;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 0.78rem;
+  }
+
   .topActions,
   .composerActions,
   .uploadBar,
@@ -703,13 +746,28 @@ h2 {
     flex-direction: column;
   }
 
+  .topActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
   .tenantSelect {
     width: 100%;
+  }
+
+  .status {
+    justify-content: center;
+  }
+
+  .workSurface {
+    padding: 14px;
   }
 
   .surfaceHeader {
     align-items: flex-start;
     flex-direction: column;
+    gap: 6px;
   }
 
   .menuFields,
@@ -738,5 +796,13 @@ h2 {
   .targetRow,
   .resultBand {
     grid-template-columns: 1fr;
+  }
+
+  .sourceHeader {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .sourceHeader em {
+    justify-self: start;
   }
 }
