@@ -55,9 +55,9 @@ services:
     build:
       context: ../../services/api
     environment:
-      APP_ENV: local
-      HTTP_ADDR: :8080
-      CORS_ALLOWED_ORIGIN: http://localhost:5173
+      APP_ENV: ${APP_ENV:-local}
+      HTTP_ADDR: "${HTTP_ADDR:-:8080}"
+      CORS_ALLOWED_ORIGIN: "${CORS_ALLOWED_ORIGIN:-http://localhost:5173,http://127.0.0.1:5173}"
       AUTH_MODE: ${AUTH_MODE:-dev}
       DEV_USER_ID: ${DEV_USER_ID:-user_1}
       DEV_USER_EMAIL: ${DEV_USER_EMAIL:-dev@example.local}

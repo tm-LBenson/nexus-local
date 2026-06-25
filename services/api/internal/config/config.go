@@ -49,7 +49,7 @@ func Load() Config {
 		Env:                  env("APP_ENV", "local"),
 		HTTPAddr:             env("HTTP_ADDR", ":8080"),
 		Version:              env("APP_VERSION", "dev"),
-		CORSAllowedOrigin:    env("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
+		CORSAllowedOrigin:    env("CORS_ALLOWED_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173"),
 		AuthMode:             env("AUTH_MODE", "dev"),
 		DevUserID:            env("DEV_USER_ID", "user_1"),
 		DevUserEmail:         env("DEV_USER_EMAIL", "dev@example.local"),

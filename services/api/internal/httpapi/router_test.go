@@ -1011,6 +1011,69 @@ func TestCORSPreflightForAllowedOrigin(t *testing.T) {
 	}
 }
 
+func TestCORSPreflightForCommaSeparatedAllowedOrigin(t *testing.T) {
+	server := corsMiddleware(config.Config{
+		Env:               "production",
+		CORSAllowedOrigin: "https://nexus.example.test, http://localhost:5173",
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/v1/models/route", nil)
+	req.Header.Set("Origin", "https://nexus.example.test")
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNoContent)
+	}
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "https://nexus.example.test" {
+		t.Fatalf("allow origin = %q, want configured origin", got)
+	}
+}
+
+func TestCORSPreflightAllowsLoopbackFallbackPortInLocalEnv(t *testing.T) {
+	server := corsMiddleware(config.Config{
+		Env:               "local",
+		CORSAllowedOrigin: "http://localhost:5173",
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/v1/me", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:5175")
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNoContent)
+	}
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5175" {
+		t.Fatalf("allow origin = %q, want loopback fallback origin", got)
+	}
+}
+
+func TestCORSPreflightRejectsUnknownOriginInProduction(t *testing.T) {
+	server := corsMiddleware(config.Config{
+		Env:               "production",
+		CORSAllowedOrigin: "https://nexus.example.test",
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/v1/me", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:5175")
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNoContent)
+	}
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("allow origin = %q, want empty for rejected production origin", got)
+	}
+}
+
 func TestTrustedHeaderModeRejectsUserWithoutTenantPermission(t *testing.T) {
 	server := newTestServerWithConfig(t, config.Config{
 		AuthMode:            internalauth.ModeTrustedHeader,

@@ -31,7 +31,7 @@ textarea:focus-visible {
 }
 
 button {
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid #1d5262;
   border-radius: 6px;
   padding: 0 14px;
@@ -46,7 +46,7 @@ button:hover {
 }
 
 button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.58;
 }
 
@@ -62,7 +62,7 @@ textarea {
 
 input,
 select {
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 10px;
 }
 
@@ -150,7 +150,7 @@ h3 {
 
 .tab {
   flex: 0 0 auto;
-  min-height: 30px;
+  min-height: 34px;
   border-color: transparent;
   padding: 0 12px;
   color: #4b5960;
@@ -181,7 +181,7 @@ h3 {
 .status {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid #c8d4d5;
   border-radius: 6px;
   padding: 0 10px;
@@ -273,7 +273,7 @@ h3 {
 .surfaceHeader .syncStatus {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 32px;
   border: 1px solid #d8e2e2;
   border-radius: 999px;
   padding: 0 10px;
@@ -316,7 +316,7 @@ h3 {
 }
 
 .uploadBar input[type="file"] {
-  min-height: 34px;
+  min-height: 36px;
   padding: 5px 8px;
 }
 
@@ -354,7 +354,7 @@ h3 {
 .rowMenu summary {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid #c8d4d5;
   border-radius: 6px;
   padding: 0 12px;
@@ -543,7 +543,7 @@ h3 {
 }
 
 .conversationRow > button:first-child {
-  min-height: 30px;
+  min-height: 34px;
   border: 0;
   padding: 0;
   color: #172026;
@@ -557,7 +557,7 @@ h3 {
 }
 
 .documentRow > button:first-child {
-  min-height: 30px;
+  min-height: 34px;
   border: 0;
   padding: 0;
   color: #172026;
@@ -581,7 +581,7 @@ h3 {
 }
 
 .tenantRow {
-  grid-template-columns: minmax(0, 1fr) 100px minmax(150px, 240px);
+  grid-template-columns: minmax(0, 1fr) 100px;
   gap: 10px;
   width: 100%;
   color: #172026;
@@ -589,7 +589,7 @@ h3 {
 }
 
 .memberRow {
-  grid-template-columns: minmax(0, 1fr) 88px minmax(150px, 220px) 92px;
+  grid-template-columns: minmax(0, 1fr) 88px 92px;
   gap: 10px;
 }
 
@@ -674,7 +674,7 @@ h3 {
 }
 
 .targetRow button {
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 10px;
 }
 
@@ -773,7 +773,7 @@ h3 {
 }
 
 .detailActions button {
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 10px;
 }
 

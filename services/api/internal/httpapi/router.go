@@ -8,7 +8,9 @@ import (
 	"io"
 	"log"
 	"mime"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -1243,11 +1245,14 @@ func loggingMiddleware(next http.Handler) http.Handler {
 func corsMiddleware(cfg config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && origin == cfg.CORSAllowedOrigin {
+		if allowedOrigin, ok := allowedCORSOrigin(cfg, origin); ok {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-User-Email")
+			if allowedOrigin != origin {
+				w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			}
 		}
 
 		if r.Method == http.MethodOptions {
@@ -1257,4 +1262,51 @@ func corsMiddleware(cfg config.Config, next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedCORSOrigin(cfg config.Config, origin string) (string, bool) {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return "", false
+	}
+	for _, allowed := range strings.Split(cfg.CORSAllowedOrigin, ",") {
+		allowed = strings.TrimSpace(allowed)
+		switch {
+		case allowed == "":
+			continue
+		case allowed == "*":
+			return origin, true
+		case allowed == origin:
+			return origin, true
+		}
+	}
+	if isLocalEnv(cfg.Env) && isLoopbackOrigin(origin) {
+		return origin, true
+	}
+	return "", false
+}
+
+func isLocalEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "", "dev", "development", "local", "test":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLoopbackOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

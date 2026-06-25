@@ -392,7 +392,7 @@ export function App() {
   async function submitTenant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!tenantName.trim()) {
-      setError('Enter a tenant name');
+      setError('Enter a workspace name');
       return;
     }
     setCreatingTenant(true);
@@ -693,7 +693,7 @@ export function App() {
         </nav>
         <div className="topActions">
           <select
-            aria-label="Tenant"
+            aria-label="Workspace"
             className="tenantSelect"
             onChange={(event) => void switchTenant(event.target.value)}
             value={tenantID}
@@ -1218,7 +1218,7 @@ export function App() {
               )}
               <form className="inlineForm" onSubmit={submitTenant}>
                 <input
-                  aria-label="Tenant name"
+                  aria-label="Workspace name"
                   onChange={(event) => setTenantName(event.target.value)}
                   value={tenantName}
                 />
@@ -1230,13 +1230,14 @@ export function App() {
                 {currentUser?.memberships.map((membership) => (
                   <button
                     className="tenantRow"
+                    aria-label={`${membership.tenant.name}, ${membership.role}`}
                     key={membership.tenant.id}
                     onClick={() => void switchTenant(membership.tenant.id)}
+                    title={membership.tenant.id}
                     type="button"
                   >
                     <strong>{membership.tenant.name}</strong>
                     <span>{membership.role}</span>
-                    <em>{membership.tenant.id}</em>
                   </button>
                 ))}
                 {currentUser && currentUser.memberships.length === 0 && (
@@ -1313,7 +1314,6 @@ export function App() {
                         <div className="memberRow" key={member.user.id}>
                           <strong>{member.user.email}</strong>
                           <span>{member.role}</span>
-                          <em>{member.user.id}</em>
                           <button
                             className="dangerButton"
                             disabled={
