@@ -390,6 +390,7 @@ h2 {
 }
 
 .documentRow,
+.jobRow,
 .tenantRow,
 .targetRow,
 .searchHit {
@@ -404,6 +405,11 @@ h2 {
 
 .documentRow {
   grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px;
+  gap: 10px;
+}
+
+.jobRow {
+  grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px 130px;
   gap: 10px;
 }
 
@@ -426,6 +432,9 @@ h2 {
 
 .documentRow strong,
 .documentRow em,
+.jobRow strong,
+.jobRow em,
+.jobRow time,
 .tenantRow strong,
 .tenantRow em,
 .targetRow span,
@@ -436,6 +445,7 @@ h2 {
 }
 
 .documentRow span,
+.jobRow span,
 .tenantRow span {
   color: #0a684c;
   font-size: 0.8rem;
@@ -445,6 +455,9 @@ h2 {
 
 .documentRow em,
 .documentRow small,
+.jobRow em,
+.jobRow small,
+.jobRow time,
 .tenantRow em,
 .searchHit em {
   color: #69777d;
@@ -532,6 +545,7 @@ h2 {
   }
 
   .documentRow,
+  .jobRow,
   .tenantRow,
   .targetRow,
   .resultBand {

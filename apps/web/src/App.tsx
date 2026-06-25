@@ -4,6 +4,7 @@ import {
   CurrentUserResponse,
   Health,
   ListDocumentsResponse,
+  ListJobsResponse,
   ModelTarget,
   Readiness,
   RegisterDocumentResponse,
@@ -16,11 +17,12 @@ import {
   getModelTargets,
   getReadiness,
   listDocuments,
+  listJobs,
   searchDocuments,
   uploadDocument,
 } from './api';
 
-type View = 'ask' | 'documents' | 'search' | 'settings';
+type View = 'ask' | 'documents' | 'activity' | 'search' | 'settings';
 
 const fallbackTenantID = 'tenant_1';
 
@@ -42,6 +44,7 @@ export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
+  const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [searchForm, setSearchForm] = useState({ query: '', limit: 5 });
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -66,7 +69,12 @@ export function App() {
         setCurrentUser(currentUserResult);
         const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? fallbackTenantID;
         setTenantID(initialTenantID);
-        setDocuments(await listDocuments(initialTenantID));
+        const [documentsResult, jobsResult] = await Promise.all([
+          listDocuments(initialTenantID),
+          listJobs(initialTenantID),
+        ]);
+        setDocuments(documentsResult);
+        setJobs(jobsResult);
       })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, []);
@@ -80,9 +88,28 @@ export function App() {
     }
   }
 
+  async function refreshJobs(nextTenantID = tenantID) {
+    setError(null);
+    try {
+      setJobs(await listJobs(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
   async function switchTenant(nextTenantID: string) {
     setTenantID(nextTenantID);
-    await refreshDocuments(nextTenantID);
+    setError(null);
+    try {
+      const [documentsResult, jobsResult] = await Promise.all([
+        listDocuments(nextTenantID),
+        listJobs(nextTenantID),
+      ]);
+      setDocuments(documentsResult);
+      setJobs(jobsResult);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
   }
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
@@ -96,7 +123,7 @@ export function App() {
     try {
       const result = await uploadDocument({ tenant_id: tenantID, file });
       setRegistration(result);
-      await refreshDocuments(tenantID);
+      await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -356,6 +383,30 @@ export function App() {
           </div>
         )}
 
+        {activeView === 'activity' && (
+          <div className="workSurface">
+            <div className="surfaceHeader">
+              <h2>Activity</h2>
+              <button onClick={() => void refreshJobs()} type="button">
+                Refresh
+              </button>
+            </div>
+
+            <div className="tableList">
+              {jobs?.jobs.map((job) => (
+                <div className="jobRow" key={job.id}>
+                  <strong>{job.type}</strong>
+                  <span>{job.state}</span>
+                  <em>{job.resource_id || job.id}</em>
+                  <small>{job.attempts} tries</small>
+                  <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
+                </div>
+              ))}
+              {jobs && jobs.jobs.length === 0 && <p className="muted">No activity</p>}
+            </div>
+          </div>
+        )}
+
         {activeView === 'search' && (
           <div className="workSurface">
             <div className="surfaceHeader">
@@ -516,4 +567,13 @@ function formatBytes(bytes: number) {
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value));
 }

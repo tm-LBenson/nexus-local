@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type Dependencies struct {
 	ModelRouter   *providers.ModelRouter
 	Tenants       app.TenantService
 	Documents     app.DocumentService
+	Jobs          app.JobService
 	Search        app.SearchService
 	Conversations app.ConversationService
 	Authenticator internalauth.Authenticator
@@ -41,6 +43,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
 	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
 
@@ -395,6 +398,39 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 	}
 }
 
+func listJobsHandler(service app.JobService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		limit, err := queryInt(r, "limit")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+
+		result, err := service.ListJobs(r.Context(), app.ListJobsInput{
+			TenantID: tenantID,
+			Limit:    limit,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("list jobs: %v", err))
+			return
+		}
+
+		jobs := make([]jobPayload, 0, len(result.Jobs))
+		for _, job := range result.Jobs {
+			jobs = append(jobs, encodeJob(job))
+		}
+		writeJSON(w, http.StatusOK, envelope{"jobs": jobs})
+	}
+}
+
 func searchHandler(service app.SearchService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req searchRequest
@@ -430,6 +466,14 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 		}
 		writeJSON(w, http.StatusOK, envelope{"hits": hits})
 	}
+}
+
+func queryInt(r *http.Request, key string) (int, error) {
+	value := strings.TrimSpace(r.URL.Query().Get(key))
+	if value == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(value)
 }
 
 func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {

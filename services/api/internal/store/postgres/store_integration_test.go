@@ -55,6 +55,14 @@ func TestStoreIntegrationClaimNextQueuedJob(t *testing.T) {
 		t.Fatalf("save job: %v", err)
 	}
 
+	jobs, err := repo.ListJobs(ctx, domain.TenantID("tenant_a"), 10)
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != domain.JobID("job_1") {
+		t.Fatalf("jobs = %#v", jobs)
+	}
+
 	claimed, err := repo.ClaimNextQueuedJob(ctx, fixedTime().Add(time.Minute))
 	if err != nil {
 		t.Fatalf("claim job: %v", err)

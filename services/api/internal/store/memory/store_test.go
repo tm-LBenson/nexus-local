@@ -78,6 +78,31 @@ func TestClaimNextQueuedJobTransitionsJob(t *testing.T) {
 	}
 }
 
+func TestListJobsReturnsRecentTenantJobs(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+	first := newTestJob(t, domain.TenantID("tenant_a"), domain.JobID("job_1"), fixedTime())
+	second := newTestJob(t, domain.TenantID("tenant_a"), domain.JobID("job_2"), fixedTime().Add(time.Minute))
+	otherTenant := newTestJob(t, domain.TenantID("tenant_b"), domain.JobID("job_3"), fixedTime().Add(2*time.Minute))
+
+	for _, job := range []domain.Job{first, second, otherTenant} {
+		if err := repo.SaveJob(ctx, job); err != nil {
+			t.Fatalf("save job %s: %v", job.ID, err)
+		}
+	}
+
+	jobs, err := repo.ListJobs(ctx, domain.TenantID("tenant_a"), 1)
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs len = %d, want 1", len(jobs))
+	}
+	if jobs[0].ID != domain.JobID("job_2") {
+		t.Fatalf("job id = %s, want job_2", jobs[0].ID)
+	}
+}
+
 func TestClaimNextQueuedJobIgnoresTerminalJobs(t *testing.T) {
 	ctx := context.Background()
 	repo := New()
@@ -183,6 +208,23 @@ func newTestDocument(t *testing.T, tenantID domain.TenantID, documentID domain.D
 		t.Fatalf("new document: %v", err)
 	}
 	return doc
+}
+
+func newTestJob(t *testing.T, tenantID domain.TenantID, jobID domain.JobID, now time.Time) domain.Job {
+	t.Helper()
+
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           jobID,
+		TenantID:     tenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   "doc_1",
+		Now:          now,
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	return job
 }
 
 func newTestConversation(t *testing.T, tenantID domain.TenantID, conversationID domain.ConversationID, now time.Time) domain.Conversation {

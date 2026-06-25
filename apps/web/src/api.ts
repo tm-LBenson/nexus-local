@@ -101,6 +101,10 @@ export type ListDocumentsResponse = {
   documents: RegisteredDocument[];
 };
 
+export type ListJobsResponse = {
+  jobs: RegisteredJob[];
+};
+
 export type SearchHit = {
   document_id: string;
   chunk_id: string;
@@ -178,6 +182,11 @@ export async function createTenant(input: { name: string }) {
 export async function listDocuments(tenantId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
+}
+
+export async function listJobs(tenantId: string, limit = 25) {
+  const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
+  return request<ListJobsResponse>(`/v1/jobs?${params.toString()}`);
 }
 
 export async function registerDocument(input: DocumentRegistration) {

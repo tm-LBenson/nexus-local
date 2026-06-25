@@ -212,6 +212,31 @@ func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.
 	return job, nil
 }
 
+func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.Job, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	jobs := make([]domain.Job, 0)
+	for _, job := range s.jobs {
+		if job.TenantID == tenantID {
+			jobs = append(jobs, job)
+		}
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].UpdatedAt.Equal(jobs[j].UpdatedAt) {
+			return jobs[i].ID < jobs[j].ID
+		}
+		return jobs[i].UpdatedAt.After(jobs[j].UpdatedAt)
+	})
+	if limit > 0 && len(jobs) > limit {
+		jobs = jobs[:limit]
+	}
+	return jobs, nil
+}
+
 func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.Job{}, err

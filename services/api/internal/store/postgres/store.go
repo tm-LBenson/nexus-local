@@ -231,6 +231,40 @@ func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.
 	return job, nil
 }
 
+func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.Job, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, created_at, updated_at
+		FROM jobs
+		WHERE tenant_id = $1
+		ORDER BY updated_at DESC, id
+		LIMIT $2
+	`, tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := make([]domain.Job, 0)
+	for rows.Next() {
+		var job domain.Job
+		if err := rows.Scan(
+			&job.ID,
+			&job.TenantID,
+			&job.Type,
+			&job.ResourceType,
+			&job.ResourceID,
+			&job.State,
+			&job.Attempts,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
 func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
