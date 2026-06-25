@@ -17,7 +17,7 @@ Current behavior:
 3. Load the document by tenant and resource ID.
 4. Transition document `uploaded -> processing`.
 5. Read the source object from configured object storage.
-6. Extract UTF-8 text from text-like files.
+6. Extract text from supported text, PDF, and OpenXML Office files.
 7. Chunk extracted text.
 8. Embed chunks through the configured embedder.
 9. Delete old vectors for the document.
@@ -25,7 +25,13 @@ Current behavior:
 11. Transition document `processing -> ready`.
 12. Transition job `running -> succeeded`.
 
-Current extraction support is intentionally limited to text-like files: `.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, and `.vtt`. PDF/Office extraction should be added behind the same extractor boundary.
+Current extraction support:
+
+- Text-like UTF-8 files: `.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, and `.vtt`.
+- PDF files: `.pdf`.
+- OpenXML Office files: `.docx`, `.pptx`, and `.xlsx`.
+
+Legacy binary Office formats such as `.doc`, `.ppt`, and `.xls` are intentionally not supported yet. They should be converted before upload or handled later by a dedicated converter service.
 
 The CPU Compose profile runs the worker beside the API. It shares the same Postgres database and claims jobs through the repository contract.
 

@@ -83,6 +83,8 @@ Invoke-RestMethod http://localhost:8080/v1/documents/upload `
   -Form @{ tenant_id = 'tenant_1'; file = Get-Item .\README.md }
 ```
 
+Ingestion extracts text from UTF-8 text files, PDFs, and OpenXML Office files (`.docx`, `.pptx`, `.xlsx`).
+
 Tenant-scoped document search endpoint:
 
 ```powershell
