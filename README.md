@@ -91,8 +91,10 @@ Stop the stack:
 ```
 
 Use `.\scripts\dev-down.ps1 -Volumes` when you want to remove local Postgres, MinIO, Qdrant, NATS, and Valkey data volumes too.
+Run `.\scripts\backup.ps1` before removing volumes or doing destructive maintenance.
 
 See [Guided Setup](docs/setup.md) for split NAS/GPU, local GPU, and production auth profile generation.
+See [Backup and Restore](docs/backup-restore.md) for basic Postgres, MinIO, and Qdrant snapshots.
 
 ## Local Development
 
@@ -272,6 +274,7 @@ Current profiles documented in [Deployment Profiles](docs/deployment-profiles.md
 - `external-ai`: self-host the app while using a remote model provider.
 
 See [Production Auth](docs/production-auth.md) for the Caddy/trusted-header deployment profile.
+See [Backup and Restore](docs/backup-restore.md) before changing persistent volumes.
 
 ## Roadmap
 

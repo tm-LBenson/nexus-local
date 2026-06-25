@@ -18,6 +18,7 @@ Core services:
 - Valkey
 
 The Compose CPU profile uses Postgres persistence by default and runs embedded migrations at API startup.
+Use [Backup and Restore](backup-restore.md) before removing volumes or upgrading the stack.
 
 ## split-nas-gpu
 
@@ -36,6 +37,7 @@ NAS:
 - Backups
 
 Postgres data should live on the NAS volume set, with regular backups. The desktop GPU side should be treated as replaceable compute, not the source of truth.
+The basic backup script covers the NAS-side durable stores: Postgres, MinIO, and Qdrant.
 
 Desktop:
 
@@ -68,6 +70,7 @@ docker compose -f deploy\compose\compose.prod-auth.yml --env-file .env up -d --b
 This profile expects an Authelia-compatible forward-auth gateway at `AUTHELIA_INTERNAL_URL`. Caddy strips client-supplied identity headers, asks the auth gateway to authorize the request, maps `Remote-User` and `Remote-Email` into the trusted API headers, and proxies frontend API calls through `/api`.
 
 See [Production Auth](production-auth.md) for setup and security notes.
+See [Backup and Restore](backup-restore.md) for the first operational backup routine.
 
 ## prod-k3s
 
