@@ -63,6 +63,16 @@ type ListDocumentsResult struct {
 	Documents []domain.Document
 }
 
+type DocumentDetailInput struct {
+	TenantID   domain.TenantID
+	DocumentID domain.DocumentID
+}
+
+type DocumentDetailResult struct {
+	Document domain.Document
+	Jobs     []domain.Job
+}
+
 type DeleteDocumentInput struct {
 	TenantID   domain.TenantID
 	DocumentID domain.DocumentID
@@ -143,6 +153,37 @@ func (s DocumentService) ListDocuments(ctx context.Context, input ListDocumentsI
 	}
 	documents = filterActiveDocuments(documents)
 	return ListDocumentsResult{Documents: documents}, nil
+}
+
+func (s DocumentService) GetDocumentDetail(ctx context.Context, input DocumentDetailInput) (DocumentDetailResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DocumentDetailResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DocumentID)) == "" {
+		return DocumentDetailResult{}, fmt.Errorf("document detail: %w", domain.ErrInvalidEntity)
+	}
+
+	document, err := s.repos.GetDocument(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return DocumentDetailResult{}, err
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return DocumentDetailResult{}, err
+	}
+
+	relatedJobs := jobs[:0]
+	for _, job := range jobs {
+		if job.ResourceType == "document" && job.ResourceID == string(document.ID) {
+			relatedJobs = append(relatedJobs, job)
+		}
+	}
+
+	return DocumentDetailResult{
+		Document: document,
+		Jobs:     relatedJobs,
+	}, nil
 }
 
 func (s DocumentService) DeleteDocument(ctx context.Context, input DeleteDocumentInput) (DeleteDocumentResult, error) {

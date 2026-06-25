@@ -156,6 +156,55 @@ func TestListDocumentsRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestGetDocumentDetailReturnsRelatedJobs(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDocumentService(repos, fixedIDs{}, fixedClock{})
+
+	registered, err := service.RegisterDocument(ctx, RegisterDocumentInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       "Handbook.md",
+		StorageKey: "tenants/tenant_1/documents/source.md",
+		SizeBytes:  42,
+	})
+	if err != nil {
+		t.Fatalf("register document: %v", err)
+	}
+
+	unrelated, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_other"),
+		TenantID:     domain.TenantID("tenant_1"),
+		Type:         domain.JobTypeEmbeddingBackfill,
+		ResourceType: "document",
+		ResourceID:   "doc_other",
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("create unrelated job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, unrelated); err != nil {
+		t.Fatalf("save unrelated job: %v", err)
+	}
+
+	result, err := service.GetDocumentDetail(ctx, DocumentDetailInput{
+		TenantID:   domain.TenantID("tenant_1"),
+		DocumentID: registered.Document.ID,
+	})
+	if err != nil {
+		t.Fatalf("get document detail: %v", err)
+	}
+	if result.Document.ID != registered.Document.ID {
+		t.Fatalf("document id = %q, want %q", result.Document.ID, registered.Document.ID)
+	}
+	if len(result.Jobs) != 1 {
+		t.Fatalf("jobs len = %d, want 1", len(result.Jobs))
+	}
+	if result.Jobs[0].ResourceID != string(registered.Document.ID) {
+		t.Fatalf("job resource id = %q, want %q", result.Jobs[0].ResourceID, registered.Document.ID)
+	}
+}
+
 func TestDeleteDocumentMarksDeletedAndRemovesObject(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

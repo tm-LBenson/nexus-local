@@ -41,6 +41,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/model-targets", modelTargetsHandler(deps.ModelRouter))
 	mux.HandleFunc("POST /v1/models/route", modelRouteHandler(deps.ModelRouter, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents", listDocumentsHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("GET /v1/documents/{document_id}", getDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
@@ -358,6 +359,41 @@ func listDocumentsHandler(service app.DocumentService, authorizer internalauth.A
 			documents = append(documents, encodeDocument(document))
 		}
 		writeJSON(w, http.StatusOK, envelope{"documents": documents})
+	}
+}
+
+func getDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		documentID := domain.DocumentID(r.PathValue("document_id"))
+
+		result, err := service.GetDocumentDetail(r.Context(), app.DocumentDetailInput{
+			TenantID:   tenantID,
+			DocumentID: documentID,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, fmt.Sprintf("get document: %v", err))
+			return
+		}
+
+		jobs := make([]jobPayload, 0, len(result.Jobs))
+		for _, job := range result.Jobs {
+			jobs = append(jobs, encodeJob(job))
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"document": encodeDocument(result.Document),
+			"jobs":     jobs,
+		})
 	}
 }
 

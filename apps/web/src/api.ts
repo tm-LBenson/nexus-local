@@ -101,6 +101,11 @@ export type ListDocumentsResponse = {
   documents: RegisteredDocument[];
 };
 
+export type DocumentDetailResponse = {
+  document: RegisteredDocument;
+  jobs: RegisteredJob[];
+};
+
 export type ListJobsResponse = {
   jobs: RegisteredJob[];
 };
@@ -211,6 +216,13 @@ export async function createTenant(input: { name: string }) {
 export async function listDocuments(tenantId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
+}
+
+export async function getDocument(tenantId: string, documentId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DocumentDetailResponse>(
+    `/v1/documents/${encodeURIComponent(documentId)}?${params.toString()}`,
+  );
 }
 
 export async function deleteDocument(tenantId: string, documentId: string) {

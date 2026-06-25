@@ -83,6 +83,7 @@ label {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -94,6 +95,11 @@ h1 {
 
 h2 {
   font-size: 1rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 0.95rem;
   line-height: 1.2;
 }
 
@@ -493,6 +499,20 @@ h2 {
   background: transparent;
 }
 
+.documentRow > button:first-child {
+  min-height: 30px;
+  border: 0;
+  padding: 0;
+  color: #172026;
+  background: transparent;
+  text-align: left;
+}
+
+.documentRow > button:first-child:hover {
+  color: #1d5262;
+  background: transparent;
+}
+
 .selectedRow {
   border-color: #9eb7be;
   background: #eef6f4;
@@ -596,6 +616,40 @@ h2 {
   gap: 8px;
   border-top: 1px solid #e2e9e9;
   padding-top: 14px;
+}
+
+.detailPanel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e2e9e9;
+  padding-top: 14px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailHeader h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detailHeader span {
+  flex: 0 0 auto;
+  color: #0a684c;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.detailList {
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8fbfa;
 }
 
 .messageBubble {

@@ -248,6 +248,46 @@ func TestListDocumentsEndpointRejectsInvalidTenant(t *testing.T) {
 	}
 }
 
+func TestGetDocumentEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"name": "Handbook.md",
+		"storage_key": "tenants/tenant_1/documents/source.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(register, registerReq)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d, body = %s", register.Code, http.StatusCreated, register.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents/doc_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Document documentPayload `json:"document"`
+		Jobs     []jobPayload    `json:"jobs"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Document.ID != "doc_http" {
+		t.Fatalf("document id = %q, want doc_http", body.Document.ID)
+	}
+	if len(body.Jobs) != 1 {
+		t.Fatalf("jobs len = %d, want 1", len(body.Jobs))
+	}
+	if body.Jobs[0].ResourceType != "document" || body.Jobs[0].ResourceID != "doc_http" {
+		t.Fatalf("job resource = %s/%s, want document/doc_http", body.Jobs[0].ResourceType, body.Jobs[0].ResourceID)
+	}
+}
+
 func TestDeleteDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 

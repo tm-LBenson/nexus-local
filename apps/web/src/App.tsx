@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AskConversationResponse,
   CurrentUserResponse,
+  DocumentDetailResponse,
   Health,
   ListConversationMessagesResponse,
   ListConversationsResponse,
@@ -16,6 +17,7 @@ import {
   createTenant,
   deleteConversation,
   deleteDocument,
+  getDocument,
   getCurrentUser,
   getHealth,
   getModelTargets,
@@ -50,6 +52,7 @@ export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
+  const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
   const [conversationMessages, setConversationMessages] =
@@ -65,6 +68,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
+  const [loadingDocumentID, setLoadingDocumentID] = useState('');
   const [deletingConversationID, setDeletingConversationID] = useState('');
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -151,6 +155,7 @@ export function App() {
 
   async function switchTenant(nextTenantID: string) {
     setTenantID(nextTenantID);
+    setDocumentDetail(null);
     setSelectedConversationID('');
     setConversationMessages(null);
     setError(null);
@@ -179,6 +184,7 @@ export function App() {
     try {
       const result = await uploadDocument({ tenant_id: tenantID, file });
       setRegistration(result);
+      setDocumentDetail({ document: result.document, jobs: [result.job] });
       await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
     } catch (err) {
       setError(messageFromError(err));
@@ -221,6 +227,18 @@ export function App() {
     }
   }
 
+  async function openDocument(document: ListDocumentsResponse['documents'][number]) {
+    setLoadingDocumentID(document.id);
+    setError(null);
+    try {
+      setDocumentDetail(await getDocument(tenantID, document.id));
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setLoadingDocumentID('');
+    }
+  }
+
   function resumeConversation(conversation: ListConversationsResponse['conversations'][number]) {
     setAskForm((current) => ({
       ...current,
@@ -240,6 +258,9 @@ export function App() {
     try {
       await deleteDocument(tenantID, documentID);
       await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
+      if (documentDetail?.document.id === documentID) {
+        setDocumentDetail(null);
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -521,13 +542,22 @@ export function App() {
             <div className="tableList">
               {documents?.documents.map((document) => (
                 <div className="documentRow" key={document.id}>
-                  <strong>{document.name}</strong>
+                  <button onClick={() => void openDocument(document)} type="button">
+                    <strong>{document.name}</strong>
+                  </button>
                   <span>{document.status}</span>
                   <em>{document.id}</em>
                   <small>{formatBytes(document.size_bytes)}</small>
                   <details className="rowMenu">
                     <summary>More</summary>
                     <div className="rowMenuActions">
+                      <button
+                        disabled={loadingDocumentID === document.id}
+                        onClick={() => void openDocument(document)}
+                        type="button"
+                      >
+                        {loadingDocumentID === document.id ? 'Loading' : 'Details'}
+                      </button>
                       <button
                         className="dangerButton"
                         disabled={deletingDocumentID === document.id}
@@ -542,6 +572,52 @@ export function App() {
               ))}
               {documents && documents.documents.length === 0 && <p className="muted">No documents</p>}
             </div>
+
+            {documentDetail && (
+              <div className="detailPanel">
+                <div className="detailHeader">
+                  <h3>{documentDetail.document.name}</h3>
+                  <span>{documentDetail.document.status}</span>
+                </div>
+                <dl className="runtimeList detailList">
+                  <div>
+                    <dt>ID</dt>
+                    <dd>{documentDetail.document.id}</dd>
+                  </div>
+                  <div>
+                    <dt>Size</dt>
+                    <dd>{formatBytes(documentDetail.document.size_bytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>Storage</dt>
+                    <dd>{documentDetail.document.storage_key}</dd>
+                  </div>
+                  <div>
+                    <dt>Created</dt>
+                    <dd>{formatDateTime(documentDetail.document.created_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>Updated</dt>
+                    <dd>{formatDateTime(documentDetail.document.updated_at)}</dd>
+                  </div>
+                </dl>
+                <details className="inlineDetails" open>
+                  <summary>Activity</summary>
+                  <div className="tableList">
+                    {documentDetail.jobs.map((job) => (
+                      <div className="jobRow" key={job.id}>
+                        <strong>{job.type}</strong>
+                        <span>{job.state}</span>
+                        <em>{job.id}</em>
+                        <small>{job.attempts} tries</small>
+                        <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
+                      </div>
+                    ))}
+                    {documentDetail.jobs.length === 0 && <p className="muted">No activity</p>}
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
         )}
 
