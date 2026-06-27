@@ -44,6 +44,18 @@ type TargetCheckState = {
   detail: string;
 };
 
+type SetupCheckStatus = 'checking' | 'ok' | 'warning' | 'blocked';
+
+type SetupCheck = {
+  id: string;
+  label: string;
+  detail: string;
+  status: SetupCheckStatus;
+  blocking: boolean;
+};
+
+const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
+
 const initialAsk = {
   conversation_id: '',
   document_id: '',
@@ -90,6 +102,12 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [targets, setTargets] = useState<ModelTarget[]>([]);
   const [targetChecks, setTargetChecks] = useState<Record<string, TargetCheckState>>({});
+  const [setupGatewayCheck, setSetupGatewayCheck] = useState<TargetCheckState | null>(null);
+  const [setupChecking, setSetupChecking] = useState(false);
+  const [setupLastChecked, setSetupLastChecked] = useState('');
+  const [setupAcknowledgedKey, setSetupAcknowledgedKey] = useState(
+    () => window.localStorage.getItem(setupWizardStorageKey) ?? '',
+  );
   const [tenantID, setTenantID] = useState('');
   const [tenantName, setTenantName] = useState('Personal Workspace');
   const [file, setFile] = useState<File | null>(null);
@@ -172,33 +190,58 @@ export function App() {
       : activeView === 'documents' || activeView === 'search'
         ? 'Library'
         : titleCase(activeView);
+  const setupPrimaryTarget = targets.find((target) => target.name === 'general') ?? targets[0];
+  const setupFingerprint = useMemo(
+    () =>
+      [
+        apiBase(),
+        readiness?.model_gateway ?? '',
+        readiness?.provider_preset ?? '',
+        targets
+          .map((target) => `${target.name}:${target.provider}:${target.base_url}:${target.model}`)
+          .join('|'),
+      ].join('::'),
+    [readiness, targets],
+  );
+  const setupChecks = useMemo(
+    () =>
+      buildSetupChecks({
+        health,
+        readiness,
+        targets,
+        gatewayCheck: setupGatewayCheck,
+        checking: setupChecking,
+      }),
+    [health, readiness, setupChecking, setupGatewayCheck, targets],
+  );
+  const setupCanEnter = setupChecks.every(
+    (check) => !check.blocking || check.status === 'ok',
+  );
+  const showSetupWizard = !setupCanEnter || setupAcknowledgedKey !== setupFingerprint;
 
   useEffect(() => {
-    Promise.all([getHealth(), getReadiness(), getModelTargets(), getCurrentUser()])
-      .then(async ([healthResult, readinessResult, targetsResult, currentUserResult]) => {
-        setHealth(healthResult);
-        setReadiness(readinessResult);
-        setTargets(targetsResult.targets);
-        setCurrentUser(currentUserResult);
-        const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? '';
-        setTenantID(initialTenantID);
-        if (!initialTenantID) {
-          setDocuments({ documents: [] });
-          setJobs({ jobs: [] });
-          setConversations({ conversations: [] });
-          setActiveView('ask');
-          return;
+    let canceled = false;
+
+    async function boot() {
+      try {
+        const result = await loadBootstrapData();
+        if (!canceled) {
+          await checkSetupGateway(result.targets);
         }
-        const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
-          listDocuments(initialTenantID),
-          listJobs(initialTenantID),
-          listConversations(initialTenantID),
-        ]);
-        setDocuments(documentsResult);
-        setJobs(jobsResult);
-        setConversations(conversationsResult);
-      })
-      .catch((err: unknown) => setError(messageFromError(err)));
+      } catch (err) {
+        if (!canceled) {
+          const message = messageFromError(err);
+          setError(message);
+          setSetupGatewayCheck({ state: 'failed', detail: message });
+        }
+      }
+    }
+
+    void boot();
+
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -256,6 +299,92 @@ export function App() {
 
     void refreshTenantMembers(tenantID);
   }, [activeView, tenantID, canManageMembers]);
+
+  async function loadBootstrapData() {
+    const [healthResult, readinessResult, targetsResult, currentUserResult] = await Promise.all([
+      getHealth(),
+      getReadiness(),
+      getModelTargets(),
+      getCurrentUser(),
+    ]);
+    setHealth(healthResult);
+    setReadiness(readinessResult);
+    setTargets(targetsResult.targets);
+    setCurrentUser(currentUserResult);
+
+    const initialTenantID = currentUserResult.memberships[0]?.tenant.id ?? '';
+    setTenantID(initialTenantID);
+    if (!initialTenantID) {
+      setDocuments({ documents: [] });
+      setJobs({ jobs: [] });
+      setConversations({ conversations: [] });
+      setActiveView('ask');
+      return { targets: targetsResult.targets };
+    }
+
+    const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
+      listDocuments(initialTenantID),
+      listJobs(initialTenantID),
+      listConversations(initialTenantID),
+    ]);
+    setDocuments(documentsResult);
+    setJobs(jobsResult);
+    setConversations(conversationsResult);
+    return { targets: targetsResult.targets };
+  }
+
+  async function checkSetupGateway(nextTargets = targets) {
+    setSetupChecking(true);
+    setSetupGatewayCheck(null);
+    try {
+      const target = nextTargets.find((item) => item.name === 'general') ?? nextTargets[0];
+      if (!target) {
+        setSetupGatewayCheck({
+          state: 'failed',
+          detail: 'No model target is configured.',
+        });
+        return;
+      }
+
+      const result = await checkModelTarget({ tenant_id: '', target: target.name });
+      setSetupGatewayCheck({
+        state: 'ok',
+        detail: `${result.model || result.route.model} ${result.latency_ms}ms`,
+      });
+    } catch (err) {
+      setSetupGatewayCheck({
+        state: 'failed',
+        detail: messageFromError(err),
+      });
+    } finally {
+      setSetupChecking(false);
+      setSetupLastChecked(new Date().toISOString());
+    }
+  }
+
+  async function runSetupChecks() {
+    setError(null);
+    setSetupChecking(true);
+    try {
+      const result = await loadBootstrapData();
+      await checkSetupGateway(result.targets);
+    } catch (err) {
+      const message = messageFromError(err);
+      setError(message);
+      setSetupGatewayCheck({ state: 'failed', detail: message });
+      setSetupLastChecked(new Date().toISOString());
+    } finally {
+      setSetupChecking(false);
+    }
+  }
+
+  function enterConfiguredApp() {
+    if (!setupCanEnter) {
+      return;
+    }
+    window.localStorage.setItem(setupWizardStorageKey, setupFingerprint);
+    setSetupAcknowledgedKey(setupFingerprint);
+  }
 
   async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
@@ -716,6 +845,23 @@ export function App() {
       setAsking(false);
       setStreamStatus('');
     }
+  }
+
+  if (showSetupWizard) {
+    return (
+      <SetupWizard
+        apiURL={apiBase()}
+        checks={setupChecks}
+        canEnter={setupCanEnter}
+        gatewayCheck={setupGatewayCheck}
+        lastChecked={setupLastChecked}
+        onEnter={enterConfiguredApp}
+        onRecheck={() => void runSetupChecks()}
+        primaryTarget={setupPrimaryTarget}
+        readiness={readiness}
+        setupChecking={setupChecking}
+      />
+    );
   }
 
   return (
@@ -1890,6 +2036,223 @@ function DocumentSelect({
   );
 }
 
+function SetupWizard({
+  apiURL,
+  canEnter,
+  checks,
+  gatewayCheck,
+  lastChecked,
+  onEnter,
+  onRecheck,
+  primaryTarget,
+  readiness,
+  setupChecking,
+}: {
+  apiURL: string;
+  canEnter: boolean;
+  checks: SetupCheck[];
+  gatewayCheck: TargetCheckState | null;
+  lastChecked: string;
+  onEnter: () => void;
+  onRecheck: () => void;
+  primaryTarget?: ModelTarget;
+  readiness: Readiness | null;
+  setupChecking: boolean;
+}) {
+  const blockingCount = checks.filter(
+    (check) => check.blocking && check.status === 'blocked',
+  ).length;
+  const commandGateway = readiness?.model_gateway || 'http://host.docker.internal:11434/v1';
+  const commandModel = primaryTarget?.model || 'your-model-name';
+
+  return (
+    <main className="setupShell">
+      <section className="setupHero">
+        <p className="eyebrow">Nexus Local</p>
+        <h1>Setup</h1>
+        <span className={canEnter ? 'syncStatus' : 'syncStatus syncActive'}>
+          {canEnter ? 'Ready' : blockingCount > 0 ? `${blockingCount} blocked` : 'Checking'}
+        </span>
+      </section>
+
+      <section className="setupGrid">
+        <div className="setupPanel">
+          <div className="surfaceHeader">
+            <h2>Machine checks</h2>
+            <span>{lastChecked ? `Checked ${formatTimeOnly(lastChecked)}` : apiURL}</span>
+          </div>
+
+          <div className="setupChecks">
+            {checks.map((check) => (
+              <div className={`setupCheck setupCheck-${check.status}`} key={check.id}>
+                <span>{setupStatusLabel(check.status)}</span>
+                <strong>{check.label}</strong>
+                <p>{check.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="setupActions">
+            <button disabled={setupChecking} onClick={onRecheck} type="button">
+              {setupChecking ? 'Checking' : 'Recheck'}
+            </button>
+            <button disabled={!canEnter} onClick={onEnter} type="button">
+              Enter app
+            </button>
+          </div>
+        </div>
+
+        <aside className="setupPanel setupGuide">
+          <div className="surfaceHeader">
+            <h2>Gateway</h2>
+            <span>{primaryTarget?.name ?? 'No target'}</span>
+          </div>
+
+          <dl className="runtimeList">
+            <div>
+              <dt>URL</dt>
+              <dd>{readiness?.model_gateway || 'Not configured'}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{primaryTarget?.model ?? 'Not configured'}</dd>
+            </div>
+            <div>
+              <dt>Result</dt>
+              <dd>{gatewayCheck?.detail ?? 'Waiting for check'}</dd>
+            </div>
+          </dl>
+
+          <details className="inlineDetails" open={!canEnter}>
+            <summary>Configure</summary>
+            <pre className="setupCode">{`.\\scripts\\setup.ps1 -Profile cpu-lite -ProviderPreset starter -ModelGatewayBaseUrl "${commandGateway}" -GeneralModelId "${commandModel}" -Force`}</pre>
+          </details>
+
+          <details className="inlineDetails">
+            <summary>Common URLs</summary>
+            <dl className="runtimeList">
+              <div>
+                <dt>Ollama</dt>
+                <dd>http://host.docker.internal:11434/v1</dd>
+              </div>
+              <div>
+                <dt>LM Studio</dt>
+                <dd>http://host.docker.internal:1234/v1</dd>
+              </div>
+              <div>
+                <dt>vLLM</dt>
+                <dd>http://host.docker.internal:8000/v1</dd>
+              </div>
+            </dl>
+          </details>
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+function buildSetupChecks({
+  checking,
+  gatewayCheck,
+  health,
+  readiness,
+  targets,
+}: {
+  checking: boolean;
+  gatewayCheck: TargetCheckState | null;
+  health: Health | null;
+  readiness: Readiness | null;
+  targets: ModelTarget[];
+}): SetupCheck[] {
+  const primaryTarget = targets.find((target) => target.name === 'general') ?? targets[0];
+  const apiStatus: SetupCheckStatus = health ? 'ok' : checking ? 'checking' : 'blocked';
+  const readinessStatus: SetupCheckStatus = readiness
+    ? readiness.status === 'ready'
+      ? 'ok'
+      : 'blocked'
+    : checking
+      ? 'checking'
+      : 'blocked';
+  const targetStatus: SetupCheckStatus =
+    targets.length > 0 ? 'ok' : checking ? 'checking' : 'blocked';
+  const gatewayStatus: SetupCheckStatus =
+    gatewayCheck?.state === 'ok'
+      ? 'ok'
+      : checking && gatewayCheck === null
+        ? 'checking'
+        : 'blocked';
+  const embeddingStatus: SetupCheckStatus = readiness
+    ? readiness.embedding_backend.toLowerCase() === 'hash'
+      ? 'warning'
+      : 'ok'
+    : checking
+      ? 'checking'
+      : 'blocked';
+
+  return [
+    {
+      id: 'api',
+      label: 'API',
+      detail: health ? `${health.env} ${health.version}` : 'Cannot reach the Nexus API.',
+      status: apiStatus,
+      blocking: true,
+    },
+    {
+      id: 'runtime',
+      label: 'Runtime',
+      detail: readiness
+        ? `${readiness.persistence_backend}, ${readiness.object_storage_backend}, ${readiness.vector_backend}`
+        : 'Waiting for runtime readiness.',
+      status: readinessStatus,
+      blocking: true,
+    },
+    {
+      id: 'target',
+      label: 'Model target',
+      detail: primaryTarget
+        ? `${primaryTarget.name}: ${primaryTarget.model}`
+        : 'Configure at least one model target.',
+      status: targetStatus,
+      blocking: true,
+    },
+    {
+      id: 'gateway',
+      label: 'Gateway responds',
+      detail:
+        gatewayCheck?.detail ??
+        (readiness?.model_gateway
+          ? `Testing ${compactEndpoint(readiness.model_gateway)}`
+          : 'Configure an OpenAI-compatible gateway.'),
+      status: gatewayStatus,
+      blocking: true,
+    },
+    {
+      id: 'embeddings',
+      label: 'Embeddings',
+      detail: readiness
+        ? readiness.embedding_backend.toLowerCase() === 'hash'
+          ? 'Hash embeddings are fine for setup; use semantic embeddings for production search.'
+          : `${readiness.embedding_model} (${readiness.embedding_dimensions} dims)`
+        : 'Waiting for embedding configuration.',
+      status: embeddingStatus,
+      blocking: false,
+    },
+  ];
+}
+
+function setupStatusLabel(status: SetupCheckStatus) {
+  switch (status) {
+    case 'ok':
+      return 'OK';
+    case 'warning':
+      return 'Review';
+    case 'checking':
+      return 'Checking';
+    case 'blocked':
+      return 'Blocked';
+  }
+}
+
 function formatChunkLabel(hit: SearchDocumentsResponse['hits'][number]) {
   const chunkIndex = hit.source?.chunk_index;
   if (chunkIndex) {
@@ -2011,6 +2374,19 @@ function friendlyErrorMessage(message: string) {
   }
   if (lower.includes('model gateway') && lower.includes('status')) {
     return 'Model gateway is not responding correctly. Check Settings, then test the target.';
+  }
+  if (
+    lower.includes('context deadline') ||
+    lower.includes('timed out') ||
+    lower.includes('timeout')
+  ) {
+    return 'Model gateway timed out. Start the gateway or update the gateway URL, then recheck.';
+  }
+  if (lower.includes('connection refused') || lower.includes('actively refused')) {
+    return 'Nothing is listening at the model gateway URL. Start the gateway, then recheck.';
+  }
+  if (lower.includes('no such host')) {
+    return 'Model gateway host was not found. Check the gateway URL for this machine.';
   }
   if (lower.includes('failed to fetch')) {
     return 'Cannot reach the API. Check that Nexus Local is running.';

@@ -334,6 +334,131 @@ h3 {
   background: #fff7e6;
 }
 
+.setupShell {
+  display: grid;
+  gap: 18px;
+  min-height: 100vh;
+  height: 100vh;
+  padding: 28px;
+  background: #edf2ef;
+  overflow: auto;
+}
+
+.setupHero,
+.setupGrid {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+}
+
+.setupHero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.setupHero h1 {
+  font-size: 1.6rem;
+}
+
+.setupGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 14px;
+  align-items: start;
+}
+
+.setupPanel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d3ddde;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(23, 32, 38, 0.04);
+}
+
+.setupChecks {
+  display: grid;
+  gap: 8px;
+}
+
+.setupCheck {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 160px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 54px;
+  border: 1px solid #e3ebeb;
+  border-left: 4px solid #d8e2e2;
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.setupCheck span {
+  color: #69777d;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.setupCheck strong,
+.setupCheck p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setupCheck p {
+  color: #69777d;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.setupCheck-ok {
+  border-left-color: #7fb59d;
+}
+
+.setupCheck-warning {
+  border-left-color: #d8bf86;
+  background: #fffdf8;
+}
+
+.setupCheck-checking {
+  border-left-color: #70aeb9;
+  background: #f8fbfa;
+}
+
+.setupCheck-blocked {
+  border-left-color: #c76a5d;
+  background: #fff8f6;
+}
+
+.setupActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.setupGuide {
+  position: sticky;
+  top: 0;
+}
+
+.setupCode {
+  margin: 10px 0 0;
+  border-radius: 8px;
+  padding: 12px;
+  color: #f8fbfa;
+  background: #1f2a2e;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) auto;
@@ -1476,6 +1601,39 @@ h3 {
 @media (max-width: 840px) {
   body {
     overflow: auto;
+  }
+
+  .setupShell {
+    height: auto;
+    min-height: 100vh;
+    padding: 14px;
+  }
+
+  .setupHero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .setupGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .setupGuide {
+    position: static;
+  }
+
+  .setupCheck {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .setupCheck strong,
+  .setupCheck p {
+    white-space: normal;
+  }
+
+  .setupActions {
+    flex-direction: column;
   }
 
   .appShell {
