@@ -60,7 +60,11 @@ Write-Host "API:          http://localhost:8080"
 Write-Host "MinIO:        http://localhost:9001"
 Write-Host "Qdrant:       http://localhost:6333"
 if ($composeConfig.Profile -eq "gpu-local") {
-  Write-Host "Model gateway: http://localhost:8000/v1"
+  $modelGatewayPort = Read-NexusEnvValue $envFile "MODEL_GATEWAY_PORT"
+  if (-not $modelGatewayPort) {
+    $modelGatewayPort = "8000"
+  }
+  Write-Host "Model gateway: http://localhost:$modelGatewayPort/v1"
 }
 if ($embeddingRuntime -in @("cpu", "gpu")) {
   Write-Host "Embeddings:  http://localhost:8082"

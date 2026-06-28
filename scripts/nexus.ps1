@@ -151,6 +151,31 @@ function Read-DefaultValue($prompt, $defaultValue) {
   return $answer.Trim()
 }
 
+function Test-PortOpen($port) {
+  try {
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $async = $client.BeginConnect("127.0.0.1", $port, $null, $null)
+    if (-not $async.AsyncWaitHandle.WaitOne(300)) {
+      $client.Close()
+      return $false
+    }
+    $client.EndConnect($async)
+    $client.Close()
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Find-AvailablePort($startPort) {
+  for ($port = $startPort; $port -lt ($startPort + 100); $port++) {
+    if (-not (Test-PortOpen $port)) {
+      return $port.ToString()
+    }
+  }
+  return $startPort.ToString()
+}
+
 function Select-Option($title, $options, $defaultValue) {
   Write-Host ""
   Write-Host $title
@@ -197,6 +222,13 @@ function Get-DefaultModelGateway($profile) {
   }
 }
 
+function Get-DefaultModelGatewayPort {
+  if (Test-PortOpen 8000) {
+    return Find-AvailablePort 8001
+  }
+  return "8000"
+}
+
 function Get-DefaultEmbeddingGateway($profile, $runtime) {
   if ($runtime -in @("cpu", "gpu")) {
     return "http://embedding-gateway:80/v1"
@@ -230,11 +262,29 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   if (Test-Path $envFile) {
     Write-Host ""
     Show-EnvironmentSummary
+    $existingProfile = Read-EnvValue "DEPLOYMENT_PROFILE"
+    $existingGatewayPort = Read-EnvValue "MODEL_GATEWAY_PORT"
+    if (-not $existingGatewayPort) {
+      $existingGatewayPort = "8000"
+    }
+    $parsedGatewayPort = 0
+    $existingDefault = "use"
+    $useDetail = "Start or manage the current .env."
+    if ($existingProfile -eq "gpu-local" -and -not [int]::TryParse($existingGatewayPort, [ref]$parsedGatewayPort)) {
+      Write-Host "[WARN] MODEL_GATEWAY_PORT is not a valid number: $existingGatewayPort"
+      $existingDefault = "reconfigure"
+      $useDetail = "Reconfigure to write a valid model gateway host port."
+    } elseif ($existingProfile -eq "gpu-local" -and (Test-PortOpen $parsedGatewayPort)) {
+      Write-Host "[WARN] Model gateway host port $existingGatewayPort is already in use."
+      Write-Host "       Reconfigure and choose a free host port unless Nexus Local already owns it."
+      $existingDefault = "reconfigure"
+      $useDetail = "May fail if port $existingGatewayPort belongs to another app."
+    }
     $envChoice = Select-Option "Existing configuration found" @(
-      [pscustomobject]@{ Label = "Use existing config"; Value = "use"; Detail = "Start or manage the current .env." },
+      [pscustomobject]@{ Label = "Use existing config"; Value = "use"; Detail = $useDetail },
       [pscustomobject]@{ Label = "Reconfigure"; Value = "reconfigure"; Detail = "Choose options and overwrite .env." },
       [pscustomobject]@{ Label = "Back"; Value = "back"; Detail = "" }
-    ) "use"
+    ) $existingDefault
     if ($envChoice -eq "back") {
       return
     }
@@ -287,7 +337,14 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   }
 
   $publicUrl = Read-DefaultValue "Public URL" (Get-DefaultPublicUrl $profile)
-  $modelGateway = Read-DefaultValue "Model gateway URL" (Get-DefaultModelGateway $profile)
+  $modelGateway = Get-DefaultModelGateway $profile
+  $modelGatewayPort = ""
+  if ($profile -eq "gpu-local") {
+    Write-Host "Model gateway URL: $modelGateway (Docker internal)"
+    $modelGatewayPort = Read-DefaultValue "Model gateway host port" (Get-DefaultModelGatewayPort)
+  } else {
+    $modelGateway = Read-DefaultValue "Model gateway URL" $modelGateway
+  }
   $modelID = Read-DefaultValue "Model ID" "Qwen/Qwen2.5-7B-Instruct"
   $embeddingGateway = ""
   if ($providerPreset -eq "semantic") {
@@ -304,6 +361,7 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   [void]$setupArgs.Add($embeddingRuntime)
   Add-SetupArgument $setupArgs "-PublicUrl" $publicUrl
   Add-SetupArgument $setupArgs "-ModelGatewayBaseUrl" $modelGateway
+  Add-SetupArgument $setupArgs "-ModelGatewayPort" $modelGatewayPort
   Add-SetupArgument $setupArgs "-GeneralModelId" $modelID
   Add-SetupArgument $setupArgs "-EmbeddingBaseUrl" $embeddingGateway
 

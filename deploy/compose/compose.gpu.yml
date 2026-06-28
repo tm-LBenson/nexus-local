@@ -15,7 +15,7 @@ services:
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
     ports:
-      - "8000:8000"
+      - "${MODEL_GATEWAY_PORT:-8000}:8000"
     volumes:
       - model-cache:/root/.cache/huggingface
     deploy:

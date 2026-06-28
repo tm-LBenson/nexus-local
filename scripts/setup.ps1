@@ -7,6 +7,7 @@ param(
   [string]$ProviderPreset = "",
   [string]$PublicUrl = "",
   [string]$ModelGatewayBaseUrl = "",
+  [string]$ModelGatewayPort = "",
   [string]$ModelGatewayApiKey = "",
   [string]$EmbeddingRuntime = "",
   [string]$EmbeddingBaseUrl = "",
@@ -299,7 +300,7 @@ function Write-EnvFile($path, $values) {
       )
     },
     @{ Title = "Models"; Keys = @(
-        "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_API_KEY",
+        "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "HUGGING_FACE_HUB_TOKEN",
         "WORKER_POLL_INTERVAL"
       )
@@ -426,6 +427,7 @@ $objectSecretValue = Read-SetupValue "Object storage secret key" (Get-ProvidedOr
 $modelValue = Read-SetupValue "General model ID" (Get-ProvidedOrDefault $GeneralModelId "Qwen/Qwen2.5-7B-Instruct") $GeneralModelId
 
 $defaultModelGateway = "http://host.docker.internal:8000/v1"
+$modelGatewayPortValue = Get-ProvidedOrDefault $ModelGatewayPort "8000"
 $defaultEmbeddingGateway = "http://host.docker.internal:8082/v1"
 $defaultPublicUrl = "http://localhost:5173"
 $defaultWebApiBase = "http://localhost:8080"
@@ -443,7 +445,6 @@ switch ($selectedProfile) {
   "gpu-local" {
     $defaultModelGateway = "http://model-gateway:8000/v1"
     $defaultEmbeddingGateway = "http://model-gateway:8000/v1"
-    $portsToCheck += 8000
   }
   "prod-auth" {
     $defaultPublicUrl = "http://localhost:8088"
@@ -478,6 +479,10 @@ if ($embeddingRuntimeValue -eq "gpu") {
 
 $publicUrlValue = Read-SetupValue "Public URL" (Get-ProvidedOrDefault $PublicUrl $defaultPublicUrl) $PublicUrl
 $modelGatewayValue = Read-SetupValue "Model gateway base URL" (Get-ProvidedOrDefault $ModelGatewayBaseUrl $defaultModelGateway) $ModelGatewayBaseUrl
+if ($selectedProfile -eq "gpu-local") {
+  $modelGatewayPortValue = Assert-PositiveInteger "Model gateway host port" (Read-SetupValue "Model gateway host port" $modelGatewayPortValue $ModelGatewayPort)
+  $portsToCheck += [int]$modelGatewayPortValue
+}
 $modelGatewayAPIKeyValue = Read-SetupValue "Model gateway API key" (Get-ProvidedOrDefault $ModelGatewayApiKey "") $ModelGatewayApiKey
 $embeddingGatewayValue = Read-SetupValue "Embedding base URL" (Get-ProvidedOrDefault $EmbeddingBaseUrl $defaultEmbeddingGateway) $EmbeddingBaseUrl
 $embeddingGatewayImageValue = Get-ProvidedOrDefault $EmbeddingGatewayImage $defaultEmbeddingGatewayImage
@@ -550,6 +555,7 @@ Set-EnvValue $values "QUEUE_URL" "nats://nats:4222"
 Set-EnvValue $values "CACHE_URL" "redis://valkey:6379/0"
 Set-EnvValue $values "PROVIDER_PRESET" $providerPresetValue
 Set-EnvValue $values "MODEL_GATEWAY_BASE_URL" $modelGatewayValue
+Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
 Set-EnvValue $values "MODEL_GATEWAY_API_KEY" $modelGatewayAPIKeyValue
 Set-EnvValue $values "DEFAULT_MODEL_TARGET" "general"
 Set-EnvValue $values "GENERAL_MODEL_ID" $modelValue

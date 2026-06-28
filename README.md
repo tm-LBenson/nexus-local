@@ -91,7 +91,7 @@ Linux/macOS:
 ./nexus
 ```
 
-The launcher opens a guided terminal UI. It walks through deployment target, search quality, embedding runtime, model gateway, and whether to start the stack, open the browser, or run a smoke test. This is the normal path for Windows, Linux, Nobara, and macOS.
+The launcher opens a guided terminal UI. It walks through deployment target, search quality, embedding runtime, model gateway, ports, and whether to start the stack, open the browser, or run a smoke test. This is the normal path for Windows, Linux, Nobara, and macOS. For local GPU runs, it can choose a free model gateway host port when something else, such as Portainer, already uses `8000`.
 
 Direct commands still exist for automation. Run `.\nexus.ps1 menu`, `.\nexus.ps1 help`, `./nexus menu`, or `./nexus help` when you want the management menu or scriptable commands.
 
