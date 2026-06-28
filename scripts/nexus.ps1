@@ -235,6 +235,13 @@ function Get-DefaultModelGateway($profile) {
   }
 }
 
+function Get-DefaultModelId($profile) {
+  if ($profile -eq "gpu-local") {
+    return "Qwen/Qwen2.5-1.5B-Instruct"
+  }
+  return "Qwen/Qwen2.5-7B-Instruct"
+}
+
 function Get-DefaultModelGatewayPort {
   if (Test-PortOpen 8000) {
     return Find-AvailablePort 8001
@@ -394,7 +401,7 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   } else {
     $modelGateway = Read-DefaultValue "Model gateway URL" $modelGateway
   }
-  $modelID = Read-DefaultValue "Model ID" "Qwen/Qwen2.5-7B-Instruct"
+  $modelID = Read-DefaultValue "Model ID" (Get-DefaultModelId $profile)
   $embeddingGateway = ""
   if ($providerPreset -eq "semantic") {
     $embeddingGateway = Read-DefaultValue "Embedding URL" (Get-DefaultEmbeddingGateway $profile $embeddingRuntime)

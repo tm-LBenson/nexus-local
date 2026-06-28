@@ -12,6 +12,10 @@ services:
       - "8000"
       - "--model"
       - "${GENERAL_MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.80}"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-8192}"
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
     ports:

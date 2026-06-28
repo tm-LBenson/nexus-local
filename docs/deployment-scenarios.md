@@ -84,7 +84,7 @@ This path is more demanding than running a native Windows model server. It is be
 .\scripts\setup.ps1 `
   -Profile gpu-local `
   -ProviderPreset starter `
-  -GeneralModelId "Qwen/Qwen2.5-7B-Instruct" `
+  -GeneralModelId "Qwen/Qwen2.5-1.5B-Instruct" `
   -Force
 
 docker compose --env-file .env `

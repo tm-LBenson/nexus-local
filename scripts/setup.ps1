@@ -77,6 +77,20 @@ function Get-ProvidedOrDefault($provided, $default) {
   return $default
 }
 
+function Get-EnvDefault($existingValues, $key, $default) {
+  if ($existingValues.Contains($key) -and -not [string]::IsNullOrWhiteSpace($existingValues[$key])) {
+    return $existingValues[$key]
+  }
+  return $default
+}
+
+function Get-SecretDefault($existingValues, $key, $provided, $fallback) {
+  if (-not [string]::IsNullOrWhiteSpace($provided)) {
+    return $provided.Trim()
+  }
+  return Get-EnvDefault $existingValues $key $fallback
+}
+
 function Read-SetupValue($label, $default, $provided = "") {
   if (-not [string]::IsNullOrWhiteSpace($provided)) {
     return $provided.Trim()
@@ -303,7 +317,8 @@ function Write-EnvFile($path, $values) {
     },
     @{ Title = "Models"; Keys = @(
         "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY",
-        "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "HUGGING_FACE_HUB_TOKEN",
+        "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "VLLM_GPU_MEMORY_UTILIZATION",
+        "VLLM_MAX_MODEL_LEN", "HUGGING_FACE_HUB_TOKEN",
         "WORKER_POLL_INTERVAL"
       )
     },
@@ -420,13 +435,21 @@ if (-not (Test-Path $templatePath)) {
 $selectedProfile = Select-SetupProfile
 $providerPresetValue = Select-ProviderPreset
 $values = Read-TemplateEnv $templatePath
+$existingValues = [ordered]@{}
+if (Test-Path $OutputPath) {
+  $existingValues = Read-TemplateEnv $OutputPath
+}
 
-$postgresUser = Read-SetupValue "Postgres user" "app"
-$postgresDb = Read-SetupValue "Postgres database" "app"
-$postgresPasswordValue = Read-SetupValue "Postgres password" (Get-ProvidedOrDefault $PostgresPassword (New-RandomToken 18)) $PostgresPassword
-$objectAccessValue = Read-SetupValue "Object storage access key" (Get-ProvidedOrDefault $ObjectStorageAccessKey "nexusadmin") $ObjectStorageAccessKey
-$objectSecretValue = Read-SetupValue "Object storage secret key" (Get-ProvidedOrDefault $ObjectStorageSecretKey (New-RandomToken 18)) $ObjectStorageSecretKey
-$modelValue = Read-SetupValue "General model ID" (Get-ProvidedOrDefault $GeneralModelId "Qwen/Qwen2.5-7B-Instruct") $GeneralModelId
+$postgresUser = Read-SetupValue "Postgres user" (Get-SecretDefault $existingValues "POSTGRES_USER" "" "app")
+$postgresDb = Read-SetupValue "Postgres database" (Get-SecretDefault $existingValues "POSTGRES_DB" "" "app")
+$postgresPasswordValue = Read-SetupValue "Postgres password" (Get-SecretDefault $existingValues "POSTGRES_PASSWORD" $PostgresPassword (New-RandomToken 18)) $PostgresPassword
+$objectAccessValue = Read-SetupValue "Object storage access key" (Get-SecretDefault $existingValues "OBJECT_STORAGE_ACCESS_KEY" $ObjectStorageAccessKey "nexusadmin") $ObjectStorageAccessKey
+$objectSecretValue = Read-SetupValue "Object storage secret key" (Get-SecretDefault $existingValues "OBJECT_STORAGE_SECRET_KEY" $ObjectStorageSecretKey (New-RandomToken 18)) $ObjectStorageSecretKey
+$defaultModelValue = "Qwen/Qwen2.5-7B-Instruct"
+if ($selectedProfile -eq "gpu-local") {
+  $defaultModelValue = "Qwen/Qwen2.5-1.5B-Instruct"
+}
+$modelValue = Read-SetupValue "General model ID" (Get-ProvidedOrDefault $GeneralModelId (Get-EnvDefault $existingValues "GENERAL_MODEL_ID" $defaultModelValue)) $GeneralModelId
 
 $apiHostPortValue = Assert-PositiveInteger "API host port" (Get-ProvidedOrDefault $ApiHostPort "8080")
 $webHostPortValue = Assert-PositiveInteger "Web host port" (Get-ProvidedOrDefault $WebHostPort "5173")
@@ -565,7 +588,9 @@ Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
 Set-EnvValue $values "MODEL_GATEWAY_API_KEY" $modelGatewayAPIKeyValue
 Set-EnvValue $values "DEFAULT_MODEL_TARGET" "general"
 Set-EnvValue $values "GENERAL_MODEL_ID" $modelValue
-Set-EnvValue $values "HUGGING_FACE_HUB_TOKEN" ""
+Set-EnvValue $values "VLLM_GPU_MEMORY_UTILIZATION" (Get-EnvDefault $existingValues "VLLM_GPU_MEMORY_UTILIZATION" "0.80")
+Set-EnvValue $values "VLLM_MAX_MODEL_LEN" (Get-EnvDefault $existingValues "VLLM_MAX_MODEL_LEN" "8192")
+Set-EnvValue $values "HUGGING_FACE_HUB_TOKEN" (Get-EnvDefault $existingValues "HUGGING_FACE_HUB_TOKEN" "")
 Set-EnvValue $values "WORKER_POLL_INTERVAL" "2s"
 Set-EnvValue $values "VITE_API_BASE_URL" $defaultWebApiBase
 Set-EnvValue $values "NEXUS_PUBLIC_URL" $publicUrlValue
