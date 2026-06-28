@@ -55,12 +55,50 @@ function Show-EnvironmentSummary {
   Write-Host ""
 }
 
+function Convert-ArgumentTokens($arguments) {
+  $named = @{}
+  $positionals = [System.Collections.Generic.List[string]]::new()
+  for ($i = 0; $i -lt $arguments.Count; $i++) {
+    $token = [string]$arguments[$i]
+    if ($token.StartsWith("-") -and $token.Length -gt 1) {
+      $name = $token.TrimStart("-")
+      $value = $true
+      if ($name.Contains("=")) {
+        $parts = $name.Split("=", 2)
+        $name = $parts[0]
+        $value = $parts[1]
+      } elseif (($i + 1) -lt $arguments.Count) {
+        $next = [string]$arguments[$i + 1]
+        if (-not ($next.StartsWith("-") -and $next.Length -gt 1)) {
+          $value = $next
+          $i++
+        }
+      }
+      $named[$name] = $value
+    } else {
+      [void]$positionals.Add($token)
+    }
+  }
+
+  return [pscustomobject]@{
+    Named = $named
+    Positionals = [string[]]$positionals.ToArray()
+  }
+}
+
 function Invoke-LocalScript($scriptName, [string[]]$arguments = @()) {
   $scriptPath = Join-Path $PSScriptRoot $scriptName
   if (-not (Test-Path $scriptPath)) {
     throw "Missing script: $scriptPath"
   }
-  & $scriptPath @arguments
+  $splat = Convert-ArgumentTokens $arguments
+  $namedArgs = $splat.Named
+  $positionalArgs = $splat.Positionals
+  if ($positionalArgs.Count -gt 0) {
+    & $scriptPath @positionalArgs @namedArgs
+  } else {
+    & $scriptPath @namedArgs
+  }
 }
 
 function Open-WebApp {
