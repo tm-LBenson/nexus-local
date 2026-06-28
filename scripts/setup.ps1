@@ -5,6 +5,8 @@ param(
   [switch]$NonInteractive,
   [switch]$SkipPortCheck,
   [string]$ProviderPreset = "",
+  [string]$ApiHostPort = "",
+  [string]$WebHostPort = "",
   [string]$PublicUrl = "",
   [string]$ModelGatewayBaseUrl = "",
   [string]$ModelGatewayPort = "",
@@ -279,7 +281,7 @@ function Test-SetupTools {
 function Write-EnvFile($path, $values) {
   $sections = @(
     @{ Title = "App"; Keys = @(
-        "APP_ENV", "DEPLOYMENT_PROFILE", "HTTP_ADDR", "APP_VERSION", "CORS_ALLOWED_ORIGIN",
+        "APP_ENV", "DEPLOYMENT_PROFILE", "HTTP_ADDR", "API_HOST_PORT", "WEB_HOST_PORT", "APP_VERSION", "CORS_ALLOWED_ORIGIN",
         "AUTH_MODE", "DEV_USER_ID", "DEV_USER_EMAIL",
         "TRUSTED_USER_ID_HEADER", "TRUSTED_EMAIL_HEADER"
       )
@@ -426,16 +428,18 @@ $objectAccessValue = Read-SetupValue "Object storage access key" (Get-ProvidedOr
 $objectSecretValue = Read-SetupValue "Object storage secret key" (Get-ProvidedOrDefault $ObjectStorageSecretKey (New-RandomToken 18)) $ObjectStorageSecretKey
 $modelValue = Read-SetupValue "General model ID" (Get-ProvidedOrDefault $GeneralModelId "Qwen/Qwen2.5-7B-Instruct") $GeneralModelId
 
+$apiHostPortValue = Assert-PositiveInteger "API host port" (Get-ProvidedOrDefault $ApiHostPort "8080")
+$webHostPortValue = Assert-PositiveInteger "Web host port" (Get-ProvidedOrDefault $WebHostPort "5173")
 $defaultModelGateway = "http://host.docker.internal:8000/v1"
 $modelGatewayPortValue = Get-ProvidedOrDefault $ModelGatewayPort "8000"
 $defaultEmbeddingGateway = "http://host.docker.internal:8082/v1"
-$defaultPublicUrl = "http://localhost:5173"
-$defaultWebApiBase = "http://localhost:8080"
+$defaultPublicUrl = "http://localhost:$webHostPortValue"
+$defaultWebApiBase = "http://localhost:$apiHostPortValue"
 $defaultAppEnv = "local"
 $defaultAuthMode = "dev"
 $nexusHttpPortValue = "8088"
 $nexusHttpsPortValue = "8443"
-$portsToCheck = @(5173, 8080, 9000, 9001, 6333, 5432, 4222, 6379)
+$portsToCheck = @([int]$webHostPortValue, [int]$apiHostPortValue, 9000, 9001, 6333, 5432, 4222, 6379)
 
 switch ($selectedProfile) {
   "split-nas-gpu" {
@@ -521,6 +525,8 @@ if ($selectedProfile -eq "prod-auth") {
 Set-EnvValue $values "APP_ENV" $defaultAppEnv
 Set-EnvValue $values "DEPLOYMENT_PROFILE" $selectedProfile
 Set-EnvValue $values "HTTP_ADDR" ":8080"
+Set-EnvValue $values "API_HOST_PORT" $apiHostPortValue
+Set-EnvValue $values "WEB_HOST_PORT" $webHostPortValue
 Set-EnvValue $values "CORS_ALLOWED_ORIGIN" $publicUrlValue
 Set-EnvValue $values "AUTH_MODE" $defaultAuthMode
 Set-EnvValue $values "DEV_USER_ID" "user_1"

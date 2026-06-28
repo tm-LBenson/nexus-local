@@ -8,7 +8,6 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root ".env"
-$webUrl = "http://localhost:5173"
 
 function Write-Header {
   Write-Host ""
@@ -28,7 +27,20 @@ function Read-EnvValue($key) {
   return ""
 }
 
+function Get-WebUrl {
+  $publicUrl = Read-EnvValue "NEXUS_PUBLIC_URL"
+  if ($publicUrl) {
+    return $publicUrl
+  }
+  $webHostPort = Read-EnvValue "WEB_HOST_PORT"
+  if (-not $webHostPort) {
+    $webHostPort = "5173"
+  }
+  return "http://localhost:$webHostPort"
+}
+
 function Show-EnvironmentSummary {
+  $webUrl = Get-WebUrl
   if (-not (Test-Path $envFile)) {
     Write-Host "Config:  no .env yet"
     Write-Host "Web:     $webUrl"
@@ -102,6 +114,7 @@ function Invoke-LocalScript($scriptName, [string[]]$arguments = @()) {
 }
 
 function Open-WebApp {
+  $webUrl = Get-WebUrl
   Write-Host "Opening $webUrl"
   if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") {
     Start-Process $webUrl
@@ -229,6 +242,13 @@ function Get-DefaultModelGatewayPort {
   return "8000"
 }
 
+function Get-DefaultHostPort($preferredPort) {
+  if (Test-PortOpen $preferredPort) {
+    return Find-AvailablePort ($preferredPort + 1)
+  }
+  return $preferredPort.ToString()
+}
+
 function Get-DefaultEmbeddingGateway($profile, $runtime) {
   if ($runtime -in @("cpu", "gpu")) {
     return "http://embedding-gateway:80/v1"
@@ -240,11 +260,11 @@ function Get-DefaultEmbeddingGateway($profile, $runtime) {
   }
 }
 
-function Get-DefaultPublicUrl($profile) {
+function Get-DefaultPublicUrl($profile, $webHostPort) {
   if ($profile -eq "prod-auth") {
     return "http://localhost:8088"
   }
-  return "http://localhost:5173"
+  return "http://localhost:$webHostPort"
 }
 
 function Add-SetupArgument($arguments, $name, $value) {
@@ -264,13 +284,36 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     Show-EnvironmentSummary
     $existingProfile = Read-EnvValue "DEPLOYMENT_PROFILE"
     $existingGatewayPort = Read-EnvValue "MODEL_GATEWAY_PORT"
+    $existingWebPort = Read-EnvValue "WEB_HOST_PORT"
+    $existingApiPort = Read-EnvValue "API_HOST_PORT"
     if (-not $existingGatewayPort) {
       $existingGatewayPort = "8000"
     }
+    if (-not $existingWebPort) {
+      $existingWebPort = "5173"
+    }
+    if (-not $existingApiPort) {
+      $existingApiPort = "8080"
+    }
     $parsedGatewayPort = 0
+    $parsedWebPort = 0
+    $parsedApiPort = 0
     $existingDefault = "use"
     $useDetail = "Start or manage the current .env."
-    if ($existingProfile -eq "gpu-local" -and -not [int]::TryParse($existingGatewayPort, [ref]$parsedGatewayPort)) {
+    if (-not [int]::TryParse($existingWebPort, [ref]$parsedWebPort)) {
+      Write-Host "[WARN] WEB_HOST_PORT is not a valid number: $existingWebPort"
+      $existingDefault = "reconfigure"
+      $useDetail = "Reconfigure to write valid web/API host ports."
+    } elseif (-not [int]::TryParse($existingApiPort, [ref]$parsedApiPort)) {
+      Write-Host "[WARN] API_HOST_PORT is not a valid number: $existingApiPort"
+      $existingDefault = "reconfigure"
+      $useDetail = "Reconfigure to write valid web/API host ports."
+    } elseif ((Test-PortOpen $parsedWebPort) -or (Test-PortOpen $parsedApiPort)) {
+      Write-Host "[WARN] Web/API host port $existingWebPort or $existingApiPort is already in use."
+      Write-Host "       Reconfigure and choose free host ports unless Nexus Local already owns them."
+      $existingDefault = "reconfigure"
+      $useDetail = "May fail if those ports belong to another app."
+    } elseif ($existingProfile -eq "gpu-local" -and -not [int]::TryParse($existingGatewayPort, [ref]$parsedGatewayPort)) {
       Write-Host "[WARN] MODEL_GATEWAY_PORT is not a valid number: $existingGatewayPort"
       $existingDefault = "reconfigure"
       $useDetail = "Reconfigure to write a valid model gateway host port."
@@ -336,7 +379,13 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     Write-Host "Embedding runtime: none"
   }
 
-  $publicUrl = Read-DefaultValue "Public URL" (Get-DefaultPublicUrl $profile)
+  $webHostPort = ""
+  $apiHostPort = ""
+  if ($profile -ne "prod-auth") {
+    $webHostPort = Read-DefaultValue "Web host port" (Get-DefaultHostPort 5173)
+    $apiHostPort = Read-DefaultValue "API host port" (Get-DefaultHostPort 8080)
+  }
+  $publicUrl = Read-DefaultValue "Public URL" (Get-DefaultPublicUrl $profile $webHostPort)
   $modelGateway = Get-DefaultModelGateway $profile
   $modelGatewayPort = ""
   if ($profile -eq "gpu-local") {
@@ -359,6 +408,8 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   [void]$setupArgs.Add($providerPreset)
   [void]$setupArgs.Add("-EmbeddingRuntime")
   [void]$setupArgs.Add($embeddingRuntime)
+  Add-SetupArgument $setupArgs "-WebHostPort" $webHostPort
+  Add-SetupArgument $setupArgs "-ApiHostPort" $apiHostPort
   Add-SetupArgument $setupArgs "-PublicUrl" $publicUrl
   Add-SetupArgument $setupArgs "-ModelGatewayBaseUrl" $modelGateway
   Add-SetupArgument $setupArgs "-ModelGatewayPort" $modelGatewayPort

@@ -114,6 +114,17 @@ Write-Host ""
 
 $composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $Profile
 $embeddingRuntime = $composeConfig.EmbeddingRuntime
+$apiHostPort = Read-NexusEnvValue $envFile "API_HOST_PORT"
+$webHostPort = Read-NexusEnvValue $envFile "WEB_HOST_PORT"
+if (-not $apiHostPort) {
+  $apiHostPort = "8080"
+}
+if (-not $webHostPort) {
+  $webHostPort = "5173"
+}
+if ($ApiUrl -eq "http://localhost:8080" -and $apiHostPort -ne "8080") {
+  $ApiUrl = "http://localhost:$apiHostPort"
+}
 Pass "compose profile" "$($composeConfig.Profile) / embeddings: $embeddingRuntime"
 
 $hasDocker = Test-Command docker
@@ -158,7 +169,7 @@ if ($hasDocker) {
 }
 
 Write-Host ""
-Test-Http "web" "http://localhost:5173" $false | Out-Null
+Test-Http "web" "http://localhost:$webHostPort" $false | Out-Null
 Test-Http "api health" "$($ApiUrl.TrimEnd('/'))/healthz" $false | Out-Null
 Test-Http "api readiness" "$($ApiUrl.TrimEnd('/'))/readyz" $false | Out-Null
 Test-Http "qdrant" "http://localhost:6333" $false | Out-Null

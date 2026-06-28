@@ -9,7 +9,9 @@ try {
     -Profile gpu-local `
     -ProviderPreset starter `
     -EmbeddingRuntime none `
-    -PublicUrl http://localhost:5173 `
+    -ApiHostPort 18080 `
+    -WebHostPort 15173 `
+    -PublicUrl http://localhost:15173 `
     -ModelGatewayBaseUrl http://model-gateway:8000/v1 `
     -ModelGatewayPort 18000 `
     -GeneralModelId Qwen/Qwen2.5-7B-Instruct `
@@ -24,6 +26,14 @@ try {
   $launcherGatewayPort = Select-String -Path $launcherEnv -Pattern "^MODEL_GATEWAY_PORT=18000$" -Quiet
   if (-not $launcherGatewayPort) {
     throw "Launcher setup regression failed: MODEL_GATEWAY_PORT was not written as 18000."
+  }
+  $launcherApiPort = Select-String -Path $launcherEnv -Pattern "^API_HOST_PORT=18080$" -Quiet
+  if (-not $launcherApiPort) {
+    throw "Launcher setup regression failed: API_HOST_PORT was not written as 18080."
+  }
+  $launcherWebPort = Select-String -Path $launcherEnv -Pattern "^WEB_HOST_PORT=15173$" -Quiet
+  if (-not $launcherWebPort) {
+    throw "Launcher setup regression failed: WEB_HOST_PORT was not written as 15173."
   }
 } finally {
   if (Test-Path $launcherEnv) {

@@ -37,6 +37,14 @@ Require-Command docker
 
 $composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $Profile
 $embeddingRuntime = $composeConfig.EmbeddingRuntime
+$apiHostPort = Read-NexusEnvValue $envFile "API_HOST_PORT"
+$webHostPort = Read-NexusEnvValue $envFile "WEB_HOST_PORT"
+if (-not $apiHostPort) {
+  $apiHostPort = "8080"
+}
+if (-not $webHostPort) {
+  $webHostPort = "5173"
+}
 $composeArgs = $composeConfig.Args
 $composeArgs += @("up", "-d")
 if (-not $NoBuild) {
@@ -49,14 +57,14 @@ if ($LASTEXITCODE -ne 0) {
   throw "docker compose up failed with exit code $LASTEXITCODE. Make sure Docker Desktop is running with the Linux engine started."
 }
 
-Wait-Http "API health" "http://localhost:8080/healthz" $TimeoutSeconds
-Wait-Http "API readiness" "http://localhost:8080/readyz" $TimeoutSeconds
-Wait-Http "Web" "http://localhost:5173" $TimeoutSeconds
+Wait-Http "API health" "http://localhost:$apiHostPort/healthz" $TimeoutSeconds
+Wait-Http "API readiness" "http://localhost:$apiHostPort/readyz" $TimeoutSeconds
+Wait-Http "Web" "http://localhost:$webHostPort" $TimeoutSeconds
 
 Write-Host ""
 Write-Host "Nexus Local is running"
-Write-Host "Web:          http://localhost:5173"
-Write-Host "API:          http://localhost:8080"
+Write-Host "Web:          http://localhost:$webHostPort"
+Write-Host "API:          http://localhost:$apiHostPort"
 Write-Host "MinIO:        http://localhost:9001"
 Write-Host "Qdrant:       http://localhost:6333"
 if ($composeConfig.Profile -eq "gpu-local") {
