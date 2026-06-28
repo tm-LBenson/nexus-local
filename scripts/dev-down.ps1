@@ -1,50 +1,27 @@
 param(
-  [switch]$Volumes
+  [switch]$Volumes,
+  [string]$Profile = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
-$embeddingsComposeFile = Join-Path $root "deploy\compose\compose.embeddings.yml"
-$embeddingsGPUComposeFile = Join-Path $root "deploy\compose\compose.embeddings.gpu.yml"
 $envFile = Join-Path $root ".env"
+$composeHelper = Join-Path (Join-Path $PSScriptRoot "lib") "compose.ps1"
+. $composeHelper
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "docker is required but was not found on PATH"
 }
 
-function Read-EnvValue($path, $key) {
-  if (-not (Test-Path $path)) {
-    return ""
-  }
-  foreach ($line in Get-Content $path) {
-    if ($line -match "^\s*$([regex]::Escape($key))=(.*)$") {
-      return $matches[1].Trim()
-    }
-  }
-  return ""
-}
-
-$embeddingRuntime = (Read-EnvValue $envFile "EMBEDDING_RUNTIME").ToLowerInvariant()
-
-$composeArgs = @("compose")
-if (Test-Path $envFile) {
-  $composeArgs += @("--env-file", $envFile)
-}
-$composeArgs += @("-f", $composeFile)
-if ($embeddingRuntime -in @("cpu", "gpu")) {
-  $composeArgs += @("-f", $embeddingsComposeFile)
-}
-if ($embeddingRuntime -eq "gpu") {
-  $composeArgs += @("-f", $embeddingsGPUComposeFile)
-}
+$composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $Profile
+$composeArgs = $composeConfig.Args
 $composeArgs += "down"
 if ($Volumes) {
   $composeArgs += "--volumes"
 }
 
-Write-Host "Stopping Nexus Local..."
+Write-Host "Stopping Nexus Local ($($composeConfig.Profile))..."
 & docker @composeArgs
 if ($LASTEXITCODE -ne 0) {
   throw "docker compose down failed with exit code $LASTEXITCODE. Make sure Docker Desktop is running with the Linux engine started."

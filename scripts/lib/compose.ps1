@@ -1,0 +1,118 @@
+$script:NexusDeploymentProfiles = @("cpu-lite", "split-nas-gpu", "gpu-local", "prod-auth")
+$script:NexusEmbeddingRuntimes = @("none", "external", "cpu", "gpu")
+
+function Read-NexusEnvValue($path, $key) {
+  if (-not (Test-Path $path)) {
+    return ""
+  }
+  foreach ($line in Get-Content $path) {
+    if ($line -match "^\s*$([regex]::Escape($key))=(.*)$") {
+      return $matches[1].Trim()
+    }
+  }
+  return ""
+}
+
+function Resolve-NexusDeploymentProfile {
+  param(
+    [string]$Profile = "",
+    [string]$EnvFile = ""
+  )
+
+  $value = $Profile
+  if ([string]::IsNullOrWhiteSpace($value) -and $EnvFile) {
+    $value = Read-NexusEnvValue $EnvFile "DEPLOYMENT_PROFILE"
+  }
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = "cpu-lite"
+  }
+
+  $normalized = $value.Trim().ToLowerInvariant()
+  if ($script:NexusDeploymentProfiles -notcontains $normalized) {
+    throw "Unknown deployment profile '$value'. Use one of: $($script:NexusDeploymentProfiles -join ', ')"
+  }
+  return $normalized
+}
+
+function Resolve-NexusEmbeddingRuntime {
+  param(
+    [string]$EnvFile = ""
+  )
+
+  $value = ""
+  if ($EnvFile) {
+    $value = Read-NexusEnvValue $EnvFile "EMBEDDING_RUNTIME"
+  }
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = "none"
+  }
+
+  $normalized = $value.Trim().ToLowerInvariant()
+  if ($script:NexusEmbeddingRuntimes -notcontains $normalized) {
+    throw "Unknown embedding runtime '$value'. Use one of: $($script:NexusEmbeddingRuntimes -join ', ')"
+  }
+  return $normalized
+}
+
+function Get-NexusComposeFiles {
+  param(
+    [string]$Profile,
+    [string]$EmbeddingRuntime
+  )
+
+  $files = [System.Collections.Generic.List[string]]::new()
+  switch ($Profile) {
+    "cpu-lite" {
+      $files.Add("deploy/compose/compose.cpu.yml")
+    }
+    "split-nas-gpu" {
+      $files.Add("deploy/compose/compose.cpu.yml")
+      $files.Add("deploy/compose/compose.split-nas-gpu.yml")
+    }
+    "gpu-local" {
+      $files.Add("deploy/compose/compose.cpu.yml")
+      $files.Add("deploy/compose/compose.gpu.yml")
+    }
+    "prod-auth" {
+      $files.Add("deploy/compose/compose.prod-auth.yml")
+    }
+  }
+
+  if ($EmbeddingRuntime -in @("cpu", "gpu")) {
+    $files.Add("deploy/compose/compose.embeddings.yml")
+  }
+  if ($EmbeddingRuntime -eq "gpu") {
+    $files.Add("deploy/compose/compose.embeddings.gpu.yml")
+  }
+  return [string[]]$files
+}
+
+function Get-NexusComposeConfig {
+  param(
+    [string]$Root,
+    [string]$EnvFile,
+    [string]$Profile = ""
+  )
+
+  $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $EnvFile
+  $embeddingRuntime = Resolve-NexusEmbeddingRuntime -EnvFile $EnvFile
+  $files = Get-NexusComposeFiles -Profile $selectedProfile -EmbeddingRuntime $embeddingRuntime
+  $composeArgs = @("compose")
+
+  if (Test-Path $EnvFile) {
+    $composeArgs += @("--env-file", $EnvFile)
+  }
+  foreach ($file in $files) {
+    $composeArgs += @("-f", (Join-Path $Root $file))
+  }
+  if ($selectedProfile -eq "gpu-local") {
+    $composeArgs += @("--profile", "gpu")
+  }
+
+  return [pscustomobject]@{
+    Args = [string[]]$composeArgs
+    Profile = $selectedProfile
+    EmbeddingRuntime = $embeddingRuntime
+    Files = [string[]]$files
+  }
+}

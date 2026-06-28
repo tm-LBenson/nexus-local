@@ -9,17 +9,17 @@ param(
   [string]$ModelTarget = "general",
   [string]$UserId = "",
   [string]$UserEmail = "",
-  [int]$SmokeTimeoutSeconds = 90
+  [int]$SmokeTimeoutSeconds = 90,
+  [string]$Profile = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$composeFile = Join-Path $root "deploy\compose\compose.cpu.yml"
-$embeddingsComposeFile = Join-Path $root "deploy\compose\compose.embeddings.yml"
-$embeddingsGPUComposeFile = Join-Path $root "deploy\compose\compose.embeddings.gpu.yml"
 $envFile = Join-Path $root ".env"
 $smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
+$composeHelper = Join-Path (Join-Path $PSScriptRoot "lib") "compose.ps1"
+. $composeHelper
 $failures = 0
 
 function Pass($name, $detail = "") {
@@ -112,7 +112,9 @@ function Read-EnvValue($path, $key) {
 Write-Host "Nexus Local dev check"
 Write-Host ""
 
-$embeddingRuntime = (Read-EnvValue $envFile "EMBEDDING_RUNTIME").ToLowerInvariant()
+$composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $Profile
+$embeddingRuntime = $composeConfig.EmbeddingRuntime
+Pass "compose profile" "$($composeConfig.Profile) / embeddings: $embeddingRuntime"
 
 $hasDocker = Test-Command docker
 Test-Command go $false | Out-Null
@@ -131,40 +133,20 @@ if ($hasDocker) {
   }
 
   try {
-    $composeArgs = @("compose")
-    if (Test-Path $envFile) {
-      $composeArgs += @("--env-file", $envFile)
-    }
-    $composeArgs += @("-f", $composeFile)
-    if ($embeddingRuntime -in @("cpu", "gpu")) {
-      $composeArgs += @("-f", $embeddingsComposeFile)
-    }
-    if ($embeddingRuntime -eq "gpu") {
-      $composeArgs += @("-f", $embeddingsGPUComposeFile)
-    }
+    $composeArgs = $composeConfig.Args
     $composeArgs += @("config", "--quiet")
     & docker @composeArgs
     if ($LASTEXITCODE -ne 0) {
       throw "docker compose config failed with exit code $LASTEXITCODE"
     }
-    Pass "compose config" $composeFile
+    Pass "compose config" ($composeConfig.Files -join ", ")
   } catch {
     Fail "compose config" $_.Exception.Message
   }
 
   try {
     Write-Host ""
-    $composeArgs = @("compose")
-    if (Test-Path $envFile) {
-      $composeArgs += @("--env-file", $envFile)
-    }
-    $composeArgs += @("-f", $composeFile)
-    if ($embeddingRuntime -in @("cpu", "gpu")) {
-      $composeArgs += @("-f", $embeddingsComposeFile)
-    }
-    if ($embeddingRuntime -eq "gpu") {
-      $composeArgs += @("-f", $embeddingsGPUComposeFile)
-    }
+    $composeArgs = $composeConfig.Args
     $composeArgs += "ps"
     & docker @composeArgs
     if ($LASTEXITCODE -ne 0) {

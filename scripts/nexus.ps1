@@ -85,6 +85,7 @@ Commands:
   menu             Open the interactive TUI menu
   setup            Run guided environment setup
   up, start        Start the container stack
+  run, launch      Run setup, then start the selected stack
   down, stop       Stop the container stack
   restart          Stop, then start the container stack
   reset-volumes    Stop and remove local Docker volumes
@@ -100,6 +101,7 @@ Commands:
 Examples:
   .\nexus.ps1
   .\nexus.ps1 setup -Profile cpu-lite -ProviderPreset starter -Force
+  .\nexus.ps1 run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
   .\nexus.ps1 up
   .\nexus.ps1 smoke-no-ask
   .\nexus.ps1 backup -Name before-upgrade
@@ -132,6 +134,14 @@ function Invoke-CommandMode($name, [string[]]$arguments = @()) {
     }
     "start" {
       Invoke-LocalScript "dev-up.ps1" $arguments
+    }
+    "run" {
+      Invoke-LocalScript "setup.ps1" $arguments
+      Invoke-LocalScript "dev-up.ps1"
+    }
+    "launch" {
+      Invoke-LocalScript "setup.ps1" $arguments
+      Invoke-LocalScript "dev-up.ps1"
     }
     "down" {
       Invoke-LocalScript "dev-down.ps1" $arguments
@@ -203,16 +213,17 @@ function Show-Menu {
     Write-Header
     Show-EnvironmentSummary
     Write-Host "1. Guided setup / configure"
-    Write-Host "2. Start stack"
-    Write-Host "3. Open web UI"
-    Write-Host "4. Check status"
-    Write-Host "5. Smoke test"
-    Write-Host "6. Smoke test without Ask"
-    Write-Host "7. Backup data"
-    Write-Host "8. Restore backup"
-    Write-Host "9. Stop stack"
-    Write-Host "10. Stop stack and remove volumes"
-    Write-Host "11. Run API tests"
+    Write-Host "2. Setup, then start stack"
+    Write-Host "3. Start stack"
+    Write-Host "4. Open web UI"
+    Write-Host "5. Check status"
+    Write-Host "6. Smoke test"
+    Write-Host "7. Smoke test without Ask"
+    Write-Host "8. Backup data"
+    Write-Host "9. Restore backup"
+    Write-Host "10. Stop stack"
+    Write-Host "11. Stop stack and remove volumes"
+    Write-Host "12. Run API tests"
     Write-Host "H. Help"
     Write-Host "Q. Quit"
     Write-Host ""
@@ -221,15 +232,16 @@ function Show-Menu {
     try {
       switch ($choice) {
         "1" { Invoke-LocalScript "setup.ps1"; Pause-Menu }
-        "2" { Invoke-LocalScript "dev-up.ps1"; Pause-Menu }
-        "3" { Open-WebApp; Pause-Menu }
-        "4" { Invoke-LocalScript "dev-check.ps1"; Pause-Menu }
-        "5" { Invoke-LocalScript "dev-check.ps1" @("-Smoke"); Pause-Menu }
-        "6" { Invoke-LocalScript "dev-check.ps1" @("-Smoke", "-SkipAsk"); Pause-Menu }
-        "7" { Invoke-LocalScript "backup.ps1"; Pause-Menu }
-        "8" { Invoke-RestoreFromMenu; Pause-Menu }
-        "9" { Invoke-LocalScript "dev-down.ps1"; Pause-Menu }
-        "10" {
+        "2" { Invoke-LocalScript "setup.ps1"; Invoke-LocalScript "dev-up.ps1"; Pause-Menu }
+        "3" { Invoke-LocalScript "dev-up.ps1"; Pause-Menu }
+        "4" { Open-WebApp; Pause-Menu }
+        "5" { Invoke-LocalScript "dev-check.ps1"; Pause-Menu }
+        "6" { Invoke-LocalScript "dev-check.ps1" @("-Smoke"); Pause-Menu }
+        "7" { Invoke-LocalScript "dev-check.ps1" @("-Smoke", "-SkipAsk"); Pause-Menu }
+        "8" { Invoke-LocalScript "backup.ps1"; Pause-Menu }
+        "9" { Invoke-RestoreFromMenu; Pause-Menu }
+        "10" { Invoke-LocalScript "dev-down.ps1"; Pause-Menu }
+        "11" {
           if (Confirm-Action "This removes local database, object, queue, cache, and vector volumes. Type REMOVE to continue" "REMOVE") {
             Invoke-LocalScript "dev-down.ps1" @("-Volumes")
           } else {
@@ -237,7 +249,7 @@ function Show-Menu {
           }
           Pause-Menu
         }
-        "11" { Invoke-LocalScript "test.ps1"; Pause-Menu }
+        "12" { Invoke-LocalScript "test.ps1"; Pause-Menu }
         "h" { Show-Help; Pause-Menu }
         "help" { Show-Help; Pause-Menu }
         "q" { return }

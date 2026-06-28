@@ -111,6 +111,18 @@ Linux/macOS:
 ./nexus down
 ```
 
+For a one-shot setup-and-start on a local NVIDIA GPU machine:
+
+```powershell
+.\nexus.ps1 run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
+```
+
+On Linux/macOS:
+
+```bash
+./nexus run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
+```
+
 You can still run the underlying scripts directly. Start the full local stack:
 
 ```powershell

@@ -1,5 +1,5 @@
 param(
-  [string]$Profile = "cpu-lite",
+  [string]$Profile = "",
   [string]$OutputDir = "",
   [string]$Name = "",
   [string]$HelperImage = "alpine:3.20",
@@ -10,7 +10,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root ".env"
-$profileNames = @("cpu-lite", "split-nas-gpu", "gpu-local", "prod-auth")
+$composeHelper = Join-Path (Join-Path $PSScriptRoot "lib") "compose.ps1"
+. $composeHelper
 
 if (-not $OutputDir) {
   $OutputDir = Join-Path $root "backups"
@@ -20,44 +21,6 @@ function Require-Command($name) {
   if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
     throw "$name is required but was not found on PATH"
   }
-}
-
-function Resolve-Profile($value) {
-  $normalized = $value.Trim().ToLowerInvariant()
-  if ($profileNames -notcontains $normalized) {
-    throw "Unknown profile '$value'. Use one of: $($profileNames -join ', ')"
-  }
-  return $normalized
-}
-
-function Get-ComposeArgs($selectedProfile) {
-  $args = @("compose")
-  if (Test-Path $envFile) {
-    $args += @("--env-file", $envFile)
-  }
-
-  switch ($selectedProfile) {
-    "cpu-lite" {
-      $args += @("-f", (Join-Path $root "deploy\compose\compose.cpu.yml"))
-    }
-    "split-nas-gpu" {
-      $args += @(
-        "-f", (Join-Path $root "deploy\compose\compose.cpu.yml"),
-        "-f", (Join-Path $root "deploy\compose\compose.split-nas-gpu.yml")
-      )
-    }
-    "gpu-local" {
-      $args += @(
-        "-f", (Join-Path $root "deploy\compose\compose.cpu.yml"),
-        "-f", (Join-Path $root "deploy\compose\compose.gpu.yml"),
-        "--profile", "gpu"
-      )
-    }
-    "prod-auth" {
-      $args += @("-f", (Join-Path $root "deploy\compose\compose.prod-auth.yml"))
-    }
-  }
-  return $args
 }
 
 function Invoke-Docker($arguments) {
@@ -98,10 +61,11 @@ function Backup-VolumeFromContainer($containerID, $sourcePath, $archiveName, $ba
   )
 }
 
-$selectedProfile = Resolve-Profile $Profile
+$selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $envFile
 Require-Command docker
 
-$composeArgs = Get-ComposeArgs $selectedProfile
+$composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $selectedProfile
+$composeArgs = $composeConfig.Args
 $postgresContainer = Get-ServiceContainer $composeArgs "postgres"
 $minioContainer = Get-ServiceContainer $composeArgs "minio"
 $qdrantContainer = Get-ServiceContainer $composeArgs "qdrant"

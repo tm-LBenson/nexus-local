@@ -29,7 +29,7 @@ $needle = "nexus-local-smoke-needle-$runId"
 $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) $documentName
 
 if ([string]::IsNullOrWhiteSpace($FixturePath)) {
-  $FixturePath = Join-Path $root "fixtures\smoke\nexus-smoke.md"
+  $FixturePath = Join-Path $root "fixtures/smoke/nexus-smoke.md"
 }
 
 $requestHeaders = @{}

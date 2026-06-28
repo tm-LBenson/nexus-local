@@ -278,7 +278,7 @@ function Test-SetupTools {
 function Write-EnvFile($path, $values) {
   $sections = @(
     @{ Title = "App"; Keys = @(
-        "APP_ENV", "HTTP_ADDR", "APP_VERSION", "CORS_ALLOWED_ORIGIN",
+        "APP_ENV", "DEPLOYMENT_PROFILE", "HTTP_ADDR", "APP_VERSION", "CORS_ALLOWED_ORIGIN",
         "AUTH_MODE", "DEV_USER_ID", "DEV_USER_EMAIL",
         "TRUSTED_USER_ID_HEADER", "TRUSTED_EMAIL_HEADER"
       )
@@ -350,7 +350,7 @@ function Get-DisplayPath($path) {
   $rootPath = [System.IO.Path]::GetFullPath($root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
   if ($fullPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
     $relative = Resolve-Path -Path $fullPath -Relative
-    if ($relative.StartsWith(".\")) {
+    if ($relative.StartsWith(".\") -or $relative.StartsWith("./")) {
       return $relative.Substring(2)
     }
     return $relative
@@ -372,25 +372,25 @@ function Get-ComposeFiles($selectedProfile, $embeddingRuntime) {
   $files = [System.Collections.Generic.List[string]]::new()
   switch ($selectedProfile) {
     "cpu-lite" {
-      $files.Add("deploy\compose\compose.cpu.yml")
+      $files.Add("deploy/compose/compose.cpu.yml")
     }
     "split-nas-gpu" {
-      $files.Add("deploy\compose\compose.cpu.yml")
-      $files.Add("deploy\compose\compose.split-nas-gpu.yml")
+      $files.Add("deploy/compose/compose.cpu.yml")
+      $files.Add("deploy/compose/compose.split-nas-gpu.yml")
     }
     "gpu-local" {
-      $files.Add("deploy\compose\compose.cpu.yml")
-      $files.Add("deploy\compose\compose.gpu.yml")
+      $files.Add("deploy/compose/compose.cpu.yml")
+      $files.Add("deploy/compose/compose.gpu.yml")
     }
     "prod-auth" {
-      $files.Add("deploy\compose\compose.prod-auth.yml")
+      $files.Add("deploy/compose/compose.prod-auth.yml")
     }
   }
   if ($embeddingRuntime -in @("cpu", "gpu")) {
-    $files.Add("deploy\compose\compose.embeddings.yml")
+    $files.Add("deploy/compose/compose.embeddings.yml")
   }
   if ($embeddingRuntime -eq "gpu") {
-    $files.Add("deploy\compose\compose.embeddings.gpu.yml")
+    $files.Add("deploy/compose/compose.embeddings.gpu.yml")
   }
   return $files
 }
@@ -514,6 +514,7 @@ if ($selectedProfile -eq "prod-auth") {
 }
 
 Set-EnvValue $values "APP_ENV" $defaultAppEnv
+Set-EnvValue $values "DEPLOYMENT_PROFILE" $selectedProfile
 Set-EnvValue $values "HTTP_ADDR" ":8080"
 Set-EnvValue $values "CORS_ALLOWED_ORIGIN" $publicUrlValue
 Set-EnvValue $values "AUTH_MODE" $defaultAuthMode
