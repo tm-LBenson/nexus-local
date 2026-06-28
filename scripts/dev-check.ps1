@@ -122,6 +122,9 @@ Test-Command npm $false | Out-Null
 if ($hasDocker) {
   try {
     & docker version | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "docker version failed with exit code $LASTEXITCODE"
+    }
     Pass "docker daemon"
   } catch {
     Fail "docker daemon" $_.Exception.Message
@@ -141,6 +144,9 @@ if ($hasDocker) {
     }
     $composeArgs += @("config", "--quiet")
     & docker @composeArgs
+    if ($LASTEXITCODE -ne 0) {
+      throw "docker compose config failed with exit code $LASTEXITCODE"
+    }
     Pass "compose config" $composeFile
   } catch {
     Fail "compose config" $_.Exception.Message
@@ -161,6 +167,9 @@ if ($hasDocker) {
     }
     $composeArgs += "ps"
     & docker @composeArgs
+    if ($LASTEXITCODE -ne 0) {
+      throw "docker compose ps failed with exit code $LASTEXITCODE"
+    }
   } catch {
     Warn "compose ps" $_.Exception.Message
   }
@@ -183,35 +192,35 @@ if ($embeddingRuntime -in @("cpu", "gpu")) {
 if ($Smoke) {
   Write-Host ""
   try {
-    $smokeArgs = @(
-      "-ApiUrl", $ApiUrl,
-      "-TimeoutSeconds", $SmokeTimeoutSeconds
-    )
+    $smokeParams = @{
+      ApiUrl = $ApiUrl
+      TimeoutSeconds = $SmokeTimeoutSeconds
+    }
     if (-not [string]::IsNullOrWhiteSpace($TenantId)) {
-      $smokeArgs += @("-TenantId", $TenantId)
+      $smokeParams.TenantId = $TenantId
     }
     if (-not [string]::IsNullOrWhiteSpace($WorkspaceName)) {
-      $smokeArgs += @("-WorkspaceName", $WorkspaceName)
+      $smokeParams.WorkspaceName = $WorkspaceName
     }
     if (-not [string]::IsNullOrWhiteSpace($FixturePath)) {
-      $smokeArgs += @("-FixturePath", $FixturePath)
+      $smokeParams.FixturePath = $FixturePath
     }
     if (-not [string]::IsNullOrWhiteSpace($ModelTarget)) {
-      $smokeArgs += @("-ModelTarget", $ModelTarget)
+      $smokeParams.ModelTarget = $ModelTarget
     }
     if (-not [string]::IsNullOrWhiteSpace($UserId)) {
-      $smokeArgs += @("-UserId", $UserId)
+      $smokeParams.UserId = $UserId
     }
     if (-not [string]::IsNullOrWhiteSpace($UserEmail)) {
-      $smokeArgs += @("-UserEmail", $UserEmail)
+      $smokeParams.UserEmail = $UserEmail
     }
     if ($SkipAsk) {
-      $smokeArgs += "-SkipAsk"
+      $smokeParams.SkipAsk = $true
     }
     if ($IncludeAsk) {
-      $smokeArgs += "-IncludeAsk"
+      $smokeParams.IncludeAsk = $true
     }
-    & $smokeScript @smokeArgs
+    & $smokeScript @smokeParams
   } catch {
     Fail "smoke test" $_.Exception.Message
   }

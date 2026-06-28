@@ -76,7 +76,22 @@ git clone https://github.com/tm-LBenson/nexus-local.git
 cd nexus-local
 ```
 
-Start the full local stack:
+For a guided local run, start the launcher:
+
+```powershell
+.\nexus.ps1
+```
+
+The launcher provides a small terminal menu for setup, start/stop, opening the web UI, health checks, smoke tests, backups, and restores. The same entry point also supports direct commands:
+
+```powershell
+.\nexus.ps1 setup -Profile cpu-lite -ProviderPreset starter -Force
+.\nexus.ps1 up
+.\nexus.ps1 smoke-no-ask
+.\nexus.ps1 down
+```
+
+You can still run the underlying scripts directly. Start the full local stack:
 
 ```powershell
 .\scripts\setup.ps1 -Profile cpu-lite

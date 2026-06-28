@@ -405,6 +405,9 @@ function Test-ComposeConfig($selectedProfile, $envPath) {
   }
   $args += @("config", "--quiet")
   & docker compose @args
+  if ($LASTEXITCODE -ne 0) {
+    throw "docker compose config failed with exit code $LASTEXITCODE"
+  }
 }
 
 if (-not (Test-Path $templatePath)) {

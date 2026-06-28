@@ -67,6 +67,9 @@ if (-not $NoBuild) {
 
 Write-Host "Starting Nexus Local..."
 & docker @composeArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "docker compose up failed with exit code $LASTEXITCODE. Make sure Docker Desktop is running with the Linux engine started."
+}
 
 Wait-Http "API health" "http://localhost:8080/healthz" $TimeoutSeconds
 Wait-Http "API readiness" "http://localhost:8080/readyz" $TimeoutSeconds

@@ -46,4 +46,7 @@ if ($Volumes) {
 
 Write-Host "Stopping Nexus Local..."
 & docker @composeArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "docker compose down failed with exit code $LASTEXITCODE. Make sure Docker Desktop is running with the Linux engine started."
+}
 Write-Host "Stopped."
