@@ -78,6 +78,8 @@ Nexus Local launcher
 Usage:
   .\nexus.ps1
   .\nexus.ps1 <command> [script arguments]
+  ./nexus
+  ./nexus <command> [script arguments]
 
 Commands:
   menu             Open the interactive TUI menu
@@ -101,6 +103,8 @@ Examples:
   .\nexus.ps1 up
   .\nexus.ps1 smoke-no-ask
   .\nexus.ps1 backup -Name before-upgrade
+  ./nexus up
+  ./nexus smoke-no-ask
 "@
 }
 

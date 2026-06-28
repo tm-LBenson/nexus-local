@@ -46,6 +46,7 @@ For local development:
 - Go 1.25+
 - Node.js 22+
 - npm
+- PowerShell 7+ (`pwsh`) on Linux/macOS if using the launcher or helper scripts
 
 For the containerized stack:
 
@@ -76,19 +77,38 @@ git clone https://github.com/tm-LBenson/nexus-local.git
 cd nexus-local
 ```
 
-For a guided local run, start the launcher:
+For a guided local run, start the launcher.
+
+Windows:
 
 ```powershell
 .\nexus.ps1
 ```
 
+Linux/macOS:
+
+```bash
+./nexus
+```
+
 The launcher provides a small terminal menu for setup, start/stop, opening the web UI, health checks, smoke tests, backups, and restores. The same entry point also supports direct commands:
+
+Windows:
 
 ```powershell
 .\nexus.ps1 setup -Profile cpu-lite -ProviderPreset starter -Force
 .\nexus.ps1 up
 .\nexus.ps1 smoke-no-ask
 .\nexus.ps1 down
+```
+
+Linux/macOS:
+
+```bash
+./nexus setup -Profile cpu-lite -ProviderPreset starter -Force
+./nexus up
+./nexus smoke-no-ask
+./nexus down
 ```
 
 You can still run the underlying scripts directly. Start the full local stack:
