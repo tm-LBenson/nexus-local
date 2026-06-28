@@ -91,37 +91,9 @@ Linux/macOS:
 ./nexus
 ```
 
-The launcher provides a small terminal menu for setup, start/stop, opening the web UI, health checks, smoke tests, backups, and restores. The same entry point also supports direct commands:
+The launcher opens a guided terminal UI. It walks through deployment target, search quality, embedding runtime, model gateway, and whether to start the stack, open the browser, or run a smoke test. This is the normal path for Windows, Linux, Nobara, and macOS.
 
-Windows:
-
-```powershell
-.\nexus.ps1 setup -Profile cpu-lite -ProviderPreset starter -Force
-.\nexus.ps1 up
-.\nexus.ps1 smoke-no-ask
-.\nexus.ps1 down
-```
-
-Linux/macOS:
-
-```bash
-./nexus setup -Profile cpu-lite -ProviderPreset starter -Force
-./nexus up
-./nexus smoke-no-ask
-./nexus down
-```
-
-For a one-shot setup-and-start on a local NVIDIA GPU machine:
-
-```powershell
-.\nexus.ps1 run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
-```
-
-On Linux/macOS:
-
-```bash
-./nexus run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
-```
+Direct commands still exist for automation. Run `.\nexus.ps1 menu`, `.\nexus.ps1 help`, `./nexus menu`, or `./nexus help` when you want the management menu or scriptable commands.
 
 You can still run the underlying scripts directly. Start the full local stack:
 

@@ -1,5 +1,5 @@
 param(
-  [string]$Command = "menu",
+  [string]$Command = "launch",
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$RemainingArgs
 )
@@ -29,13 +29,20 @@ function Read-EnvValue($key) {
 }
 
 function Show-EnvironmentSummary {
+  if (-not (Test-Path $envFile)) {
+    Write-Host "Config:  no .env yet"
+    Write-Host "Web:     $webUrl"
+    Write-Host ""
+    return
+  }
+
   $profile = Read-EnvValue "DEPLOYMENT_PROFILE"
   $providerPreset = Read-EnvValue "PROVIDER_PRESET"
   $embeddingRuntime = Read-EnvValue "EMBEDDING_RUNTIME"
   $gateway = Read-EnvValue "MODEL_GATEWAY_BASE_URL"
   $model = Read-EnvValue "GENERAL_MODEL_ID"
 
-  if (-not $profile) { $profile = "not configured" }
+  if (-not $profile) { $profile = "cpu-lite (default)" }
   if (-not $providerPreset) { $providerPreset = "not configured" }
   if (-not $embeddingRuntime) { $embeddingRuntime = "not configured" }
   if (-not $gateway) { $gateway = "not configured" }
@@ -58,12 +65,229 @@ function Invoke-LocalScript($scriptName, [string[]]$arguments = @()) {
 
 function Open-WebApp {
   Write-Host "Opening $webUrl"
-  Start-Process $webUrl
+  if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") {
+    Start-Process $webUrl
+    return
+  }
+  if (Get-Command xdg-open -ErrorAction SilentlyContinue) {
+    & xdg-open $webUrl | Out-Null
+    return
+  }
+  if (Get-Command open -ErrorAction SilentlyContinue) {
+    & open $webUrl | Out-Null
+    return
+  }
+  Write-Host "Open this URL in your browser: $webUrl"
 }
 
 function Confirm-Action($prompt, $expected = "yes") {
   $answer = Read-Host $prompt
   return $answer.Trim().Equals($expected, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Read-YesNo($prompt, $defaultYes = $true) {
+  $suffix = "[Y/n]"
+  if (-not $defaultYes) {
+    $suffix = "[y/N]"
+  }
+  while ($true) {
+    $answer = (Read-Host "$prompt $suffix").Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+      return $defaultYes
+    }
+    if ($answer -in @("y", "yes")) {
+      return $true
+    }
+    if ($answer -in @("n", "no")) {
+      return $false
+    }
+    Write-Host "Use yes or no."
+  }
+}
+
+function Read-DefaultValue($prompt, $defaultValue) {
+  $answer = Read-Host "$prompt [$defaultValue]"
+  if ([string]::IsNullOrWhiteSpace($answer)) {
+    return $defaultValue
+  }
+  return $answer.Trim()
+}
+
+function Select-Option($title, $options, $defaultValue) {
+  Write-Host ""
+  Write-Host $title
+  for ($i = 0; $i -lt $options.Count; $i++) {
+    $option = $options[$i]
+    $marker = " "
+    if ($option.Value -eq $defaultValue) {
+      $marker = "*"
+    }
+    Write-Host ("  {0}. {1} {2}" -f ($i + 1), $marker, $option.Label)
+    if ($option.Detail) {
+      Write-Host ("     {0}" -f $option.Detail)
+    }
+  }
+
+  while ($true) {
+    $choice = (Read-Host "Select").Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+      $match = @($options | Where-Object { $_.Value -eq $defaultValue } | Select-Object -First 1)
+      if ($match.Count -gt 0) {
+        return $match[0].Value
+      }
+      return $options[0].Value
+    }
+    if ($choice -match '^\d+$') {
+      $index = [int]$choice - 1
+      if ($index -ge 0 -and $index -lt $options.Count) {
+        return $options[$index].Value
+      }
+    }
+    $match = @($options | Where-Object { $_.Value -eq $choice -or $_.Label.ToLowerInvariant() -eq $choice } | Select-Object -First 1)
+    if ($match.Count -gt 0) {
+      return $match[0].Value
+    }
+    Write-Host "Choose one of the listed options."
+  }
+}
+
+function Get-DefaultModelGateway($profile) {
+  switch ($profile) {
+    "split-nas-gpu" { return "http://desktop-gpu.local:8000/v1" }
+    "gpu-local" { return "http://model-gateway:8000/v1" }
+    default { return "http://host.docker.internal:8000/v1" }
+  }
+}
+
+function Get-DefaultEmbeddingGateway($profile, $runtime) {
+  if ($runtime -in @("cpu", "gpu")) {
+    return "http://embedding-gateway:80/v1"
+  }
+  switch ($profile) {
+    "split-nas-gpu" { return "http://desktop-gpu.local:8082/v1" }
+    "gpu-local" { return "http://model-gateway:8000/v1" }
+    default { return "http://host.docker.internal:8082/v1" }
+  }
+}
+
+function Get-DefaultPublicUrl($profile) {
+  if ($profile -eq "prod-auth") {
+    return "http://localhost:8088"
+  }
+  return "http://localhost:5173"
+}
+
+function Add-SetupArgument($arguments, $name, $value) {
+  if (-not [string]::IsNullOrWhiteSpace($value)) {
+    [void]$arguments.Add($name)
+    [void]$arguments.Add($value)
+  }
+}
+
+function Invoke-GuidedLaunch($startDefault = $true) {
+  Write-Header
+  Write-Host "Guided launch"
+  Write-Host "Pick the deployment shape. The launcher writes .env, then can start the stack."
+
+  if (Test-Path $envFile) {
+    Write-Host ""
+    Show-EnvironmentSummary
+    $envChoice = Select-Option "Existing configuration found" @(
+      [pscustomobject]@{ Label = "Use existing config"; Value = "use"; Detail = "Start or manage the current .env." },
+      [pscustomobject]@{ Label = "Reconfigure"; Value = "reconfigure"; Detail = "Choose options and overwrite .env." },
+      [pscustomobject]@{ Label = "Back"; Value = "back"; Detail = "" }
+    ) "use"
+    if ($envChoice -eq "back") {
+      return
+    }
+    if ($envChoice -eq "use") {
+      if (Read-YesNo "Start the stack now?" $startDefault) {
+        Invoke-LocalScript "dev-up.ps1"
+        if (Read-YesNo "Open the web UI?" $true) {
+          Open-WebApp
+        }
+        if (Read-YesNo "Run a smoke test without Ask?" $false) {
+          Invoke-LocalScript "dev-check.ps1" @("-Smoke", "-SkipAsk")
+        }
+      }
+      return
+    }
+  }
+
+  $profile = Select-Option "Deployment target" @(
+    [pscustomobject]@{ Label = "Local CPU / Docker"; Value = "cpu-lite"; Detail = "Best first run. App, DB, storage, and search in Docker." },
+    [pscustomobject]@{ Label = "Split NAS + GPU box"; Value = "split-nas-gpu"; Detail = "App/storage here, model gateway on another machine." },
+    [pscustomobject]@{ Label = "Local NVIDIA GPU"; Value = "gpu-local"; Detail = "Starts the app plus local GPU model services." },
+    [pscustomobject]@{ Label = "Production auth"; Value = "prod-auth"; Detail = "Reverse proxy/auth profile for a server deployment." }
+  ) "cpu-lite"
+
+  $providerDefault = "starter"
+  if ($profile -eq "gpu-local") {
+    $providerDefault = "semantic"
+  }
+  $providerPreset = Select-Option "Search quality" @(
+    [pscustomobject]@{ Label = "Starter"; Value = "starter"; Detail = "Fastest path. Hash embeddings; good for plumbing tests." },
+    [pscustomobject]@{ Label = "Semantic"; Value = "semantic"; Detail = "Real embeddings for useful search and retrieval." }
+  ) $providerDefault
+
+  $embeddingRuntime = "none"
+  if ($providerPreset -eq "semantic") {
+    $runtimeDefault = "cpu"
+    if ($profile -eq "gpu-local") {
+      $runtimeDefault = "gpu"
+    } elseif ($profile -in @("split-nas-gpu", "prod-auth")) {
+      $runtimeDefault = "external"
+    }
+    $embeddingRuntime = Select-Option "Embedding runtime" @(
+      [pscustomobject]@{ Label = "External endpoint"; Value = "external"; Detail = "Use an existing OpenAI-compatible embedding service." },
+      [pscustomobject]@{ Label = "CPU container"; Value = "cpu"; Detail = "Start local TEI embeddings on CPU." },
+      [pscustomobject]@{ Label = "GPU container"; Value = "gpu"; Detail = "Start local TEI embeddings with NVIDIA GPU." }
+    ) $runtimeDefault
+  } else {
+    Write-Host ""
+    Write-Host "Embedding runtime: none"
+  }
+
+  $publicUrl = Read-DefaultValue "Public URL" (Get-DefaultPublicUrl $profile)
+  $modelGateway = Read-DefaultValue "Model gateway URL" (Get-DefaultModelGateway $profile)
+  $modelID = Read-DefaultValue "Model ID" "Qwen/Qwen2.5-7B-Instruct"
+  $embeddingGateway = ""
+  if ($providerPreset -eq "semantic") {
+    $embeddingGateway = Read-DefaultValue "Embedding URL" (Get-DefaultEmbeddingGateway $profile $embeddingRuntime)
+  }
+
+  $setupArgs = [System.Collections.Generic.List[string]]::new()
+  [void]$setupArgs.Add("-NonInteractive")
+  [void]$setupArgs.Add("-Profile")
+  [void]$setupArgs.Add($profile)
+  [void]$setupArgs.Add("-ProviderPreset")
+  [void]$setupArgs.Add($providerPreset)
+  [void]$setupArgs.Add("-EmbeddingRuntime")
+  [void]$setupArgs.Add($embeddingRuntime)
+  Add-SetupArgument $setupArgs "-PublicUrl" $publicUrl
+  Add-SetupArgument $setupArgs "-ModelGatewayBaseUrl" $modelGateway
+  Add-SetupArgument $setupArgs "-GeneralModelId" $modelID
+  Add-SetupArgument $setupArgs "-EmbeddingBaseUrl" $embeddingGateway
+
+  if (Test-Path $envFile) {
+    if (-not (Read-YesNo "Overwrite the current .env?" $true)) {
+      Write-Host "Setup cancelled."
+      return
+    }
+    [void]$setupArgs.Add("-Force")
+  }
+
+  Invoke-LocalScript "setup.ps1" $setupArgs.ToArray()
+
+  if (Read-YesNo "Start the stack now?" $startDefault) {
+    Invoke-LocalScript "dev-up.ps1"
+    if (Read-YesNo "Open the web UI?" $true) {
+      Open-WebApp
+    }
+    if (Read-YesNo "Run a smoke test without Ask?" $false) {
+      Invoke-LocalScript "dev-check.ps1" @("-Smoke", "-SkipAsk")
+    }
+  }
 }
 
 function Pause-Menu {
@@ -76,16 +300,16 @@ function Show-Help {
 Nexus Local launcher
 
 Usage:
-  .\nexus.ps1
+  .\nexus.ps1          Start guided launch
   .\nexus.ps1 <command> [script arguments]
-  ./nexus
+  ./nexus             Start guided launch
   ./nexus <command> [script arguments]
 
 Commands:
   menu             Open the interactive TUI menu
-  setup            Run guided environment setup
+  setup            Open the guided setup wizard
   up, start        Start the container stack
-  run, launch      Run setup, then start the selected stack
+  run, launch      Open the guided setup-and-start wizard
   down, stop       Stop the container stack
   restart          Stop, then start the container stack
   reset-volumes    Stop and remove local Docker volumes
@@ -100,13 +324,7 @@ Commands:
 
 Examples:
   .\nexus.ps1
-  .\nexus.ps1 setup -Profile cpu-lite -ProviderPreset starter -Force
-  .\nexus.ps1 run -Profile gpu-local -ProviderPreset semantic -EmbeddingRuntime gpu -Force
-  .\nexus.ps1 up
-  .\nexus.ps1 smoke-no-ask
-  .\nexus.ps1 backup -Name before-upgrade
-  ./nexus up
-  ./nexus smoke-no-ask
+  ./nexus
 "@
 }
 
@@ -124,10 +342,18 @@ function Invoke-CommandMode($name, [string[]]$arguments = @()) {
       Show-Help
     }
     "setup" {
-      Invoke-LocalScript "setup.ps1" $arguments
+      if ($arguments.Count -gt 0) {
+        Invoke-LocalScript "setup.ps1" $arguments
+      } else {
+        Invoke-GuidedLaunch $false
+      }
     }
     "configure" {
-      Invoke-LocalScript "setup.ps1" $arguments
+      if ($arguments.Count -gt 0) {
+        Invoke-LocalScript "setup.ps1" $arguments
+      } else {
+        Invoke-GuidedLaunch $false
+      }
     }
     "up" {
       Invoke-LocalScript "dev-up.ps1" $arguments
@@ -136,12 +362,20 @@ function Invoke-CommandMode($name, [string[]]$arguments = @()) {
       Invoke-LocalScript "dev-up.ps1" $arguments
     }
     "run" {
-      Invoke-LocalScript "setup.ps1" $arguments
-      Invoke-LocalScript "dev-up.ps1"
+      if ($arguments.Count -gt 0) {
+        Invoke-LocalScript "setup.ps1" $arguments
+        Invoke-LocalScript "dev-up.ps1"
+      } else {
+        Invoke-GuidedLaunch $true
+      }
     }
     "launch" {
-      Invoke-LocalScript "setup.ps1" $arguments
-      Invoke-LocalScript "dev-up.ps1"
+      if ($arguments.Count -gt 0) {
+        Invoke-LocalScript "setup.ps1" $arguments
+        Invoke-LocalScript "dev-up.ps1"
+      } else {
+        Invoke-GuidedLaunch $true
+      }
     }
     "down" {
       Invoke-LocalScript "dev-down.ps1" $arguments
@@ -212,18 +446,18 @@ function Show-Menu {
   while ($true) {
     Write-Header
     Show-EnvironmentSummary
-    Write-Host "1. Guided setup / configure"
-    Write-Host "2. Setup, then start stack"
-    Write-Host "3. Start stack"
-    Write-Host "4. Open web UI"
-    Write-Host "5. Check status"
+    Write-Host "1. Guided launch"
+    Write-Host "2. Configure only"
+    Write-Host "3. Start"
+    Write-Host "4. Open UI"
+    Write-Host "5. Check"
     Write-Host "6. Smoke test"
     Write-Host "7. Smoke test without Ask"
-    Write-Host "8. Backup data"
-    Write-Host "9. Restore backup"
-    Write-Host "10. Stop stack"
-    Write-Host "11. Stop stack and remove volumes"
-    Write-Host "12. Run API tests"
+    Write-Host "8. Backup"
+    Write-Host "9. Restore"
+    Write-Host "10. Stop"
+    Write-Host "11. Reset volumes"
+    Write-Host "12. API tests"
     Write-Host "H. Help"
     Write-Host "Q. Quit"
     Write-Host ""
@@ -231,8 +465,8 @@ function Show-Menu {
     $choice = (Read-Host "Select").Trim().ToLowerInvariant()
     try {
       switch ($choice) {
-        "1" { Invoke-LocalScript "setup.ps1"; Pause-Menu }
-        "2" { Invoke-LocalScript "setup.ps1"; Invoke-LocalScript "dev-up.ps1"; Pause-Menu }
+        "1" { Invoke-GuidedLaunch $true; Pause-Menu }
+        "2" { Invoke-GuidedLaunch $false; Pause-Menu }
         "3" { Invoke-LocalScript "dev-up.ps1"; Pause-Menu }
         "4" { Open-WebApp; Pause-Menu }
         "5" { Invoke-LocalScript "dev-check.ps1"; Pause-Menu }
