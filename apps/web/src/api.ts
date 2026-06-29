@@ -168,6 +168,14 @@ export type DataSourceScanSummary = {
   reasons: Record<string, number>;
 };
 
+export type DataSourceScanEntryPage = {
+  total: number;
+  limit: number;
+  offset: number;
+  outcome?: string;
+  has_more: boolean;
+};
+
 export type RegisterDocumentResponse = {
   document: RegisteredDocument;
   job: RegisteredJob;
@@ -191,6 +199,7 @@ export type DataSourceDetailResponse = {
   jobs: RegisteredJob[];
   scan_entries: DataSourceScanEntry[];
   scan_summary: DataSourceScanSummary;
+  scan_entries_page: DataSourceScanEntryPage;
 };
 
 export type DataSourceScanResponse = {
@@ -410,11 +419,40 @@ export async function updateDataSource(
   });
 }
 
-export async function getDataSource(tenantId: string, sourceId: string) {
+export async function getDataSource(
+  tenantId: string,
+  sourceId: string,
+  options: {
+    scan_entry_limit?: number;
+    scan_entry_offset?: number;
+    scan_entry_outcome?: string;
+  } = {},
+) {
   const params = new URLSearchParams({ tenant_id: tenantId });
+  if (options.scan_entry_limit) {
+    params.set('scan_entry_limit', String(options.scan_entry_limit));
+  }
+  if (options.scan_entry_offset) {
+    params.set('scan_entry_offset', String(options.scan_entry_offset));
+  }
+  if (options.scan_entry_outcome) {
+    params.set('scan_entry_outcome', options.scan_entry_outcome);
+  }
   return request<DataSourceDetailResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}?${params.toString()}`,
   );
+}
+
+export function dataSourceScanEntriesExportUrl(
+  tenantId: string,
+  sourceId: string,
+  options: { outcome?: string } = {},
+) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  if (options.outcome) {
+    params.set('outcome', options.outcome);
+  }
+  return `${apiBase}/v1/data-sources/${encodeURIComponent(sourceId)}/scan-entries.csv?${params.toString()}`;
 }
 
 export async function archiveDataSource(

@@ -353,6 +353,14 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 			entries = append(entries, entry)
 		}
 	}
+	sortScanEntries(entries)
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
+}
+
+func sortScanEntries(entries []domain.DataSourceScanEntry) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].CreatedAt.Equal(entries[j].CreatedAt) {
 			if entries[i].JobID != entries[j].JobID {
@@ -362,10 +370,46 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 		}
 		return entries[i].CreatedAt.After(entries[j].CreatedAt)
 	})
+}
+
+func (s *Store) ListDataSourceScanEntryPage(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, filter store.DataSourceScanEntryFilter) (store.DataSourceScanEntryPage, error) {
+	if err := ctx.Err(); err != nil {
+		return store.DataSourceScanEntryPage{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entries := make([]domain.DataSourceScanEntry, 0)
+	for _, entry := range s.scanEntries {
+		if entry.TenantID != tenantID || entry.SourceID != sourceID {
+			continue
+		}
+		if filter.Outcome != "" && entry.Outcome != filter.Outcome {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	sortScanEntries(entries)
+	total := len(entries)
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(entries) {
+		entries = entries[:0]
+	} else if offset > 0 {
+		entries = entries[offset:]
+	}
+	limit := filter.Limit
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
 	}
-	return entries, nil
+	return store.DataSourceScanEntryPage{
+		Entries: entries,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }
 
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {

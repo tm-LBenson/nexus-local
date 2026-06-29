@@ -186,6 +186,36 @@ func TestListDataSourceScanEntriesScopesAndOrdersEntries(t *testing.T) {
 	}
 }
 
+func TestListDataSourceScanEntryPageFiltersAndPaginates(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+	first := newTestScanEntryWithOutcome(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "first.md", domain.DataSourceScanOutcomeFailed, fixedTime())
+	second := newTestScanEntryWithOutcome(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "second.md", domain.DataSourceScanOutcomeImported, fixedTime().Add(time.Minute))
+	third := newTestScanEntryWithOutcome(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_2"), "third.md", domain.DataSourceScanOutcomeFailed, fixedTime().Add(2*time.Minute))
+	otherSource := newTestScanEntryWithOutcome(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_2"), domain.JobID("job_2"), "other.md", domain.DataSourceScanOutcomeFailed, fixedTime().Add(3*time.Minute))
+
+	for _, entry := range []domain.DataSourceScanEntry{first, second, third, otherSource} {
+		if err := repo.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry %s: %v", entry.Path, err)
+		}
+	}
+
+	page, err := repo.ListDataSourceScanEntryPage(ctx, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), store.DataSourceScanEntryFilter{
+		Outcome: domain.DataSourceScanOutcomeFailed,
+		Limit:   1,
+		Offset:  1,
+	})
+	if err != nil {
+		t.Fatalf("list scan entry page: %v", err)
+	}
+	if page.Total != 2 || page.Limit != 1 || page.Offset != 1 {
+		t.Fatalf("page metadata = %#v, want total 2 limit 1 offset 1", page)
+	}
+	if len(page.Entries) != 1 || page.Entries[0].Path != "first.md" {
+		t.Fatalf("page entries = %#v, want older failed entry", page.Entries)
+	}
+}
+
 func TestClaimNextQueuedJobIgnoresTerminalJobs(t *testing.T) {
 	ctx := context.Background()
 	repo := New()
@@ -397,13 +427,17 @@ func newTestJob(t *testing.T, tenantID domain.TenantID, jobID domain.JobID, now 
 
 func newTestScanEntry(t *testing.T, tenantID domain.TenantID, sourceID domain.DataSourceID, jobID domain.JobID, path string, now time.Time) domain.DataSourceScanEntry {
 	t.Helper()
+	return newTestScanEntryWithOutcome(t, tenantID, sourceID, jobID, path, domain.DataSourceScanOutcomeImported, now)
+}
 
+func newTestScanEntryWithOutcome(t *testing.T, tenantID domain.TenantID, sourceID domain.DataSourceID, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, now time.Time) domain.DataSourceScanEntry {
+	t.Helper()
 	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
 		TenantID: tenantID,
 		JobID:    jobID,
 		SourceID: sourceID,
 		Path:     path,
-		Outcome:  domain.DataSourceScanOutcomeImported,
+		Outcome:  outcome,
 		Now:      now,
 	})
 	if err != nil {

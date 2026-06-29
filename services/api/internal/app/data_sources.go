@@ -48,8 +48,11 @@ type UpdateDataSourceInput struct {
 }
 
 type DataSourceDetailInput struct {
-	TenantID     domain.TenantID
-	DataSourceID domain.DataSourceID
+	TenantID         domain.TenantID
+	DataSourceID     domain.DataSourceID
+	ScanEntryLimit   int
+	ScanEntryOffset  int
+	ScanEntryOutcome domain.DataSourceScanOutcome
 }
 
 type ListDataSourcesInput struct {
@@ -73,6 +76,12 @@ type ReindexDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type ExportDataSourceScanEntriesInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+	Outcome      domain.DataSourceScanOutcome
+}
+
 type DataSourceResult struct {
 	Source               domain.DataSource
 	DeletedDocumentCount int
@@ -83,6 +92,7 @@ type DataSourceDetailResult struct {
 	Jobs        []domain.Job
 	ScanEntries []domain.DataSourceScanEntry
 	ScanSummary DataSourceScanSummary
+	ScanPage    DataSourceScanEntryPage
 }
 
 type DataSourceScanSummary struct {
@@ -94,6 +104,13 @@ type DataSourceScanSummary struct {
 	LatestJobID domain.JobID
 	LatestAt    time.Time
 	Reasons     map[string]int
+}
+
+type DataSourceScanEntryPage struct {
+	Total   int
+	Limit   int
+	Offset  int
+	Outcome domain.DataSourceScanOutcome
 }
 
 type ScanDataSourceResult struct {
@@ -111,6 +128,14 @@ type ListDataSourcesResult struct {
 	Sources []domain.DataSource
 }
 
+type ExportDataSourceScanEntriesResult struct {
+	Source    domain.DataSource
+	Entries   []domain.DataSourceScanEntry
+	Total     int
+	Outcome   domain.DataSourceScanOutcome
+	Truncated bool
+}
+
 func NewDataSourceService(repos store.RepositorySet, ids DataSourceIDs, clock Clock) DataSourceService {
 	return DataSourceService{
 		repos:     repos,
@@ -120,7 +145,11 @@ func NewDataSourceService(repos store.RepositorySet, ids DataSourceIDs, clock Cl
 	}
 }
 
-const maxScanEntryListLimit = 100
+const (
+	defaultScanEntryListLimit = 100
+	maxScanEntryListLimit     = 500
+	maxScanEntryExportLimit   = 10000
+)
 
 func (s DataSourceService) WithObjectStore(objects providers.ObjectStore) DataSourceService {
 	s.documents = s.documents.WithObjectStore(objects)
@@ -195,16 +224,48 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 			relatedJobs = append(relatedJobs, job)
 		}
 	}
-	entries, err := s.repos.ListDataSourceScanEntries(ctx, input.TenantID, source.ID, maxScanEntryListLimit)
+	scanEntryLimit := normalizeScanEntryLimit(input.ScanEntryLimit, defaultScanEntryListLimit, maxScanEntryListLimit)
+	scanEntryOffset := input.ScanEntryOffset
+	if scanEntryOffset < 0 {
+		scanEntryOffset = 0
+	}
+	if input.ScanEntryOutcome != "" && !input.ScanEntryOutcome.Valid() {
+		return DataSourceDetailResult{}, fmt.Errorf("data source scan outcome: %w", domain.ErrInvalidEntity)
+	}
+	page, err := s.repos.ListDataSourceScanEntryPage(ctx, input.TenantID, source.ID, store.DataSourceScanEntryFilter{
+		Outcome: input.ScanEntryOutcome,
+		Limit:   scanEntryLimit,
+		Offset:  scanEntryOffset,
+	})
+	if err != nil {
+		return DataSourceDetailResult{}, err
+	}
+	summaryEntries, err := s.repos.ListDataSourceScanEntries(ctx, input.TenantID, source.ID, defaultScanEntryListLimit)
 	if err != nil {
 		return DataSourceDetailResult{}, err
 	}
 	return DataSourceDetailResult{
 		Source:      source,
 		Jobs:        relatedJobs,
-		ScanEntries: entries,
-		ScanSummary: summarizeDataSourceScanEntries(entries),
+		ScanEntries: page.Entries,
+		ScanSummary: summarizeDataSourceScanEntries(summaryEntries),
+		ScanPage: DataSourceScanEntryPage{
+			Total:   page.Total,
+			Limit:   page.Limit,
+			Offset:  page.Offset,
+			Outcome: input.ScanEntryOutcome,
+		},
 	}, nil
+}
+
+func normalizeScanEntryLimit(value int, defaultLimit int, maxLimit int) int {
+	if value <= 0 {
+		return defaultLimit
+	}
+	if value > maxLimit {
+		return maxLimit
+	}
+	return value
 }
 
 func summarizeDataSourceScanEntries(entries []domain.DataSourceScanEntry) DataSourceScanSummary {
@@ -254,6 +315,36 @@ func (s DataSourceService) List(ctx context.Context, input ListDataSourcesInput)
 		sources = filterActiveDataSources(sources)
 	}
 	return ListDataSourcesResult{Sources: sources}, nil
+}
+
+func (s DataSourceService) ExportScanEntries(ctx context.Context, input ExportDataSourceScanEntriesInput) (ExportDataSourceScanEntriesResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ExportDataSourceScanEntriesResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return ExportDataSourceScanEntriesResult{}, fmt.Errorf("export data source scan entries: %w", domain.ErrInvalidEntity)
+	}
+	if input.Outcome != "" && !input.Outcome.Valid() {
+		return ExportDataSourceScanEntriesResult{}, fmt.Errorf("data source scan outcome: %w", domain.ErrInvalidEntity)
+	}
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return ExportDataSourceScanEntriesResult{}, err
+	}
+	page, err := s.repos.ListDataSourceScanEntryPage(ctx, input.TenantID, source.ID, store.DataSourceScanEntryFilter{
+		Outcome: input.Outcome,
+		Limit:   maxScanEntryExportLimit,
+	})
+	if err != nil {
+		return ExportDataSourceScanEntriesResult{}, err
+	}
+	return ExportDataSourceScanEntriesResult{
+		Source:    source,
+		Entries:   page.Entries,
+		Total:     page.Total,
+		Outcome:   input.Outcome,
+		Truncated: page.Total > len(page.Entries),
+	}, nil
 }
 
 func (s DataSourceService) Archive(ctx context.Context, input ArchiveDataSourceInput) (DataSourceResult, error) {

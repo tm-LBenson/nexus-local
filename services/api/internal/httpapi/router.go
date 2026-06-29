@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,6 +64,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/scan", scanDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/reindex", reindexDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("GET /v1/data-sources/{source_id}/scan-entries.csv", exportDataSourceScanEntriesHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("GET /v1/data-sources/{source_id}", getDataSourceHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("PATCH /v1/data-sources/{source_id}", updateDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("DELETE /v1/data-sources/{source_id}", archiveDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
@@ -350,6 +352,14 @@ type dataSourceScanSummaryPayload struct {
 	LatestJobID string         `json:"latest_job_id,omitempty"`
 	LatestAt    string         `json:"latest_at,omitempty"`
 	Reasons     map[string]int `json:"reasons"`
+}
+
+type dataSourceScanEntryPagePayload struct {
+	Total   int    `json:"total"`
+	Limit   int    `json:"limit"`
+	Offset  int    `json:"offset"`
+	Outcome string `json:"outcome,omitempty"`
+	HasMore bool   `json:"has_more"`
 }
 
 type jobPayload struct {
@@ -924,9 +934,17 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
 			return
 		}
+		limit, offset, outcome, err := scanEntryQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		result, err := service.Get(r.Context(), app.DataSourceDetailInput{
-			TenantID:     tenantID,
-			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+			TenantID:         tenantID,
+			DataSourceID:     domain.DataSourceID(r.PathValue("source_id")),
+			ScanEntryLimit:   limit,
+			ScanEntryOffset:  offset,
+			ScanEntryOutcome: outcome,
 		})
 		if err != nil {
 			writeDataSourceError(w, "get data source", err)
@@ -941,11 +959,68 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 			entries = append(entries, encodeDataSourceScanEntry(entry))
 		}
 		writeJSON(w, http.StatusOK, envelope{
-			"source":       encodeDataSource(result.Source),
-			"jobs":         jobs,
-			"scan_entries": entries,
-			"scan_summary": encodeDataSourceScanSummary(result.ScanSummary),
+			"source":            encodeDataSource(result.Source),
+			"jobs":              jobs,
+			"scan_entries":      entries,
+			"scan_summary":      encodeDataSourceScanSummary(result.ScanSummary),
+			"scan_entries_page": encodeDataSourceScanEntryPage(result.ScanPage),
 		})
+	}
+}
+
+func exportDataSourceScanEntriesHandler(service app.DataSourceService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		_, _, outcome, err := scanEntryQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := service.ExportScanEntries(r.Context(), app.ExportDataSourceScanEntriesInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+			Outcome:      outcome,
+		})
+		if err != nil {
+			writeDataSourceError(w, "export data source scan entries", err)
+			return
+		}
+		filename := fmt.Sprintf("nexus-local-%s-scan-entries.csv", result.Source.ID)
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+		w.Header().Set("X-Nexus-Scan-Entry-Total", strconv.Itoa(result.Total))
+		w.Header().Set("X-Nexus-Scan-Entry-Truncated", strconv.FormatBool(result.Truncated))
+		w.WriteHeader(http.StatusOK)
+		writer := csv.NewWriter(w)
+		if err := writer.Write([]string{"tenant_id", "job_id", "source_id", "path", "outcome", "reason", "message", "document_id", "size_bytes", "content_hash", "created_at"}); err != nil {
+			log.Printf("write scan entries csv header: %v", err)
+			return
+		}
+		for _, entry := range result.Entries {
+			if err := writer.Write([]string{
+				string(entry.TenantID),
+				string(entry.JobID),
+				string(entry.SourceID),
+				entry.Path,
+				string(entry.Outcome),
+				entry.Reason,
+				entry.Message,
+				string(entry.DocumentID),
+				strconv.FormatInt(entry.SizeBytes, 10),
+				entry.ContentHash,
+				entry.CreatedAt.Format(time.RFC3339),
+			}); err != nil {
+				log.Printf("write scan entries csv row: %v", err)
+				return
+			}
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			log.Printf("flush scan entries csv: %v", err)
+		}
 	}
 }
 
@@ -1347,6 +1422,26 @@ func queryInt(r *http.Request, key string) (int, error) {
 	return strconv.Atoi(value)
 }
 
+func scanEntryQuery(r *http.Request) (int, int, domain.DataSourceScanOutcome, error) {
+	limit, err := queryInt(r, "scan_entry_limit")
+	if err != nil || limit < 0 {
+		return 0, 0, "", fmt.Errorf("scan_entry_limit must be a non-negative integer")
+	}
+	offset, err := queryInt(r, "scan_entry_offset")
+	if err != nil || offset < 0 {
+		return 0, 0, "", fmt.Errorf("scan_entry_offset must be a non-negative integer")
+	}
+	outcomeValue := strings.TrimSpace(r.URL.Query().Get("scan_entry_outcome"))
+	if outcomeValue == "" {
+		outcomeValue = strings.TrimSpace(r.URL.Query().Get("outcome"))
+	}
+	outcome := domain.DataSourceScanOutcome(outcomeValue)
+	if outcome != "" && !outcome.Valid() {
+		return 0, 0, "", fmt.Errorf("scan_entry_outcome must be one of imported, skipped, failed, deleted")
+	}
+	return limit, offset, outcome, nil
+}
+
 func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, tenantID, principal, ok := prepareAskConversation(w, r, authorizer)
@@ -1590,6 +1685,16 @@ func encodeDataSourceScanSummary(summary app.DataSourceScanSummary) dataSourceSc
 		LatestJobID: string(summary.LatestJobID),
 		LatestAt:    latestAt,
 		Reasons:     reasons,
+	}
+}
+
+func encodeDataSourceScanEntryPage(page app.DataSourceScanEntryPage) dataSourceScanEntryPagePayload {
+	return dataSourceScanEntryPagePayload{
+		Total:   page.Total,
+		Limit:   page.Limit,
+		Offset:  page.Offset,
+		Outcome: string(page.Outcome),
+		HasMore: page.Offset+page.Limit < page.Total,
 	}
 }
 

@@ -54,7 +54,7 @@ Default source scan safety:
 - Unchanged supported files are counted as skipped with reason `unchanged`.
 - Missing files that were previously imported are counted as skipped with outcome `deleted` and reason `missing`.
 
-If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, stores imported/skipped/failed counts on the source, records file-level failure entries, and stores a concise count summary plus the first failure in `error_message`. Source detail exposes the newest scan summary and filterable file outcomes for import review.
+If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, stores imported/skipped/failed counts on the source, records file-level failure entries, and stores a concise count summary plus the first failure in `error_message`. Source detail exposes the newest scan summary plus paged, filterable, exportable file outcomes for import review.
 
 Changed files replace the previously imported document for the same source path. Missing files and files removed by the current source filters delete the previously imported document for that source path after the current scan completes without file-level failures.
 

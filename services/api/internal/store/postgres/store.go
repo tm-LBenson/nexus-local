@@ -482,6 +482,75 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 	return entries, rows.Err()
 }
 
+func (s *Store) ListDataSourceScanEntryPage(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, filter store.DataSourceScanEntryFilter) (store.DataSourceScanEntryPage, error) {
+	where := "tenant_id = $1 AND source_id = $2"
+	args := []any{tenantID, sourceID}
+	if filter.Outcome != "" {
+		args = append(args, filter.Outcome)
+		where += fmt.Sprintf(" AND outcome = $%d", len(args))
+	}
+
+	countQuery := fmt.Sprintf("SELECT count(*) FROM data_source_scan_entries WHERE %s", where)
+	var total int
+	if err := s.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return store.DataSourceScanEntryPage{}, err
+	}
+
+	query := fmt.Sprintf(`
+		SELECT tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, content_hash, created_at
+		FROM data_source_scan_entries
+		WHERE %s
+		ORDER BY created_at DESC, job_id DESC, path
+	`, where)
+	if filter.Limit > 0 {
+		args = append(args, filter.Limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 0 {
+		args = append(args, offset)
+		query += fmt.Sprintf(" OFFSET $%d", len(args))
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return store.DataSourceScanEntryPage{}, err
+	}
+	defer rows.Close()
+
+	entries := make([]domain.DataSourceScanEntry, 0)
+	for rows.Next() {
+		var entry domain.DataSourceScanEntry
+		if err := rows.Scan(
+			&entry.TenantID,
+			&entry.JobID,
+			&entry.SourceID,
+			&entry.Path,
+			&entry.Outcome,
+			&entry.Reason,
+			&entry.Message,
+			&entry.DocumentID,
+			&entry.SizeBytes,
+			&entry.ContentHash,
+			&entry.CreatedAt,
+		); err != nil {
+			return store.DataSourceScanEntryPage{}, err
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return store.DataSourceScanEntryPage{}, err
+	}
+	return store.DataSourceScanEntryPage{
+		Entries: entries,
+		Total:   total,
+		Limit:   filter.Limit,
+		Offset:  offset,
+	}, nil
+}
+
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO jobs (

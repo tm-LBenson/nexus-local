@@ -40,6 +40,20 @@ type DataSourceRepository interface {
 	ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error)
 	SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error
 	ListDataSourceScanEntries(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, limit int) ([]domain.DataSourceScanEntry, error)
+	ListDataSourceScanEntryPage(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, filter DataSourceScanEntryFilter) (DataSourceScanEntryPage, error)
+}
+
+type DataSourceScanEntryFilter struct {
+	Outcome domain.DataSourceScanOutcome
+	Limit   int
+	Offset  int
+}
+
+type DataSourceScanEntryPage struct {
+	Entries []domain.DataSourceScanEntry
+	Total   int
+	Limit   int
+	Offset  int
 }
 
 type JobRepository interface {

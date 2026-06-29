@@ -245,6 +245,50 @@ func TestGetDataSourceSummarizesLatestScanEntries(t *testing.T) {
 	}
 }
 
+func TestGetDataSourcePaginatesScanEntries(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	latestJobID := domain.JobID("job_latest")
+	entries := []domain.DataSourceScanEntry{
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/setup.md", domain.DataSourceScanOutcomeImported, "", domain.DocumentID("doc_setup"), fixedClock{}.Now()),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/a-broken.pdf", domain.DataSourceScanOutcomeFailed, "parse_failed", "", fixedClock{}.Now()),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/b-broken.pdf", domain.DataSourceScanOutcomeFailed, "parse_failed", "", fixedClock{}.Now()),
+	}
+	for _, entry := range entries {
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	}
+
+	result, err := service.Get(ctx, DataSourceDetailInput{
+		TenantID:         source.TenantID,
+		DataSourceID:     source.ID,
+		ScanEntryOutcome: domain.DataSourceScanOutcomeFailed,
+		ScanEntryLimit:   1,
+		ScanEntryOffset:  1,
+	})
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if result.ScanPage.Total != 2 ||
+		result.ScanPage.Limit != 1 ||
+		result.ScanPage.Offset != 1 ||
+		result.ScanPage.Outcome != domain.DataSourceScanOutcomeFailed {
+		t.Fatalf("scan page = %#v, want failed page metadata", result.ScanPage)
+	}
+	if len(result.ScanEntries) != 1 || result.ScanEntries[0].Path != "runbooks/b-broken.pdf" {
+		t.Fatalf("scan entries = %#v, want second failed entry", result.ScanEntries)
+	}
+	if result.ScanSummary.Total != 3 || result.ScanSummary.Failed != 2 || result.ScanSummary.Imported != 1 {
+		t.Fatalf("scan summary = %#v, want unfiltered latest scan summary", result.ScanSummary)
+	}
+}
+
 func TestArchiveDataSource(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

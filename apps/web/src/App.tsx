@@ -23,6 +23,7 @@ import {
   checkModelTarget,
   createDataSource,
   createTenant,
+  dataSourceScanEntriesExportUrl,
   deleteConversation,
   deleteDocument,
   deleteTenantMember,
@@ -70,6 +71,7 @@ type SetupCheck = {
 };
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
+const scanEntryPageSize = 100;
 
 const initialAsk = {
   conversation_id: '',
@@ -146,6 +148,7 @@ export function App() {
   const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
   const [sourceDetail, setSourceDetail] = useState<DataSourceDetailResponse | null>(null);
   const [scanEntryFilter, setScanEntryFilter] = useState<ScanEntryFilter>('all');
+  const [scanEntryOffset, setScanEntryOffset] = useState(0);
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
@@ -229,8 +232,8 @@ export function App() {
     [activeJobs],
   );
   const visibleSourceScanEntries = useMemo(
-    () => (sourceDetail ? filterScanEntries(sourceDetail.scan_entries, scanEntryFilter) : []),
-    [sourceDetail, scanEntryFilter],
+    () => sourceDetail?.scan_entries ?? [],
+    [sourceDetail],
   );
   const failedJobs = useMemo(
     () => jobs?.jobs.filter((job) => job.state === 'failed') ?? [],
@@ -914,6 +917,7 @@ export function App() {
             jobs: [result.job],
             scan_entries: [],
             scan_summary: emptyDataSourceScanSummary(),
+            scan_entries_page: emptyDataSourceScanEntryPage(),
           };
         }
         return {
@@ -921,6 +925,7 @@ export function App() {
           jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
           scan_entries: current.scan_entries,
           scan_summary: current.scan_summary,
+          scan_entries_page: current.scan_entries_page,
         };
       });
       await Promise.all([
@@ -964,10 +969,11 @@ export function App() {
     setLoadingSourceID(source.id);
     setError(null);
     try {
-      const detail = await getDataSource(tenantID, source.id);
+      const detail = await getDataSource(tenantID, source.id, sourceScanEntryOptions('all', 0));
       setSourceDetail(detail);
       setSourceEditForm(sourceFormFromSource(detail.source));
       setScanEntryFilter('all');
+      setScanEntryOffset(detail.scan_entries_page.offset);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -983,13 +989,14 @@ export function App() {
     setError(null);
     try {
       const [detail, dataSourcesResult, jobsResult, auditResult] = await Promise.all([
-        getDataSource(tenantID, sourceID),
+        getDataSource(tenantID, sourceID, sourceScanEntryOptions(scanEntryFilter, scanEntryOffset)),
         listDataSources(tenantID),
         listJobs(tenantID),
         canManageTenant ? listAuditEvents(tenantID).catch(() => null) : Promise.resolve(null),
       ]);
       setSourceDetail(detail);
       setSourceEditForm(sourceFormFromSource(detail.source));
+      setScanEntryOffset(detail.scan_entries_page.offset);
       setDataSources(dataSourcesResult);
       setJobs(jobsResult);
       if (auditResult) {
@@ -1000,6 +1007,39 @@ export function App() {
     } finally {
       setRefreshingSourceID('');
     }
+  }
+
+  async function loadSourceScanEntries(filter: ScanEntryFilter, offset: number) {
+    if (!tenantID || !sourceDetail) {
+      return;
+    }
+    const safeOffset = Math.max(0, offset);
+    setRefreshingSourceID(sourceDetail.source.id);
+    setError(null);
+    try {
+      const detail = await getDataSource(
+        tenantID,
+        sourceDetail.source.id,
+        sourceScanEntryOptions(filter, safeOffset),
+      );
+      setSourceDetail(detail);
+      setSourceEditForm(sourceFormFromSource(detail.source));
+      setScanEntryFilter(filter);
+      setScanEntryOffset(detail.scan_entries_page.offset);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setRefreshingSourceID('');
+    }
+  }
+
+  function exportSourceScanEntries() {
+    if (!tenantID || !sourceDetail) {
+      return;
+    }
+    window.location.href = dataSourceScanEntriesExportUrl(tenantID, sourceDetail.source.id, {
+      outcome: scanEntryFilter === 'all' ? undefined : scanEntryFilter,
+    });
   }
 
   async function submitTenant(event: FormEvent<HTMLFormElement>) {
@@ -2227,25 +2267,61 @@ export function App() {
                       </button>
                     </form>
                   </details>
-                  <details className="inlineDetails" open={sourceDetail.scan_entries.length > 0}>
+                  <details className="inlineDetails" open={sourceDetail.scan_summary.total > 0}>
                     <summary>Files</summary>
                     <div className="scanEntryToolbar">
                       <span className="muted">
-                        {visibleSourceScanEntries.length} of {sourceDetail.scan_entries.length}
+                        {scanEntryPageStart(sourceDetail.scan_entries_page)}-
+                        {scanEntryPageEnd(
+                          sourceDetail.scan_entries_page,
+                          visibleSourceScanEntries.length,
+                        )}{' '}
+                        of {sourceDetail.scan_entries_page.total}
                       </span>
-                      <select
-                        aria-label="Filter file outcomes"
-                        onChange={(event) =>
-                          setScanEntryFilter(event.target.value as ScanEntryFilter)
-                        }
-                        value={scanEntryFilter}
-                      >
-                        <option value="all">All outcomes</option>
-                        <option value="failed">Failed</option>
-                        <option value="skipped">Skipped</option>
-                        <option value="imported">Imported</option>
-                        <option value="deleted">Deleted</option>
-                      </select>
+                      <div className="scanEntryPager">
+                        <select
+                          aria-label="Filter file outcomes"
+                          onChange={(event) =>
+                            void loadSourceScanEntries(event.target.value as ScanEntryFilter, 0)
+                          }
+                          value={scanEntryFilter}
+                        >
+                          <option value="all">All outcomes</option>
+                          <option value="failed">Failed</option>
+                          <option value="skipped">Skipped</option>
+                          <option value="imported">Imported</option>
+                          <option value="deleted">Deleted</option>
+                        </select>
+                        <button onClick={exportSourceScanEntries} type="button">
+                          CSV
+                        </button>
+                        <button
+                          disabled={sourceDetail.scan_entries_page.offset === 0}
+                          onClick={() =>
+                            void loadSourceScanEntries(
+                              scanEntryFilter,
+                              sourceDetail.scan_entries_page.offset -
+                                sourceDetail.scan_entries_page.limit,
+                            )
+                          }
+                          type="button"
+                        >
+                          Prev
+                        </button>
+                        <button
+                          disabled={!sourceDetail.scan_entries_page.has_more}
+                          onClick={() =>
+                            void loadSourceScanEntries(
+                              scanEntryFilter,
+                              sourceDetail.scan_entries_page.offset +
+                                sourceDetail.scan_entries_page.limit,
+                            )
+                          }
+                          type="button"
+                        >
+                          Next
+                        </button>
+                      </div>
                     </div>
                     <div className="tableList scanEntryList">
                       {visibleSourceScanEntries.map((entry) => (
@@ -2263,10 +2339,10 @@ export function App() {
                           <time dateTime={entry.created_at}>{formatDateTime(entry.created_at)}</time>
                         </div>
                       ))}
-                      {sourceDetail.scan_entries.length === 0 && (
+                      {sourceDetail.scan_entries_page.total === 0 && (
                         <p className="muted">No file results yet</p>
                       )}
-                      {sourceDetail.scan_entries.length > 0 &&
+                      {sourceDetail.scan_entries_page.total > 0 &&
                         visibleSourceScanEntries.length === 0 && (
                           <p className="muted">No files match this filter</p>
                         )}
@@ -3847,14 +3923,38 @@ function emptyDataSourceScanSummary(): DataSourceDetailResponse['scan_summary'] 
   };
 }
 
-function filterScanEntries(
-  entries: DataSourceDetailResponse['scan_entries'],
-  filter: ScanEntryFilter,
-) {
-  if (filter === 'all') {
-    return entries;
+function emptyDataSourceScanEntryPage(): DataSourceDetailResponse['scan_entries_page'] {
+  return {
+    total: 0,
+    limit: scanEntryPageSize,
+    offset: 0,
+    has_more: false,
+  };
+}
+
+function sourceScanEntryOptions(filter: ScanEntryFilter, offset: number) {
+  return {
+    scan_entry_limit: scanEntryPageSize,
+    scan_entry_offset: Math.max(0, offset),
+    scan_entry_outcome: filter === 'all' ? undefined : filter,
+  };
+}
+
+function scanEntryPageStart(page: DataSourceDetailResponse['scan_entries_page']) {
+  if (page.total === 0) {
+    return 0;
   }
-  return entries.filter((entry) => entry.outcome === filter);
+  return page.offset + 1;
+}
+
+function scanEntryPageEnd(
+  page: DataSourceDetailResponse['scan_entries_page'],
+  visibleCount: number,
+) {
+  if (page.total === 0) {
+    return 0;
+  }
+  return Math.min(page.offset + visibleCount, page.total);
 }
 
 function scanSummaryReasons(summary: DataSourceDetailResponse['scan_summary']) {

@@ -1722,7 +1722,19 @@ h3 {
   width: 100%;
 }
 
-.scanEntryToolbar select {
+.scanEntryPager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.scanEntryPager button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.scanEntryPager select {
   width: auto;
   min-width: 152px;
 }
@@ -2201,7 +2213,13 @@ h3 {
     flex-direction: column;
   }
 
-  .scanEntryToolbar select {
+  .scanEntryPager {
+    justify-content: stretch;
+  }
+
+  .scanEntryPager button,
+  .scanEntryPager select {
+    flex: 1 1 112px;
     width: 100%;
   }
 

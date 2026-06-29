@@ -826,9 +826,10 @@ func TestGetDataSourceReturnsScanSummary(t *testing.T) {
 		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
 	}
 	var body struct {
-		Source      dataSourcePayload            `json:"source"`
-		ScanEntries []dataSourceScanEntryPayload `json:"scan_entries"`
-		ScanSummary dataSourceScanSummaryPayload `json:"scan_summary"`
+		Source      dataSourcePayload              `json:"source"`
+		ScanEntries []dataSourceScanEntryPayload   `json:"scan_entries"`
+		ScanSummary dataSourceScanSummaryPayload   `json:"scan_summary"`
+		ScanPage    dataSourceScanEntryPagePayload `json:"scan_entries_page"`
 	}
 	if err := json.NewDecoder(get.Body).Decode(&body); err != nil {
 		t.Fatalf("decode get: %v", err)
@@ -848,6 +849,54 @@ func TestGetDataSourceReturnsScanSummary(t *testing.T) {
 	if body.ScanSummary.Reasons["unsupported_type"] != 1 ||
 		body.ScanSummary.Reasons["parse_failed"] != 1 {
 		t.Fatalf("scan summary reasons = %#v", body.ScanSummary.Reasons)
+	}
+	if body.ScanPage.Total != 4 ||
+		body.ScanPage.Limit != 100 ||
+		body.ScanPage.Offset != 0 ||
+		body.ScanPage.HasMore {
+		t.Fatalf("scan page = %#v, want first unfiltered page", body.ScanPage)
+	}
+
+	filtered := httptest.NewRecorder()
+	filteredReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_summary?tenant_id=tenant_1&scan_entry_outcome=failed&scan_entry_limit=1&scan_entry_offset=0", nil)
+	server.ServeHTTP(filtered, filteredReq)
+	if filtered.Code != http.StatusOK {
+		t.Fatalf("filtered status = %d, want %d, body = %s", filtered.Code, http.StatusOK, filtered.Body.String())
+	}
+	var filteredBody struct {
+		ScanEntries []dataSourceScanEntryPayload   `json:"scan_entries"`
+		ScanPage    dataSourceScanEntryPagePayload `json:"scan_entries_page"`
+	}
+	if err := json.NewDecoder(filtered.Body).Decode(&filteredBody); err != nil {
+		t.Fatalf("decode filtered: %v", err)
+	}
+	if filteredBody.ScanPage.Total != 1 ||
+		filteredBody.ScanPage.Limit != 1 ||
+		filteredBody.ScanPage.Offset != 0 ||
+		filteredBody.ScanPage.Outcome != "failed" ||
+		filteredBody.ScanPage.HasMore {
+		t.Fatalf("filtered page = %#v, want one failed entry page", filteredBody.ScanPage)
+	}
+	if len(filteredBody.ScanEntries) != 1 || filteredBody.ScanEntries[0].Path != "broken.pdf" {
+		t.Fatalf("filtered entries = %#v, want broken.pdf", filteredBody.ScanEntries)
+	}
+
+	exported := httptest.NewRecorder()
+	exportReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_summary/scan-entries.csv?tenant_id=tenant_1&outcome=failed", nil)
+	server.ServeHTTP(exported, exportReq)
+	if exported.Code != http.StatusOK {
+		t.Fatalf("export status = %d, want %d, body = %s", exported.Code, http.StatusOK, exported.Body.String())
+	}
+	if contentType := exported.Header().Get("Content-Type"); !strings.Contains(contentType, "text/csv") {
+		t.Fatalf("export content type = %q, want csv", contentType)
+	}
+	if exported.Header().Get("X-Nexus-Scan-Entry-Total") != "1" ||
+		exported.Header().Get("X-Nexus-Scan-Entry-Truncated") != "false" {
+		t.Fatalf("export headers = %#v", exported.Header())
+	}
+	if !strings.Contains(exported.Body.String(), "path,outcome") ||
+		!strings.Contains(exported.Body.String(), "broken.pdf,failed") {
+		t.Fatalf("export body = %q, want failed row", exported.Body.String())
 	}
 }
 
