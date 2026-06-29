@@ -57,6 +57,7 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
 type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
+type SourcePlanSampleFilter = 'all' | 'would_import' | 'skipped' | 'failed';
 
 type ScanMetric = {
   key: ScanEntryFilter;
@@ -116,6 +117,7 @@ type SourceTemplate = SourceFormValues & {
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
 const scanEntryPageSize = 100;
+const sourcePlanSamplePageSize = 12;
 const sourcePlanLargeImportFileThreshold = 500;
 const sourcePlanLargeImportBytesThreshold = 500 * 1024 * 1024;
 const sourcePlanSkippedFileThreshold = 100;
@@ -4977,22 +4979,13 @@ function SourcePlanStatus({
                 <em>Estimate</em>
               </span>
             </div>
-            {summary.samples && summary.samples.length > 0 && (
-              <div className="sourcePlanSamples">
-                {summary.samples.slice(0, 5).map((sample) => (
-                  <span key={`${sample.outcome}:${sample.path}`} title={sample.message || sample.path}>
-                    <strong>{sourcePlanSampleLabel(sample)}</strong>
-                    <em>{sample.path}</em>
-                  </span>
-                ))}
-              </div>
-            )}
             {reviewReasons.length > 0 && (
               <div className="sourcePlanReview">
                 <strong>Review before scan</strong>
                 <em>{reviewReasons.slice(0, 2).join(' / ')}</em>
               </div>
             )}
+            <SourcePlanReviewTable summary={summary} />
           </>
         )}
       </div>
@@ -5000,6 +4993,97 @@ function SourcePlanStatus({
         {refreshing ? 'Refreshing' : 'Refresh'}
       </button>
     </section>
+  );
+}
+
+function SourcePlanReviewTable({ summary }: { summary: SourcePlanSummary }) {
+  const samples = summary.samples ?? [];
+  const [filter, setFilter] = useState<SourcePlanSampleFilter>('all');
+  const [page, setPage] = useState(0);
+  const filteredSamples = useMemo(
+    () => samples.filter((sample) => filter === 'all' || sample.outcome === filter),
+    [filter, samples],
+  );
+  if (samples.length === 0) {
+    return null;
+  }
+  const filters = sourcePlanSampleFilters(samples);
+  const pageCount = Math.max(1, Math.ceil(filteredSamples.length / sourcePlanSamplePageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * sourcePlanSamplePageSize;
+  const pageSamples = filteredSamples.slice(pageStart, pageStart + sourcePlanSamplePageSize);
+  const visibleStart = filteredSamples.length === 0 ? 0 : pageStart + 1;
+  const visibleEnd = Math.min(pageStart + pageSamples.length, filteredSamples.length);
+  const capturedText =
+    samples.length >= summary.total_entries
+      ? `${samples.length} captured`
+      : `${samples.length} captured of ${summary.total_entries}`;
+  return (
+    <details className="sourcePlanReviewDetails">
+      <summary>
+        <strong>Review samples</strong>
+        <span>
+          {visibleStart}-{visibleEnd} of {filteredSamples.length} / {capturedText}
+        </span>
+      </summary>
+      <div className="sourcePlanReviewContent">
+        <div className="sourcePlanReviewToolbar">
+          <div className="scanEntryFilters" aria-label="Import plan sample filters">
+            {filters.map((item) => (
+              <button
+                className={
+                  item.key === filter ? 'scanEntryFilter scanEntryFilterActive' : 'scanEntryFilter'
+                }
+                key={item.key}
+                onClick={() => {
+                  setFilter(item.key);
+                  setPage(0);
+                }}
+                type="button"
+              >
+                {item.label}
+                <span>{item.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="scanEntryPager">
+            <button
+              disabled={currentPage === 0}
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+              type="button"
+            >
+              Prev
+            </button>
+            <button
+              disabled={currentPage + 1 >= pageCount}
+              onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+              type="button"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+        <div className="sourcePlanSampleTable">
+          <div className="sourcePlanSampleHeader">
+            <span>Outcome</span>
+            <span>Path</span>
+            <span>Size</span>
+            <span>Reason</span>
+          </div>
+          {pageSamples.map((sample) => (
+            <div className="sourcePlanSampleRow" key={`${sample.outcome}:${sample.path}`}>
+              <span className={sourcePlanOutcomeClass(sample)}>{sourcePlanSampleLabel(sample)}</span>
+              <strong title={sample.path}>{sample.path}</strong>
+              <em>{sample.size_bytes ? formatBytes(sample.size_bytes) : '-'}</em>
+              <small title={sample.message || sample.reason || ''}>
+                {sample.message || sourcePlanSampleReason(sample) || '-'}
+              </small>
+            </div>
+          ))}
+          {pageSamples.length === 0 && <p className="muted">No samples match this filter</p>}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -5079,6 +5163,35 @@ function sourcePlanSampleLabel(sample: SourcePlanSample) {
     return titleCase(sample.reason.replace(/_/g, ' '));
   }
   return titleCase(sample.outcome);
+}
+
+function sourcePlanSampleReason(sample: SourcePlanSample) {
+  if (!sample.reason) {
+    return '';
+  }
+  return titleCase(sample.reason.replace(/_/g, ' '));
+}
+
+function sourcePlanOutcomeClass(sample: SourcePlanSample) {
+  if (sample.outcome === 'failed') {
+    return 'stateBadge stateFailed';
+  }
+  if (sample.outcome === 'would_import') {
+    return 'stateBadge stateReady';
+  }
+  return 'stateBadge';
+}
+
+function sourcePlanSampleFilters(samples: SourcePlanSample[]) {
+  const sampledSkipped = samples.filter((sample) => sample.outcome === 'skipped').length;
+  const sampledFailed = samples.filter((sample) => sample.outcome === 'failed').length;
+  const sampledImport = samples.filter((sample) => sample.outcome === 'would_import').length;
+  return [
+    { key: 'all' as const, label: 'All', count: samples.length },
+    { key: 'would_import' as const, label: 'Import', count: sampledImport },
+    { key: 'skipped' as const, label: 'Skipped', count: sampledSkipped },
+    { key: 'failed' as const, label: 'Failed', count: sampledFailed },
+  ];
 }
 
 function sourceFirstScanReviewPrompt(

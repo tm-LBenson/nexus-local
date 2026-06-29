@@ -2151,6 +2151,101 @@ h3 {
   font-style: normal;
 }
 
+.sourcePlanReviewDetails {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #dbe5e5;
+  padding-top: 8px;
+}
+
+.sourcePlanReviewDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.sourcePlanReviewDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.sourcePlanReviewDetails summary strong {
+  color: #172026;
+  font-size: 0.84rem;
+}
+
+.sourcePlanReviewDetails summary span {
+  min-width: 0;
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 850;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourcePlanReviewContent {
+  display: grid;
+  gap: 8px;
+}
+
+.sourcePlanReviewToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sourcePlanSampleTable {
+  display: grid;
+  border: 1px solid #dbe5e5;
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.sourcePlanSampleHeader,
+.sourcePlanSampleRow {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1.5fr) 82px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+}
+
+.sourcePlanSampleHeader {
+  color: #69777d;
+  background: #f3f7f6;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sourcePlanSampleRow {
+  border-top: 1px solid #edf2f2;
+  font-size: 0.8rem;
+}
+
+.sourcePlanSampleRow strong,
+.sourcePlanSampleRow em,
+.sourcePlanSampleRow small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourcePlanSampleRow em,
+.sourcePlanSampleRow small {
+  color: #52646c;
+  font-style: normal;
+  font-weight: 750;
+}
+
 .sourceProgressText {
   display: grid;
   gap: 3px;
@@ -2728,6 +2823,20 @@ h3 {
   .scanEntryFilters,
   .scanEntryPager {
     justify-content: stretch;
+  }
+
+  .sourcePlanReviewToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sourcePlanSampleHeader {
+    display: none;
+  }
+
+  .sourcePlanSampleRow {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 
   .scanEntryFilter,

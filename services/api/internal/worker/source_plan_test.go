@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,6 +93,35 @@ func TestSourcePlanWorkerSummarizesSourceWithoutImporting(t *testing.T) {
 	}
 	if len(documents) != 0 {
 		t.Fatalf("documents len = %d, want 0", len(documents))
+	}
+}
+
+func TestSourcePlanWorkerCapturesBoundedReviewSamples(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	root := t.TempDir()
+	totalFiles := sourcePlanSampleLimit + 5
+	for index := 0; index < totalFiles; index++ {
+		writePlanFixture(t, root, fmt.Sprintf("doc-%03d.md", index), "alpha")
+	}
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	job := newSourcePlanJob(t, source)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	result, err := NewSourcePlanWorker(repos, fixedClock{}).ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("process source plan: %v", err)
+	}
+	if result.Summary.WouldImport != totalFiles {
+		t.Fatalf("would import = %d, want %d", result.Summary.WouldImport, totalFiles)
+	}
+	if len(result.Summary.Samples) != sourcePlanSampleLimit {
+		t.Fatalf("samples len = %d, want %d", len(result.Summary.Samples), sourcePlanSampleLimit)
 	}
 }
 

@@ -44,7 +44,7 @@ type SourcePlanSample struct {
 	Message   string `json:"message,omitempty"`
 }
 
-const sourcePlanSampleLimit = 12
+const sourcePlanSampleLimit = 240
 
 func NewSourcePlanWorker(repos store.RepositorySet, clock Clock) SourcePlanWorker {
 	return SourcePlanWorker{
