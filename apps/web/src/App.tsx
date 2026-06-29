@@ -363,6 +363,19 @@ export function App() {
       ),
     [activeJobs],
   );
+  const latestSourcePreflightJobs = useMemo(() => {
+    const latest = new Map<string, ListJobsResponse['jobs'][number]>();
+    for (const job of jobs?.jobs ?? []) {
+      if (job.type !== 'source_preflight' || job.resource_type !== 'data_source') {
+        continue;
+      }
+      const current = latest.get(job.resource_id);
+      if (!current || Date.parse(job.updated_at) > Date.parse(current.updated_at)) {
+        latest.set(job.resource_id, job);
+      }
+    }
+    return latest;
+  }, [jobs]);
   const visibleSourceScanEntries = useMemo(
     () => sourceDetail?.scan_entries ?? [],
     [sourceDetail],
@@ -957,7 +970,7 @@ export function App() {
     setCreatingSource(true);
     setError(null);
     try {
-      await createDataSource({
+      const createResult = await createDataSource({
         tenant_id: tenantID,
         type: sourceForm.type,
         name: sourceForm.name.trim(),
@@ -966,11 +979,39 @@ export function App() {
         exclude_patterns: patternLinesToList(sourceForm.exclude_patterns),
         scan_interval_minutes: Number(sourceForm.scan_interval_minutes),
       });
+      let preflightError = '';
+      try {
+        const preflightResult = await preflightDataSource(tenantID, createResult.source.id);
+        setSourceDetail({
+          source: preflightResult.source,
+          jobs: [preflightResult.job],
+          scan_entries: [],
+          scan_summary: emptyDataSourceScanSummary(),
+          scan_entries_page: emptyDataSourceScanEntryPage(),
+          failed_documents: 0,
+        });
+        setSourceEditForm(sourceFormFromSource(preflightResult.source));
+      } catch (err) {
+        preflightError = messageFromError(err);
+        setSourceDetail({
+          source: createResult.source,
+          jobs: [],
+          scan_entries: [],
+          scan_summary: emptyDataSourceScanSummary(),
+          scan_entries_page: emptyDataSourceScanEntryPage(),
+          failed_documents: 0,
+        });
+        setSourceEditForm(sourceFormFromSource(createResult.source));
+      }
       setSourceForm(initialSourceForm);
       await Promise.all([
         refreshDataSources(tenantID),
+        refreshJobs(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
       ]);
+      if (preflightError) {
+        setError(`Source added. Path check did not start: ${preflightError}`);
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -2160,6 +2201,13 @@ export function App() {
                 {dataSources?.sources.map((source) => {
                   const scanJob = activeSourceScanJobs.get(source.id);
                   const preflightJob = activeSourcePreflightJobs.get(source.id);
+                  const latestPreflightJob = latestSourcePreflightJobs.get(source.id);
+                  const preflightBlocksScan = sourcePreflightBlocksScan(
+                    source,
+                    latestPreflightJob,
+                  );
+                  const visiblePreflightJob =
+                    preflightJob ?? (preflightBlocksScan ? latestPreflightJob : undefined);
                   return (
                     <div
                       className={
@@ -2170,9 +2218,9 @@ export function App() {
                       <button onClick={() => void openSource(source)} type="button">
                         <strong>{source.name}</strong>
                       </button>
-                      <span className={stateClass(preflightJob?.state ?? scanJob?.state ?? source.status)}>
-                        {preflightJob
-                          ? `check ${preflightJob.state}`
+                      <span className={stateClass(visiblePreflightJob?.state ?? scanJob?.state ?? source.status)}>
+                        {visiblePreflightJob
+                          ? `check ${visiblePreflightJob.state}`
                           : scanJob
                             ? `scan ${scanJob.state}`
                             : source.status}
@@ -2208,6 +2256,7 @@ export function App() {
                           <button
                             disabled={
                               Boolean(preflightJob) ||
+                              preflightBlocksScan ||
                               Boolean(scanJob) ||
                               scanningSourceID === source.id ||
                               archivingSourceID === source.id
@@ -2217,6 +2266,8 @@ export function App() {
                           >
                             {scanningSourceID === source.id
                               ? 'Queuing'
+                              : preflightBlocksScan
+                                ? 'Path blocked'
                               : scanJob
                                 ? titleCase(scanJob.state)
                                 : 'Rescan'}
@@ -2302,6 +2353,7 @@ export function App() {
                         disabled={
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePreflightJob(sourceDetail) ||
+                          sourceScanBlockedByPreflight(sourceDetail) ||
                           Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActiveScanJob(sourceDetail) ||
                           sourceDetail.source.status === 'archived' ||
@@ -2312,6 +2364,8 @@ export function App() {
                       >
                         {scanningSourceID === sourceDetail.source.id
                           ? 'Queuing'
+                          : sourceScanBlockedByPreflight(sourceDetail)
+                            ? 'Path blocked'
                           : sourceHasActiveScanJob(sourceDetail)
                             ? 'Queued'
                             : sourceDetail.source.status === 'failed'
@@ -2402,7 +2456,10 @@ export function App() {
                   )}
                   <SourcePreflightStatus
                     activeJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
+                    checking={preflightingSourceID === sourceDetail.source.id}
+                    checkDisabled={sourceDetail.source.status === 'archived'}
                     detail={sourceDetail}
+                    onCheck={() => void requestDataSourcePreflight(sourceDetail.source)}
                     onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
                     refreshing={refreshingSourceID === sourceDetail.source.id}
                   />
@@ -2560,6 +2617,7 @@ export function App() {
                           disabled={
                             Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePreflightJob(sourceDetail) ||
+                            sourceScanBlockedByPreflight(sourceDetail) ||
                             Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                             sourceHasActiveScanJob(sourceDetail) ||
                             sourceDetail.source.status === 'archived' ||
@@ -2570,6 +2628,8 @@ export function App() {
                         >
                           {scanningSourceID === sourceDetail.source.id
                             ? 'Queuing'
+                            : sourceScanBlockedByPreflight(sourceDetail)
+                              ? 'Path blocked'
                             : sourceHasActiveScanJob(sourceDetail)
                               ? 'Queued'
                               : 'Retry scan'}
@@ -4682,16 +4742,22 @@ function sourceCurrentScanProgress(
 
 function SourcePreflightStatus({
   activeJob,
+  checking,
+  checkDisabled,
   detail,
+  onCheck,
   onRefresh,
   refreshing,
 }: {
   activeJob?: ListJobsResponse['jobs'][number];
+  checking: boolean;
+  checkDisabled: boolean;
   detail: DataSourceDetailResponse;
+  onCheck: () => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
-  const job = activeJob ?? sourceLatestPreflightJob(detail);
+  const job = activeJob ?? sourceLatestRelevantPreflightJob(detail);
   if (!job) {
     return null;
   }
@@ -4715,27 +4781,56 @@ function SourcePreflightStatus({
         <strong>{sourcePreflightTitle(job)}</strong>
         <span>{sourcePreflightMessage(job)}</span>
       </div>
-      <button disabled={refreshing} onClick={onRefresh} type="button">
-        {refreshing ? 'Refreshing' : 'Refresh'}
-      </button>
+      <div className="sourcePreflightActions">
+        <button disabled={refreshing} onClick={onRefresh} type="button">
+          {refreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+        <button disabled={active || checking || checkDisabled} onClick={onCheck} type="button">
+          {checking ? 'Queuing' : 'Check again'}
+        </button>
+      </div>
     </section>
   );
 }
 
-function sourceLatestPreflightJob(detail: DataSourceDetailResponse) {
+function sourceLatestRelevantPreflightJob(detail: DataSourceDetailResponse) {
   return detail.jobs
     .filter(
       (job) =>
         job.type === 'source_preflight' &&
         job.resource_type === 'data_source' &&
-        job.resource_id === detail.source.id,
+        job.resource_id === detail.source.id &&
+        sourcePreflightAppliesToSource(detail.source, job),
     )
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
 }
 
 function sourceHasActivePreflightJob(detail: DataSourceDetailResponse) {
-  const job = sourceLatestPreflightJob(detail);
+  const job = sourceLatestRelevantPreflightJob(detail);
   return Boolean(job && isActiveJobState(job.state));
+}
+
+function sourceScanBlockedByPreflight(detail: DataSourceDetailResponse) {
+  return sourcePreflightBlocksScan(detail.source, sourceLatestRelevantPreflightJob(detail));
+}
+
+function sourcePreflightBlocksScan(
+  source: { updated_at: string },
+  job?: ListJobsResponse['jobs'][number],
+) {
+  return Boolean(job && job.state === 'failed' && sourcePreflightAppliesToSource(source, job));
+}
+
+function sourcePreflightAppliesToSource(
+  source: { updated_at: string },
+  job: ListJobsResponse['jobs'][number],
+) {
+  const sourceUpdatedAt = Date.parse(source.updated_at);
+  const jobUpdatedAt = Date.parse(job.updated_at);
+  if (Number.isNaN(sourceUpdatedAt) || Number.isNaN(jobUpdatedAt)) {
+    return true;
+  }
+  return jobUpdatedAt >= sourceUpdatedAt;
 }
 
 function sourcePreflightTitle(job: ListJobsResponse['jobs'][number]) {

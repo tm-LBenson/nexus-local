@@ -488,6 +488,14 @@ func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSource
 			return ScanDataSourceResult{}, fmt.Errorf("scan is already queued or running for data source %s with job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
 		}
 	}
+	if job, ok := latestRelevantDataSourceJob(jobs, source, domain.JobTypeSourcePreflight); ok {
+		if isActiveJobState(job.State) {
+			return ScanDataSourceResult{}, fmt.Errorf("path check is still queued or running for data source %s with job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+		if job.State == domain.JobStateFailed {
+			return ScanDataSourceResult{}, fmt.Errorf("path check failed for data source %s: %s: %w", source.ID, job.ErrorMessage, domain.ErrInvalidStateTransition)
+		}
+	}
 
 	job, err := domain.NewJob(domain.JobCreate{
 		ID:           s.ids.NewJobID(),
@@ -740,11 +748,33 @@ func isActiveDataSourceScanJob(job domain.Job, sourceID domain.DataSourceID) boo
 	return isActiveDataSourceJob(job, sourceID, domain.JobTypeSourceScan)
 }
 
+func latestRelevantDataSourceJob(jobs []domain.Job, source domain.DataSource, jobType domain.JobType) (domain.Job, bool) {
+	var latest domain.Job
+	found := false
+	for _, job := range jobs {
+		if job.Type != jobType || job.ResourceType != "data_source" || job.ResourceID != string(source.ID) {
+			continue
+		}
+		if job.UpdatedAt.Before(source.UpdatedAt) {
+			continue
+		}
+		if !found || job.UpdatedAt.After(latest.UpdatedAt) {
+			latest = job
+			found = true
+		}
+	}
+	return latest, found
+}
+
 func isActiveDataSourceJob(job domain.Job, sourceID domain.DataSourceID, jobType domain.JobType) bool {
 	if job.Type != jobType || job.ResourceType != "data_source" || job.ResourceID != string(sourceID) {
 		return false
 	}
-	return job.State == domain.JobStateQueued || job.State == domain.JobStateRunning || job.State == domain.JobStateRetrying
+	return isActiveJobState(job.State)
+}
+
+func isActiveJobState(state domain.JobState) bool {
+	return state == domain.JobStateQueued || state == domain.JobStateRunning || state == domain.JobStateRetrying
 }
 
 func hasActiveDocumentIngestionJob(jobs []domain.Job, documentID domain.DocumentID) bool {

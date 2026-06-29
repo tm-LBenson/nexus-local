@@ -2074,6 +2074,13 @@ h3 {
   align-self: center;
 }
 
+.sourcePreflightActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .sourcePreflightFailed {
   border-color: #efc4bf;
   border-left-color: #b8473f;
