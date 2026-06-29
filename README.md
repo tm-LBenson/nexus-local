@@ -136,6 +136,8 @@ Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint
 
 The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
+The app Library can also create managed sources and queue scans from the source menu. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`.
+
 Stop the stack:
 
 ```powershell
@@ -272,6 +274,7 @@ The stream endpoint returns server-sent events: `status`, `delta`, `error`, and 
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
 Job responses include `error_message` when ingestion fails, and failed documents can be retried from the document detail view or retry endpoint.
+Source scan jobs import supported files from managed source roots, skip unsupported file types, and queue normal document ingestion jobs for each imported file.
 Audit event responses include tenant, actor, action, resource, outcome, metadata, and timestamp fields for administrative review.
 
 Example document upload:

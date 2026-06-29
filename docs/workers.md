@@ -2,7 +2,7 @@
 
 Workers claim durable jobs and advance product state outside the request path.
 
-## Document Ingestion
+## Source Scans and Document Ingestion
 
 Location: `services/api/internal/worker`
 
@@ -10,7 +10,28 @@ Runnable command: `services/api/cmd/worker`
 
 Container entrypoint: `/worker`
 
-Current behavior:
+The worker executable processes two durable job types from the same database-backed queue:
+
+- `source_scan` jobs for managed folder/synced-drive/network-share sources.
+- `document_ingestion` jobs for parsing and indexing uploaded or scanned documents.
+
+Source scan behavior:
+
+1. Claim the next queued `source_scan` job.
+2. Load the data source by tenant and resource ID.
+3. Transition source `active/failed -> scanning`.
+4. Walk the source root path from the worker machine/container.
+5. Skip symlinks and unsupported document types.
+6. Upload each supported file through the normal document upload path.
+7. Queue one `document_ingestion` job per imported file.
+8. Transition source `scanning -> active` and stamp `last_scan_at`.
+9. Transition the source scan job `running -> succeeded`.
+
+The source path must be visible to the worker process. In Docker deployments, mount the folder, synced drive, or network share into the worker container and use the container-visible path in the source record. For example, a Windows folder can be mounted as `/sources/customer-docs`, and the source root should use `/sources/customer-docs`, not the Windows host path.
+
+If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, and stores a concise count summary plus the first failure in `error_message`. Unsupported file types are counted as skipped, not failed.
+
+Document ingestion behavior:
 
 1. Claim the next queued job.
 2. Require `document_ingestion` with `resource_type=document`.

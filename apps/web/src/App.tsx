@@ -227,10 +227,12 @@ export function App() {
     documents?.documents.filter((document) => document.status === 'ready').length ?? 0;
   const processingDocumentCount = activeDocuments.length;
   const activeJobCount = activeJobs.length;
+  const activeSourceScanCount = activeSourceScanJobs.size;
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
     () =>
       activeIngestionJobs.length > 0 ||
+      activeSourceScanCount > 0 ||
       Boolean(documentDetail && isActiveDocumentStatus(documentDetail.document.status)) ||
       Boolean(documentDetail && hasActiveIngestionJob(documentDetail)) ||
       Boolean(
@@ -238,13 +240,15 @@ export function App() {
           (isActiveDocumentStatus(registration.document.status) ||
             isActiveJobState(registration.job.state)),
       ),
-    [activeIngestionJobs.length, documentDetail, registration],
+    [activeIngestionJobs.length, activeSourceScanCount, documentDetail, registration],
   );
   const ingestionLabel = ingestionSyncing
     ? 'Updating'
     : trackingIngestion
       ? activeIngestionJobs.length > 0
         ? `${activeIngestionJobs.length} active`
+        : activeSourceScanCount > 0
+          ? `${activeSourceScanCount} scan`
         : 'Tracking'
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
@@ -358,8 +362,9 @@ export function App() {
     async function refreshIngestionState() {
       setIngestionSyncing(true);
       try {
-        const [documentsResult, jobsResult, detailResult] = await Promise.all([
+        const [documentsResult, dataSourcesResult, jobsResult, detailResult] = await Promise.all([
           listDocuments(tenantID),
+          listDataSources(tenantID),
           listJobs(tenantID),
           trackedDocumentID ? getDocument(tenantID, trackedDocumentID) : Promise.resolve(null),
         ]);
@@ -368,6 +373,7 @@ export function App() {
         }
 
         setDocuments(documentsResult);
+        setDataSources(dataSourcesResult);
         setJobs(jobsResult);
         if (detailResult) {
           setDocumentDetail(detailResult);
@@ -3250,10 +3256,10 @@ function stateClass(state: string) {
   if (['failed', 'denied'].includes(state)) {
     return 'stateBadge stateFailed';
   }
-  if (['queued', 'running', 'retrying', 'uploaded', 'processing'].includes(state)) {
+  if (['queued', 'running', 'retrying', 'uploaded', 'processing', 'scanning'].includes(state)) {
     return 'stateBadge stateActive';
   }
-  if (['ready', 'succeeded'].includes(state)) {
+  if (['active', 'ready', 'succeeded'].includes(state)) {
     return 'stateBadge stateReady';
   }
   return 'stateBadge';

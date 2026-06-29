@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/runtime"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
@@ -38,6 +39,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	ids := app.NewRandomIDs()
+	sourceScanWorker := worker.NewSourceScanWorker(repos, ids, systemClock{}).
+		WithObjectStore(objectStore)
 	ingestionWorker := worker.NewDocumentIngestionWorker(repos, systemClock{}).
 		WithPipeline(objectStore, embedder, vectorIndex)
 	pollInterval := cfg.WorkerPollInterval
@@ -52,6 +56,23 @@ func main() {
 			log.Print("worker stopped")
 			return
 		default:
+		}
+
+		scanResult, err := sourceScanWorker.ProcessNext(ctx)
+		if err == nil {
+			log.Printf(
+				"processed source scan job=%s source=%s imported=%d skipped=%d failed=%d",
+				scanResult.JobID,
+				scanResult.SourceID,
+				scanResult.ImportedCount,
+				scanResult.SkippedCount,
+				scanResult.FailedCount,
+			)
+			continue
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Printf("source scan worker error: %v", err)
+			continue
 		}
 
 		result, err := ingestionWorker.ProcessNext(ctx)
