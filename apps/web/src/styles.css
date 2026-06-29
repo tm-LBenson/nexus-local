@@ -1681,6 +1681,52 @@ h3 {
   background: #f8fbfa;
 }
 
+.sourceScanSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.sourceScanSummary div {
+  min-width: 0;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: #fbfdfc;
+}
+
+.sourceScanSummary strong {
+  display: block;
+  min-width: 0;
+  color: #172026;
+  font-size: 0.96rem;
+  overflow-wrap: anywhere;
+}
+
+.sourceScanSummary span {
+  color: #69777d;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.scanReasonSummary {
+  grid-column: span 2;
+}
+
+.scanEntryToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.scanEntryToolbar select {
+  width: auto;
+  min-width: 152px;
+}
+
 .messageBubble {
   display: grid;
   gap: 6px;
@@ -2140,6 +2186,23 @@ h3 {
 
   .sourceHeader em {
     justify-self: start;
+  }
+
+  .sourceScanSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scanReasonSummary {
+    grid-column: 1 / -1;
+  }
+
+  .scanEntryToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scanEntryToolbar select {
+    width: 100%;
   }
 
   .sourcePatternFields {

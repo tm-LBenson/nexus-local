@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -81,6 +82,18 @@ type DataSourceDetailResult struct {
 	Source      domain.DataSource
 	Jobs        []domain.Job
 	ScanEntries []domain.DataSourceScanEntry
+	ScanSummary DataSourceScanSummary
+}
+
+type DataSourceScanSummary struct {
+	Total       int
+	Imported    int
+	Skipped     int
+	Failed      int
+	Deleted     int
+	LatestJobID domain.JobID
+	LatestAt    time.Time
+	Reasons     map[string]int
 }
 
 type ScanDataSourceResult struct {
@@ -190,7 +203,40 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 		Source:      source,
 		Jobs:        relatedJobs,
 		ScanEntries: entries,
+		ScanSummary: summarizeDataSourceScanEntries(entries),
 	}, nil
+}
+
+func summarizeDataSourceScanEntries(entries []domain.DataSourceScanEntry) DataSourceScanSummary {
+	summary := DataSourceScanSummary{Reasons: map[string]int{}}
+	if len(entries) == 0 {
+		return summary
+	}
+	summary.LatestJobID = entries[0].JobID
+	summary.LatestAt = entries[0].CreatedAt
+	for _, entry := range entries {
+		if entry.JobID != summary.LatestJobID {
+			continue
+		}
+		summary.Total++
+		if entry.CreatedAt.After(summary.LatestAt) {
+			summary.LatestAt = entry.CreatedAt
+		}
+		switch entry.Outcome {
+		case domain.DataSourceScanOutcomeImported:
+			summary.Imported++
+		case domain.DataSourceScanOutcomeSkipped:
+			summary.Skipped++
+		case domain.DataSourceScanOutcomeFailed:
+			summary.Failed++
+		case domain.DataSourceScanOutcomeDeleted:
+			summary.Deleted++
+		}
+		if entry.Reason != "" {
+			summary.Reasons[entry.Reason]++
+		}
+	}
+	return summary
 }
 
 func (s DataSourceService) List(ctx context.Context, input ListDataSourcesInput) (ListDataSourcesResult, error) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -191,6 +192,56 @@ func TestGetDataSourceIncludesRelatedJobs(t *testing.T) {
 	}
 	if len(result.ScanEntries) != 1 || result.ScanEntries[0].Path != "runbooks/setup.md" {
 		t.Fatalf("scan entries = %#v, want imported setup entry", result.ScanEntries)
+	}
+	if result.ScanSummary.Total != 1 ||
+		result.ScanSummary.Imported != 1 ||
+		result.ScanSummary.LatestJobID != sourceJob.ID {
+		t.Fatalf("scan summary = %#v, want one imported entry for source job", result.ScanSummary)
+	}
+}
+
+func TestGetDataSourceSummarizesLatestScanEntries(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	oldJobID := domain.JobID("job_old")
+	latestJobID := domain.JobID("job_latest")
+	entries := []domain.DataSourceScanEntry{
+		newSourceScanEntryAt(t, source, oldJobID, "old.md", domain.DataSourceScanOutcomeImported, "", domain.DocumentID("doc_old"), fixedClock{}.Now().Add(-time.Hour)),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/setup.md", domain.DataSourceScanOutcomeImported, "", domain.DocumentID("doc_setup"), fixedClock{}.Now()),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/unchanged.md", domain.DataSourceScanOutcomeSkipped, "unchanged", "", fixedClock{}.Now()),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/broken.pdf", domain.DataSourceScanOutcomeFailed, "parse_failed", "", fixedClock{}.Now()),
+		newSourceScanEntryAt(t, source, latestJobID, "runbooks/removed.md", domain.DataSourceScanOutcomeDeleted, "missing", domain.DocumentID("doc_removed"), fixedClock{}.Now()),
+	}
+	for _, entry := range entries {
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	}
+
+	result, err := service.Get(ctx, DataSourceDetailInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if result.ScanSummary.LatestJobID != latestJobID ||
+		result.ScanSummary.Total != 4 ||
+		result.ScanSummary.Imported != 1 ||
+		result.ScanSummary.Skipped != 1 ||
+		result.ScanSummary.Failed != 1 ||
+		result.ScanSummary.Deleted != 1 {
+		t.Fatalf("scan summary = %#v, want latest scan counts", result.ScanSummary)
+	}
+	if result.ScanSummary.Reasons["unchanged"] != 1 ||
+		result.ScanSummary.Reasons["parse_failed"] != 1 ||
+		result.ScanSummary.Reasons["missing"] != 1 {
+		t.Fatalf("scan summary reasons = %#v", result.ScanSummary.Reasons)
 	}
 }
 
@@ -611,6 +662,11 @@ func newSourceDocument(t *testing.T, id string, name string) domain.Document {
 
 func newSourceScanEntry(t *testing.T, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, documentID domain.DocumentID) domain.DataSourceScanEntry {
 	t.Helper()
+	return newSourceScanEntryAt(t, source, jobID, path, outcome, reason, documentID, fixedClock{}.Now())
+}
+
+func newSourceScanEntryAt(t *testing.T, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, documentID domain.DocumentID, now time.Time) domain.DataSourceScanEntry {
+	t.Helper()
 	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
 		TenantID:    source.TenantID,
 		JobID:       jobID,
@@ -621,7 +677,7 @@ func newSourceScanEntry(t *testing.T, source domain.DataSource, jobID domain.Job
 		DocumentID:  documentID,
 		SizeBytes:   42,
 		ContentHash: "sha256:" + string(documentID),
-		Now:         fixedClock{}.Now(),
+		Now:         now,
 	})
 	if err != nil {
 		t.Fatalf("new scan entry: %v", err)

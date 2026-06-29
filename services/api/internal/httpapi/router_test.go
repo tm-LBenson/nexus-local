@@ -790,6 +790,67 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 }
 
+func TestGetDataSourceReturnsScanSummary(t *testing.T) {
+	server := newTestServerWithSeed(t, func(repos *memory.Store) {
+		source, err := domain.NewDataSource(domain.DataSourceCreate{
+			ID:       domain.DataSourceID("src_summary"),
+			TenantID: domain.TenantID("tenant_1"),
+			OwnerID:  domain.UserID("user_1"),
+			Type:     domain.DataSourceTypeFolder,
+			Name:     "Summary Source",
+			RootPath: "/sources/summary",
+			Now:      httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new source: %v", err)
+		}
+		if err := repos.SaveDataSource(context.Background(), source); err != nil {
+			t.Fatalf("save source: %v", err)
+		}
+		for _, entry := range []domain.DataSourceScanEntry{
+			newHTTPScanEntry(t, source, domain.JobID("job_old"), "old.md", domain.DataSourceScanOutcomeImported, "", httpClock{}.Now().Add(-time.Hour)),
+			newHTTPScanEntry(t, source, domain.JobID("job_latest"), "ok.md", domain.DataSourceScanOutcomeImported, "", httpClock{}.Now()),
+			newHTTPScanEntry(t, source, domain.JobID("job_latest"), "skipped.tmp", domain.DataSourceScanOutcomeSkipped, "unsupported_type", httpClock{}.Now()),
+			newHTTPScanEntry(t, source, domain.JobID("job_latest"), "broken.pdf", domain.DataSourceScanOutcomeFailed, "parse_failed", httpClock{}.Now()),
+		} {
+			if err := repos.SaveDataSourceScanEntry(context.Background(), entry); err != nil {
+				t.Fatalf("save scan entry: %v", err)
+			}
+		}
+	})
+
+	get := httptest.NewRecorder()
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_summary?tenant_id=tenant_1", nil)
+	server.ServeHTTP(get, getReq)
+	if get.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
+	}
+	var body struct {
+		Source      dataSourcePayload            `json:"source"`
+		ScanEntries []dataSourceScanEntryPayload `json:"scan_entries"`
+		ScanSummary dataSourceScanSummaryPayload `json:"scan_summary"`
+	}
+	if err := json.NewDecoder(get.Body).Decode(&body); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if body.Source.ID != "src_summary" || len(body.ScanEntries) != 4 {
+		t.Fatalf("body = %#v, want source with four recent entries", body)
+	}
+	if body.ScanSummary.LatestJobID != "job_latest" ||
+		body.ScanSummary.Total != 3 ||
+		body.ScanSummary.Imported != 1 ||
+		body.ScanSummary.Skipped != 1 ||
+		body.ScanSummary.Failed != 1 ||
+		body.ScanSummary.Deleted != 0 ||
+		body.ScanSummary.LatestAt == "" {
+		t.Fatalf("scan summary = %#v, want latest scan counts", body.ScanSummary)
+	}
+	if body.ScanSummary.Reasons["unsupported_type"] != 1 ||
+		body.ScanSummary.Reasons["parse_failed"] != 1 {
+		t.Fatalf("scan summary reasons = %#v", body.ScanSummary.Reasons)
+	}
+}
+
 func TestDataSourceEndpointCanArchiveAndDeleteDocuments(t *testing.T) {
 	server := newTestServerWithSeed(t, func(repos *memory.Store) {
 		source, err := domain.NewDataSource(domain.DataSourceCreate{
@@ -1942,6 +2003,30 @@ func newHTTPFailedDocument(t *testing.T) domain.Document {
 		t.Fatalf("mark failed: %v", err)
 	}
 	return document
+}
+
+func newHTTPScanEntry(t *testing.T, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, now time.Time) domain.DataSourceScanEntry {
+	t.Helper()
+	documentID := domain.DocumentID("")
+	if outcome == domain.DataSourceScanOutcomeImported {
+		documentID = domain.DocumentID("doc_" + strings.ReplaceAll(strings.TrimSuffix(path, ".md"), "/", "_"))
+	}
+	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+		TenantID:    source.TenantID,
+		JobID:       jobID,
+		SourceID:    source.ID,
+		Path:        path,
+		Outcome:     outcome,
+		Reason:      reason,
+		DocumentID:  documentID,
+		SizeBytes:   42,
+		ContentHash: "sha256:" + path,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("new scan entry: %v", err)
+	}
+	return entry
 }
 
 type httpModelGateway struct{}

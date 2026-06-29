@@ -341,6 +341,17 @@ type dataSourceScanEntryPayload struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type dataSourceScanSummaryPayload struct {
+	Total       int            `json:"total"`
+	Imported    int            `json:"imported"`
+	Skipped     int            `json:"skipped"`
+	Failed      int            `json:"failed"`
+	Deleted     int            `json:"deleted"`
+	LatestJobID string         `json:"latest_job_id,omitempty"`
+	LatestAt    string         `json:"latest_at,omitempty"`
+	Reasons     map[string]int `json:"reasons"`
+}
+
 type jobPayload struct {
 	ID           string `json:"id"`
 	TenantID     string `json:"tenant_id"`
@@ -933,6 +944,7 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 			"source":       encodeDataSource(result.Source),
 			"jobs":         jobs,
 			"scan_entries": entries,
+			"scan_summary": encodeDataSourceScanSummary(result.ScanSummary),
 		})
 	}
 }
@@ -1557,6 +1569,27 @@ func encodeDataSourceScanEntry(entry domain.DataSourceScanEntry) dataSourceScanE
 		SizeBytes:   entry.SizeBytes,
 		ContentHash: entry.ContentHash,
 		CreatedAt:   entry.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeDataSourceScanSummary(summary app.DataSourceScanSummary) dataSourceScanSummaryPayload {
+	latestAt := ""
+	if !summary.LatestAt.IsZero() {
+		latestAt = summary.LatestAt.Format(time.RFC3339)
+	}
+	reasons := map[string]int{}
+	for reason, count := range summary.Reasons {
+		reasons[reason] = count
+	}
+	return dataSourceScanSummaryPayload{
+		Total:       summary.Total,
+		Imported:    summary.Imported,
+		Skipped:     summary.Skipped,
+		Failed:      summary.Failed,
+		Deleted:     summary.Deleted,
+		LatestJobID: string(summary.LatestJobID),
+		LatestAt:    latestAt,
+		Reasons:     reasons,
 	}
 }
 

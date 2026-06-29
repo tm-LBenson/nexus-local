@@ -52,6 +52,8 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
+type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
+
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
@@ -143,6 +145,7 @@ export function App() {
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
   const [sourceDetail, setSourceDetail] = useState<DataSourceDetailResponse | null>(null);
+  const [scanEntryFilter, setScanEntryFilter] = useState<ScanEntryFilter>('all');
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
@@ -224,6 +227,10 @@ export function App() {
           .map((job) => [job.resource_id, job]),
       ),
     [activeJobs],
+  );
+  const visibleSourceScanEntries = useMemo(
+    () => (sourceDetail ? filterScanEntries(sourceDetail.scan_entries, scanEntryFilter) : []),
+    [sourceDetail, scanEntryFilter],
   );
   const failedJobs = useMemo(
     () => jobs?.jobs.filter((job) => job.state === 'failed') ?? [],
@@ -902,12 +909,18 @@ export function App() {
       const result = await scanDataSource(tenantID, source.id);
       setSourceDetail((current) => {
         if (!current || current.source.id !== source.id) {
-          return { source: result.source, jobs: [result.job], scan_entries: [] };
+          return {
+            source: result.source,
+            jobs: [result.job],
+            scan_entries: [],
+            scan_summary: emptyDataSourceScanSummary(),
+          };
         }
         return {
           source: result.source,
           jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
           scan_entries: current.scan_entries,
+          scan_summary: current.scan_summary,
         };
       });
       await Promise.all([
@@ -954,6 +967,7 @@ export function App() {
       const detail = await getDataSource(tenantID, source.id);
       setSourceDetail(detail);
       setSourceEditForm(sourceFormFromSource(detail.source));
+      setScanEntryFilter('all');
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -2065,6 +2079,34 @@ export function App() {
                       <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
                     </div>
                   </dl>
+                  {sourceDetail.scan_summary.total > 0 && (
+                    <section className="sourceScanSummary" aria-label="Latest scan summary">
+                      <div>
+                        <strong>{sourceDetail.scan_summary.total}</strong>
+                        <span>Files</span>
+                      </div>
+                      <div>
+                        <strong>{sourceDetail.scan_summary.imported}</strong>
+                        <span>Imported</span>
+                      </div>
+                      <div>
+                        <strong>{sourceDetail.scan_summary.skipped}</strong>
+                        <span>Skipped</span>
+                      </div>
+                      <div>
+                        <strong>{sourceDetail.scan_summary.failed}</strong>
+                        <span>Failed</span>
+                      </div>
+                      <div>
+                        <strong>{sourceDetail.scan_summary.deleted}</strong>
+                        <span>Deleted</span>
+                      </div>
+                      <div className="scanReasonSummary">
+                        <strong>{scanSummaryReasons(sourceDetail.scan_summary) || 'Clean'}</strong>
+                        <span>Reasons</span>
+                      </div>
+                    </section>
+                  )}
                   <details className="inlineDetails">
                     <summary>Edit</summary>
                     <form className="sourceForm sourceEditForm" onSubmit={submitSourceUpdate}>
@@ -2187,8 +2229,26 @@ export function App() {
                   </details>
                   <details className="inlineDetails" open={sourceDetail.scan_entries.length > 0}>
                     <summary>Files</summary>
+                    <div className="scanEntryToolbar">
+                      <span className="muted">
+                        {visibleSourceScanEntries.length} of {sourceDetail.scan_entries.length}
+                      </span>
+                      <select
+                        aria-label="Filter file outcomes"
+                        onChange={(event) =>
+                          setScanEntryFilter(event.target.value as ScanEntryFilter)
+                        }
+                        value={scanEntryFilter}
+                      >
+                        <option value="all">All outcomes</option>
+                        <option value="failed">Failed</option>
+                        <option value="skipped">Skipped</option>
+                        <option value="imported">Imported</option>
+                        <option value="deleted">Deleted</option>
+                      </select>
+                    </div>
                     <div className="tableList scanEntryList">
-                      {sourceDetail.scan_entries.map((entry) => (
+                      {visibleSourceScanEntries.map((entry) => (
                         <div className="scanEntryRow" key={`${entry.job_id}:${entry.path}`}>
                           <strong title={entry.path}>{entry.path}</strong>
                           <span className={scanOutcomeClass(entry)}>
@@ -2206,6 +2266,10 @@ export function App() {
                       {sourceDetail.scan_entries.length === 0 && (
                         <p className="muted">No file results yet</p>
                       )}
+                      {sourceDetail.scan_entries.length > 0 &&
+                        visibleSourceScanEntries.length === 0 && (
+                          <p className="muted">No files match this filter</p>
+                        )}
                     </div>
                   </details>
                   <details className="inlineDetails" open>
@@ -3770,6 +3834,35 @@ function hasActiveIngestionJob(detail: DocumentDetailResponse) {
       job.resource_id === detail.document.id &&
       isActiveJobState(job.state),
   );
+}
+
+function emptyDataSourceScanSummary(): DataSourceDetailResponse['scan_summary'] {
+  return {
+    total: 0,
+    imported: 0,
+    skipped: 0,
+    failed: 0,
+    deleted: 0,
+    reasons: {},
+  };
+}
+
+function filterScanEntries(
+  entries: DataSourceDetailResponse['scan_entries'],
+  filter: ScanEntryFilter,
+) {
+  if (filter === 'all') {
+    return entries;
+  }
+  return entries.filter((entry) => entry.outcome === filter);
+}
+
+function scanSummaryReasons(summary: DataSourceDetailResponse['scan_summary']) {
+  return Object.entries(summary.reasons)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([reason, count]) => `${titleCase(reason.replace(/_/g, ' '))} ${count}`)
+    .join(', ');
 }
 
 function sourceHasActiveScanJob(detail: DataSourceDetailResponse) {

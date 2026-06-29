@@ -157,6 +157,17 @@ export type DataSourceScanEntry = {
   created_at: string;
 };
 
+export type DataSourceScanSummary = {
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  deleted: number;
+  latest_job_id?: string;
+  latest_at?: string;
+  reasons: Record<string, number>;
+};
+
 export type RegisterDocumentResponse = {
   document: RegisteredDocument;
   job: RegisteredJob;
@@ -179,6 +190,7 @@ export type DataSourceDetailResponse = {
   source: DataSource;
   jobs: RegisteredJob[];
   scan_entries: DataSourceScanEntry[];
+  scan_summary: DataSourceScanSummary;
 };
 
 export type DataSourceScanResponse = {
