@@ -2139,6 +2139,55 @@ h3 {
   justify-content: flex-end;
 }
 
+.sourceRunHistoryTable {
+  display: grid;
+  width: 100%;
+  border: 1px solid #dbe5e5;
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.sourceRunHistoryHeader,
+.sourceRunHistoryRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 92px repeat(4, 76px) 86px;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+.sourceRunHistoryHeader {
+  color: #69777d;
+  background: #f3f7f6;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sourceRunHistoryRow {
+  border-top: 1px solid #edf2f2;
+  color: #172026;
+  font-size: 0.8rem;
+}
+
+.sourceRunHistoryRow strong,
+.sourceRunHistoryRow em,
+.sourceRunHistoryRow small {
+  min-width: 0;
+  overflow: hidden;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceRunHistoryRow em,
+.sourceRunHistoryRow small {
+  color: #52646c;
+  font-weight: 800;
+}
+
 .sourcePlanPanel {
   align-items: start;
 }
@@ -2836,6 +2885,15 @@ h3 {
 
   .sourceScanRunMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sourceRunHistoryHeader {
+    display: none;
+  }
+
+  .sourceRunHistoryRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
   }
 
   .scanReasonRow {

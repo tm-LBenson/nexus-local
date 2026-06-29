@@ -2694,6 +2694,7 @@ export function App() {
                     onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
                     refreshing={refreshingSourceID === sourceDetail.source.id}
                   />
+                  <SourceScanRunHistory detail={sourceDetail} />
                   <dl className="runtimeList detailList">
                     <div>
                       <dt>ID</dt>
@@ -5015,6 +5016,44 @@ function SourceScanRunStatus({
   );
 }
 
+function SourceScanRunHistory({ detail }: { detail: DataSourceDetailResponse }) {
+  const jobs = sourceScanJobs(detail).slice(0, 5);
+  if (jobs.length <= 1) {
+    return null;
+  }
+  return (
+    <details className="inlineDetails sourceRunHistory" open>
+      <summary>Runs</summary>
+      <div className="sourceRunHistoryTable" aria-label="Source scan run history">
+        <div className="sourceRunHistoryHeader">
+          <span>Run</span>
+          <span>State</span>
+          <span>Imported</span>
+          <span>Skipped</span>
+          <span>Deleted</span>
+          <span>Failed</span>
+          <span>Duration</span>
+        </div>
+        {jobs.map((job) => {
+          const run = sourceScanRunSummaryFromJob(job);
+          const metrics = sourceScanRunMetricMap(detail, job, run);
+          return (
+            <div className="sourceRunHistoryRow" key={job.id}>
+              <strong title={job.id}>{sourceScanRunHistoryLabel(job, run)}</strong>
+              <span className={stateClass(job.state)}>{job.state}</span>
+              <em>{metrics.imported}</em>
+              <em>{metrics.skipped}</em>
+              <em>{metrics.deleted}</em>
+              <em>{metrics.failed}</em>
+              <small>{sourceScanRunDurationLabel(job, run)}</small>
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
 function SourcePlanStatus({
   activeJob,
   detail,
@@ -5090,6 +5129,10 @@ function SourcePlanStatus({
 }
 
 function sourceLatestScanJob(detail: DataSourceDetailResponse) {
+  return sourceScanJobs(detail)[0];
+}
+
+function sourceScanJobs(detail: DataSourceDetailResponse) {
   return detail.jobs
     .filter(
       (job) =>
@@ -5097,7 +5140,7 @@ function sourceLatestScanJob(detail: DataSourceDetailResponse) {
         job.resource_type === 'data_source' &&
         job.resource_id === detail.source.id,
     )
-    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
 }
 
 function sourceScanRunSummaryFromJob(job: ListJobsResponse['jobs'][number]) {
@@ -5165,13 +5208,27 @@ function sourceScanRunMetrics(
   job: ListJobsResponse['jobs'][number],
   run: SourceScanRunSummary | null,
 ) {
-  const current = detail.scan_summary.latest_job_id === job.id ? detail.scan_summary : null;
+  const metrics = sourceScanRunMetricMap(detail, job, run);
   return [
-    { label: 'Imported', value: run?.imported ?? current?.imported ?? 0 },
-    { label: 'Skipped', value: run?.skipped ?? current?.skipped ?? 0 },
-    { label: 'Deleted', value: run?.deleted ?? current?.deleted ?? 0 },
-    { label: 'Failed', value: run?.failed ?? current?.failed ?? 0 },
+    { label: 'Imported', value: metrics.imported },
+    { label: 'Skipped', value: metrics.skipped },
+    { label: 'Deleted', value: metrics.deleted },
+    { label: 'Failed', value: metrics.failed },
   ];
+}
+
+function sourceScanRunMetricMap(
+  detail: DataSourceDetailResponse,
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  const current = detail.scan_summary.latest_job_id === job.id ? detail.scan_summary : null;
+  return {
+    imported: run?.imported ?? current?.imported ?? 0,
+    skipped: run?.skipped ?? current?.skipped ?? 0,
+    deleted: run?.deleted ?? current?.deleted ?? 0,
+    failed: run?.failed ?? current?.failed ?? 0,
+  };
 }
 
 function sourceScanRunStartedAt(
@@ -5209,6 +5266,27 @@ function sourceScanRunDurationMS(
     return null;
   }
   return Math.max(0, Date.parse(finishedAt) - Date.parse(sourceScanRunStartedAt(job, run)));
+}
+
+function sourceScanRunDurationLabel(
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  const duration = sourceScanRunDurationMS(job, run);
+  if (duration === null) {
+    return isActiveJobState(job.state) ? 'running' : '-';
+  }
+  return formatDurationMS(duration);
+}
+
+function sourceScanRunHistoryLabel(
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  const startedAt = sourceScanRunStartedAt(job, run);
+  const finishedAt = sourceScanRunFinishedAt(job, run);
+  const timestamp = finishedAt || startedAt || job.updated_at;
+  return formatDateTime(timestamp);
 }
 
 function SourcePlanReviewTable({ summary }: { summary: SourcePlanSummary }) {
