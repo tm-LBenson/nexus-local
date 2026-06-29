@@ -6,6 +6,8 @@ The product starts as a knowledge workspace: customers import documents, synced 
 
 The longer-term direction is a controlled agent platform. Agents should be able to use the same knowledge base, call approved tools, check identity, enforce policy, produce auditable actions, and hand off to a human when risk is too high.
 
+The sequenced build plan lives in [Roadmap](roadmap.md).
+
 ## Target Customers
 
 - Agencies and businesses with PII, regulated records, private operations data, or internal technical knowledge.

@@ -2,7 +2,7 @@
 
 Nexus Local is a self-hosted AI workspace for private document ingestion, semantic search, and retrieval-augmented chat. It is designed to run on local hardware, a NAS plus GPU workstation, rented GPU infrastructure, or a conventional cloud server without tying the application to one vendor.
 
-The project is early, but the core shape is already in place: a replaceable backend, a slim web UI, provider-neutral storage/search/model interfaces, and Docker profiles for self-hosted deployment. The longer-term direction is described in [Product Vision](docs/product-vision.md).
+The project is early, but the core shape is already in place: a replaceable backend, a slim web UI, provider-neutral storage/search/model interfaces, and Docker profiles for self-hosted deployment. The longer-term direction is described in [Product Vision](docs/product-vision.md), with build sequencing in [Roadmap](docs/roadmap.md).
 
 ## What It Does
 
@@ -352,15 +352,13 @@ See [Backup and Restore](docs/backup-restore.md) before changing persistent volu
 
 ## Roadmap
 
-Near-term priorities:
+The roadmap is organized from broad product phases down to buildable implementation slices:
 
-- Stronger local setup scripts.
-- Better worker visibility and retry controls.
-- Streaming chat responses.
-- Richer audit filters, export, and policy review surfaces.
-- Bulk data-source management for folders, synced drives, exports, and future connectors.
-- More document management tools.
-- Observability stack examples with Prometheus/Grafana/OpenTelemetry.
+- [Roadmap](docs/roadmap.md)
+- [Roadmap Details](docs/roadmap/README.md)
+- [Product Vision](docs/product-vision.md)
+
+Current build priority is Phase 1, MVP Stabilization, followed by Phase 2, Data Sources and Ingestion.
 
 ## License
 
