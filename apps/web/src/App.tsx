@@ -70,6 +70,21 @@ type SetupCheck = {
   blocking: boolean;
 };
 
+type SourceFormValues = {
+  type: string;
+  name: string;
+  root_path: string;
+  include_patterns: string;
+  exclude_patterns: string;
+  scan_interval_minutes: string;
+};
+
+type SourceTemplate = SourceFormValues & {
+  id: string;
+  label: string;
+  detail: string;
+};
+
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
 const scanEntryPageSize = 100;
 
@@ -94,7 +109,7 @@ const initialAuditFilters = {
   query: '',
 };
 
-const initialSourceForm = {
+const initialSourceForm: SourceFormValues = {
   type: 'synced_folder',
   name: '',
   root_path: '',
@@ -102,6 +117,103 @@ const initialSourceForm = {
   exclude_patterns: '',
   scan_interval_minutes: '0',
 };
+
+const broadDocumentIncludes = [
+  '**/*.txt',
+  '**/*.md',
+  '**/*.json',
+  '**/*.html',
+  '**/*.htm',
+  '**/*.csv',
+  '**/*.tsv',
+  '**/*.vtt',
+  '**/*.pdf',
+  '**/*.docx',
+  '**/*.pptx',
+  '**/*.xlsx',
+].join('\n');
+
+const commonDocumentExcludes = [
+  '**/~$*',
+  '**/.DS_Store',
+  '**/archive/**',
+  '**/Archive/**',
+  '**/backup/**',
+  '**/Backup/**',
+].join('\n');
+
+const sourceTemplates: SourceTemplate[] = [
+  {
+    id: 'sharepoint-sync',
+    label: 'SharePoint sync',
+    detail: 'Teams and SharePoint folders',
+    type: 'synced_folder',
+    name: 'SharePoint Docs',
+    root_path: '/sources/primary/SharePoint',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '1440',
+  },
+  {
+    id: 'onedrive-sync',
+    label: 'OneDrive sync',
+    detail: 'User or department drive',
+    type: 'synced_folder',
+    name: 'OneDrive Docs',
+    root_path: '/sources/primary/OneDrive',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '1440',
+  },
+  {
+    id: 'network-share',
+    label: 'Network share',
+    detail: 'SMB or NFS mounted host path',
+    type: 'network_share',
+    name: 'Shared Drive',
+    root_path: '/sources/primary',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '1440',
+  },
+  {
+    id: 'ticket-export',
+    label: 'Ticket export',
+    detail: 'Cases, HAR files, CSV, JSON',
+    type: 'export',
+    name: 'Ticket Export',
+    root_path: '/sources/primary/exports',
+    include_patterns: ['**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.txt', '**/*.md'].join(
+      '\n',
+    ),
+    exclude_patterns: ['**/attachments/**', '**/raw/**', '**/tmp/**', '**/temp/**'].join('\n'),
+    scan_interval_minutes: '0',
+  },
+  {
+    id: 'knowledge-base-export',
+    label: 'Knowledge base',
+    detail: 'Docs portal or help center export',
+    type: 'export',
+    name: 'Knowledge Base Export',
+    root_path: '/sources/primary/kb-export',
+    include_patterns: ['**/*.html', '**/*.htm', '**/*.md', '**/*.pdf', '**/*.docx'].join('\n'),
+    exclude_patterns: ['**/assets/**', '**/images/**', '**/static/**'].join('\n'),
+    scan_interval_minutes: '0',
+  },
+  {
+    id: 'runbooks',
+    label: 'Runbooks',
+    detail: 'Procedures and internal notes',
+    type: 'synced_folder',
+    name: 'Runbooks',
+    root_path: '/sources/primary/runbooks',
+    include_patterns: ['**/*.md', '**/*.txt', '**/*.pdf', '**/*.docx', '**/*.csv', '**/*.json'].join(
+      '\n',
+    ),
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '10080',
+  },
+];
 
 const supportedDocumentAccept = [
   '.txt',
@@ -789,6 +901,17 @@ export function App() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function applySourceTemplate(template: SourceTemplate) {
+    setSourceForm({
+      type: template.type,
+      name: template.name,
+      root_path: template.root_path,
+      include_patterns: template.include_patterns,
+      exclude_patterns: template.exclude_patterns,
+      scan_interval_minutes: template.scan_interval_minutes,
+    });
   }
 
   async function submitDataSource(event: FormEvent<HTMLFormElement>) {
@@ -1815,6 +1938,22 @@ export function App() {
               <details className="inlineDetails">
                 <summary>Add source</summary>
                 <form className="sourceForm" onSubmit={submitDataSource}>
+                  <details className="sourceTemplatePicker">
+                    <summary>Templates</summary>
+                    <div className="sourceTemplateGrid">
+                      {sourceTemplates.map((template) => (
+                        <button
+                          key={template.id}
+                          onClick={() => applySourceTemplate(template)}
+                          type="button"
+                        >
+                          <strong>{template.label}</strong>
+                          <span>{sourceTypeLabel(template.type)}</span>
+                          <small>{template.detail}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                   <input
                     aria-label="Source name"
                     onChange={(event) =>

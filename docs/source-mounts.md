@@ -27,6 +27,8 @@ In Library, create sources with paths under `/sources/primary`, for example:
 - `/sources/primary/exports`
 - `/sources/primary/customers/acme`
 
+Use the Add source templates for common starting points. They prefill source type, path, include rules, exclude rules, and schedule for SharePoint or Teams sync folders, OneDrive sync folders, network shares, ticket exports, knowledge base exports, and runbooks.
+
 ## Host Examples
 
 | Source type | Host path example | Library path |
