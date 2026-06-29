@@ -64,6 +64,9 @@ func TestReadinessIncludesPersistenceBackend(t *testing.T) {
 	if body["provider_preset"] != "starter" {
 		t.Fatalf("provider_preset = %v, want starter", body["provider_preset"])
 	}
+	if body["deployment_profile"] != "cpu-lite" {
+		t.Fatalf("deployment_profile = %v, want cpu-lite", body["deployment_profile"])
+	}
 }
 
 func TestModelRouteEndpoint(t *testing.T) {
@@ -1167,6 +1170,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		Env:                 "test",
 		Version:             "test",
 		CORSAllowedOrigin:   "http://localhost:5173",
+		DeploymentProfile:   "cpu-lite",
 		AuthMode:            authCfg.AuthMode,
 		DevUserID:           authCfg.DevUserID,
 		DevUserEmail:        authCfg.DevUserEmail,

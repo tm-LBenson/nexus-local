@@ -11,6 +11,7 @@ type Config struct {
 	HTTPAddr             string
 	Version              string
 	CORSAllowedOrigin    string
+	DeploymentProfile    string
 	AuthMode             string
 	DevUserID            string
 	DevUserEmail         string
@@ -50,6 +51,7 @@ func Load() Config {
 		HTTPAddr:             env("HTTP_ADDR", ":8080"),
 		Version:              env("APP_VERSION", "dev"),
 		CORSAllowedOrigin:    env("CORS_ALLOWED_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173"),
+		DeploymentProfile:    env("DEPLOYMENT_PROFILE", "cpu-lite"),
 		AuthMode:             env("AUTH_MODE", "dev"),
 		DevUserID:            env("DEV_USER_ID", "user_1"),
 		DevUserEmail:         env("DEV_USER_EMAIL", "dev@example.local"),

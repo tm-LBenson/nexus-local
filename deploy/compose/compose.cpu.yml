@@ -58,6 +58,7 @@ services:
       APP_ENV: ${APP_ENV:-local}
       HTTP_ADDR: "${HTTP_ADDR:-:8080}"
       CORS_ALLOWED_ORIGIN: "${CORS_ALLOWED_ORIGIN:-http://localhost:5173,http://127.0.0.1:5173}"
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cpu-lite}
       AUTH_MODE: ${AUTH_MODE:-dev}
       DEV_USER_ID: ${DEV_USER_ID:-user_1}
       DEV_USER_EMAIL: ${DEV_USER_EMAIL:-dev@example.local}
@@ -108,6 +109,7 @@ services:
     entrypoint: ["/worker"]
     environment:
       APP_ENV: local
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cpu-lite}
       PERSISTENCE_BACKEND: postgres
       RUN_MIGRATIONS: "true"
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable

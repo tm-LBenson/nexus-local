@@ -2062,6 +2062,7 @@ function SetupWizard({
   const blockingCount = checks.filter(
     (check) => check.blocking && check.status === 'blocked',
   ).length;
+  const commandProfile = readiness?.deployment_profile || 'cpu-lite';
   const commandGateway = readiness?.model_gateway || 'http://host.docker.internal:11434/v1';
   const commandModel = primaryTarget?.model || 'your-model-name';
 
@@ -2125,7 +2126,7 @@ function SetupWizard({
 
           <details className="inlineDetails" open={!canEnter}>
             <summary>Configure</summary>
-            <pre className="setupCode">{`.\\scripts\\setup.ps1 -Profile cpu-lite -ProviderPreset starter -ModelGatewayBaseUrl "${commandGateway}" -GeneralModelId "${commandModel}" -Force`}</pre>
+            <pre className="setupCode">{`.\\scripts\\setup.ps1 -Profile ${commandProfile} -ProviderPreset ${readiness?.provider_preset || 'starter'} -ModelGatewayBaseUrl "${commandGateway}" -GeneralModelId "${commandModel}" -Force`}</pre>
           </details>
 
           <details className="inlineDetails">
@@ -2380,10 +2381,10 @@ function friendlyErrorMessage(message: string) {
     lower.includes('timed out') ||
     lower.includes('timeout')
   ) {
-    return 'Model gateway timed out. Start the gateway or update the gateway URL, then recheck.';
+    return 'Model gateway timed out. It may still be loading; wait a minute, then recheck.';
   }
   if (lower.includes('connection refused') || lower.includes('actively refused')) {
-    return 'Nothing is listening at the model gateway URL. Start the gateway, then recheck.';
+    return 'Model gateway is starting or not listening yet. Wait a minute, then recheck.';
   }
   if (lower.includes('no such host')) {
     return 'Model gateway host was not found. Check the gateway URL for this machine.';

@@ -83,6 +83,7 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, envelope{
 			"status":                  "ready",
 			"auth_mode":               cfg.AuthMode,
+			"deployment_profile":      cfg.DeploymentProfile,
 			"persistence_backend":     cfg.PersistenceBackend,
 			"run_migrations":          cfg.RunMigrations,
 			"object_storage_backend":  cfg.ObjectStoreBackend,
