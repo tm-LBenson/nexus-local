@@ -274,7 +274,7 @@ The stream endpoint returns server-sent events: `status`, `delta`, `error`, and 
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
 Job responses include `error_message` when ingestion fails, and failed documents can be retried from the document detail view or retry endpoint.
-Source detail responses include recent source-scan jobs and per-file scan entries. Source scan jobs import supported files from managed source roots, skip unsupported/unsafe files, queue normal document ingestion jobs for each imported file, and report last-scan imported/skipped/failed counts on the source.
+Source detail responses include recent source-scan jobs and per-file scan entries. Source scan jobs import supported files from managed source roots, skip unsupported/unsafe/unchanged files, queue normal document ingestion jobs for each imported file, and report last-scan imported/skipped/failed counts on the source.
 Audit event responses include tenant, actor, action, resource, outcome, metadata, and timestamp fields for administrative review.
 
 Example document upload:

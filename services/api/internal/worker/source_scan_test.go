@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
@@ -99,10 +100,81 @@ func TestSourceScanWorkerImportsSupportedFiles(t *testing.T) {
 	}
 	outcomes := scanEntriesByPath(entries)
 	if outcomes["overview.md"].Outcome != domain.DataSourceScanOutcomeImported ||
+		!strings.HasPrefix(outcomes["overview.md"].ContentHash, "sha256:") ||
 		outcomes["nested/guide.txt"].Outcome != domain.DataSourceScanOutcomeImported ||
 		outcomes["image.png"].Outcome != domain.DataSourceScanOutcomeSkipped ||
 		outcomes["image.png"].Reason != "unsupported_type" {
 		t.Fatalf("scan entries = %#v", outcomes)
+	}
+}
+
+func TestSourceScanWorkerSkipsUnchangedFilesOnRescan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "overview.md"), "alpha docs")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	firstJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_1"))
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, firstJob); err != nil {
+		t.Fatalf("save first job: %v", err)
+	}
+
+	worker := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).WithObjectStore(objects)
+	firstResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	if firstResult.ImportedCount != 1 || firstResult.SkippedCount != 0 {
+		t.Fatalf("first result = %#v, want one import", firstResult)
+	}
+
+	secondJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_2"))
+	if err := repos.SaveJob(ctx, secondJob); err != nil {
+		t.Fatalf("save second job: %v", err)
+	}
+	secondResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if secondResult.ImportedCount != 0 || secondResult.SkippedCount != 1 || secondResult.FailedCount != 0 {
+		t.Fatalf("second result = %#v, want unchanged skip", secondResult)
+	}
+
+	documents, err := repos.ListDocuments(ctx, source.TenantID)
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(documents) != 1 {
+		t.Fatalf("documents len = %d, want unchanged rescan to keep one document", len(documents))
+	}
+	updatedSource, err := repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if updatedSource.LastScanImported != 0 || updatedSource.LastScanSkipped != 1 || updatedSource.LastScanFailed != 0 {
+		t.Fatalf("source counts = %d/%d/%d, want 0/1/0", updatedSource.LastScanImported, updatedSource.LastScanSkipped, updatedSource.LastScanFailed)
+	}
+
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	var unchanged domain.DataSourceScanEntry
+	for _, entry := range entries {
+		if entry.JobID == secondJob.ID && entry.Path == "overview.md" {
+			unchanged = entry
+			break
+		}
+	}
+	if unchanged.Outcome != domain.DataSourceScanOutcomeSkipped ||
+		unchanged.Reason != "unchanged" ||
+		unchanged.DocumentID == "" ||
+		!strings.HasPrefix(unchanged.ContentHash, "sha256:") {
+		t.Fatalf("unchanged entry = %#v", unchanged)
 	}
 }
 
@@ -282,8 +354,13 @@ func newTestDataSource(t *testing.T, root string, status domain.DataSourceStatus
 
 func newSourceScanJob(t *testing.T, source domain.DataSource) domain.Job {
 	t.Helper()
+	return newSourceScanJobWithID(t, source, domain.JobID("job_source_scan"))
+}
+
+func newSourceScanJobWithID(t *testing.T, source domain.DataSource, jobID domain.JobID) domain.Job {
+	t.Helper()
 	job, err := domain.NewJob(domain.JobCreate{
-		ID:           domain.JobID("job_source_scan"),
+		ID:           jobID,
 		TenantID:     source.TenantID,
 		Type:         domain.JobTypeSourceScan,
 		ResourceType: "data_source",

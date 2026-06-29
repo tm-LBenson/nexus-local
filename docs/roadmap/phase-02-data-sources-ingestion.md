@@ -26,7 +26,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.2 | Import folder UI that creates a source scan job. | User can queue a source scan from the app and see it in Activity. |
 | 2.3 | Source scan worker that walks allowed files and creates document jobs. | Fixture folder imports without blocking the API. |
 | 2.4 | Default include/exclude safety for supported extensions, hidden/cache paths, symlinks, and max size. | Test folder shows expected accepted/rejected counts and the UI shows scan totals. |
-| 2.5 | Incremental scan with changed/new/deleted detection. | Re-scan updates only changed files and preserves stable records. |
+| 2.5 | Hash-based incremental scan for unchanged files, followed by changed/deleted file reconciliation. | Re-scan skips unchanged files and the remaining work is explicit. |
 | 2.6 | Source detail panel with failures, retries, scan totals, recent jobs, and per-file scan outcomes. | User can answer "what happened to this import?" from the UI. |
 
 ## Dependencies
@@ -44,4 +44,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.6 establish the basic managed-source pipeline and source-level observability. Next, harden it with incremental scans, source-level document association, and delete/reindex controls.
+Slices 2.1 through 2.6 establish the basic managed-source pipeline, source-level observability, and unchanged-file scan skips. Next, harden it with source-level document association, changed/deleted file reconciliation, and delete/reindex controls.

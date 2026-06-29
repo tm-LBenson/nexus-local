@@ -320,16 +320,17 @@ type dataSourcePayload struct {
 }
 
 type dataSourceScanEntryPayload struct {
-	TenantID   string `json:"tenant_id"`
-	JobID      string `json:"job_id"`
-	SourceID   string `json:"source_id"`
-	Path       string `json:"path"`
-	Outcome    string `json:"outcome"`
-	Reason     string `json:"reason"`
-	Message    string `json:"message"`
-	DocumentID string `json:"document_id,omitempty"`
-	SizeBytes  int64  `json:"size_bytes"`
-	CreatedAt  string `json:"created_at"`
+	TenantID    string `json:"tenant_id"`
+	JobID       string `json:"job_id"`
+	SourceID    string `json:"source_id"`
+	Path        string `json:"path"`
+	Outcome     string `json:"outcome"`
+	Reason      string `json:"reason"`
+	Message     string `json:"message"`
+	DocumentID  string `json:"document_id,omitempty"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ContentHash string `json:"content_hash,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type jobPayload struct {
@@ -1449,16 +1450,17 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 
 func encodeDataSourceScanEntry(entry domain.DataSourceScanEntry) dataSourceScanEntryPayload {
 	return dataSourceScanEntryPayload{
-		TenantID:   string(entry.TenantID),
-		JobID:      string(entry.JobID),
-		SourceID:   string(entry.SourceID),
-		Path:       entry.Path,
-		Outcome:    string(entry.Outcome),
-		Reason:     entry.Reason,
-		Message:    entry.Message,
-		DocumentID: string(entry.DocumentID),
-		SizeBytes:  entry.SizeBytes,
-		CreatedAt:  entry.CreatedAt.Format(time.RFC3339),
+		TenantID:    string(entry.TenantID),
+		JobID:       string(entry.JobID),
+		SourceID:    string(entry.SourceID),
+		Path:        entry.Path,
+		Outcome:     string(entry.Outcome),
+		Reason:      entry.Reason,
+		Message:     entry.Message,
+		DocumentID:  string(entry.DocumentID),
+		SizeBytes:   entry.SizeBytes,
+		ContentHash: entry.ContentHash,
+		CreatedAt:   entry.CreatedAt.Format(time.RFC3339),
 	}
 }
 

@@ -50,16 +50,17 @@ type DataSource struct {
 }
 
 type DataSourceScanEntry struct {
-	TenantID   TenantID
-	JobID      JobID
-	SourceID   DataSourceID
-	Path       string
-	Outcome    DataSourceScanOutcome
-	Reason     string
-	Message    string
-	DocumentID DocumentID
-	SizeBytes  int64
-	CreatedAt  time.Time
+	TenantID    TenantID
+	JobID       JobID
+	SourceID    DataSourceID
+	Path        string
+	Outcome     DataSourceScanOutcome
+	Reason      string
+	Message     string
+	DocumentID  DocumentID
+	SizeBytes   int64
+	ContentHash string
+	CreatedAt   time.Time
 }
 
 type DataSourceCreate struct {
@@ -73,16 +74,17 @@ type DataSourceCreate struct {
 }
 
 type DataSourceScanEntryCreate struct {
-	TenantID   TenantID
-	JobID      JobID
-	SourceID   DataSourceID
-	Path       string
-	Outcome    DataSourceScanOutcome
-	Reason     string
-	Message    string
-	DocumentID DocumentID
-	SizeBytes  int64
-	Now        time.Time
+	TenantID    TenantID
+	JobID       JobID
+	SourceID    DataSourceID
+	Path        string
+	Outcome     DataSourceScanOutcome
+	Reason      string
+	Message     string
+	DocumentID  DocumentID
+	SizeBytes   int64
+	ContentHash string
+	Now         time.Time
 }
 
 func NewDataSource(input DataSourceCreate) (DataSource, error) {
@@ -131,16 +133,17 @@ func NewDataSourceScanEntry(input DataSourceScanEntryCreate) (DataSourceScanEntr
 	}
 
 	return DataSourceScanEntry{
-		TenantID:   input.TenantID,
-		JobID:      input.JobID,
-		SourceID:   input.SourceID,
-		Path:       strings.TrimSpace(input.Path),
-		Outcome:    input.Outcome,
-		Reason:     strings.TrimSpace(input.Reason),
-		Message:    strings.TrimSpace(input.Message),
-		DocumentID: input.DocumentID,
-		SizeBytes:  input.SizeBytes,
-		CreatedAt:  now,
+		TenantID:    input.TenantID,
+		JobID:       input.JobID,
+		SourceID:    input.SourceID,
+		Path:        strings.TrimSpace(input.Path),
+		Outcome:     input.Outcome,
+		Reason:      strings.TrimSpace(input.Reason),
+		Message:     strings.TrimSpace(input.Message),
+		DocumentID:  input.DocumentID,
+		SizeBytes:   input.SizeBytes,
+		ContentHash: strings.TrimSpace(input.ContentHash),
+		CreatedAt:   now,
 	}, nil
 }
 

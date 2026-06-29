@@ -2,8 +2,11 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path/filepath"
@@ -185,20 +188,24 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	info, err := os.Stat(root)
 	if err != nil {
 		result.FailedCount++
-		if saveErr := w.recordScanEntry(ctx, source, result.JobID, ".", domain.DataSourceScanOutcomeFailed, "cannot_access", err.Error(), "", 0); saveErr != nil {
+		if saveErr := w.recordScanEntry(ctx, source, result.JobID, ".", domain.DataSourceScanOutcomeFailed, "cannot_access", err.Error(), "", 0, ""); saveErr != nil {
 			return result, saveErr
 		}
 		return result, fmt.Errorf("source scan cannot access %q: %w", source.RootPath, err)
 	}
 	if !info.IsDir() {
 		result.FailedCount++
-		if saveErr := w.recordScanEntry(ctx, source, result.JobID, ".", domain.DataSourceScanOutcomeFailed, "not_directory", "source root is not a directory", "", 0); saveErr != nil {
+		if saveErr := w.recordScanEntry(ctx, source, result.JobID, ".", domain.DataSourceScanOutcomeFailed, "not_directory", "source root is not a directory", "", 0, ""); saveErr != nil {
 			return result, saveErr
 		}
 		return result, fmt.Errorf("source scan root %q is not a directory", source.RootPath)
 	}
 
 	policy := w.policy.normalized()
+	previousImported, err := w.latestImportedEntries(ctx, source)
+	if err != nil {
+		return result, err
+	}
 	var firstFailure error
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -207,7 +214,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		if walkErr != nil {
 			result.FailedCount++
 			relativeName := sourceRelativePath(root, path)
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "walk_error", walkErr.Error(), "", 0); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "walk_error", walkErr.Error(), "", 0, ""); saveErr != nil {
 				return saveErr
 			}
 			if firstFailure == nil {
@@ -223,7 +230,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			if policy.shouldSkipName(entry.Name()) || policy.shouldSkipDirectory(entry.Name()) {
 				result.SkippedCount++
 				result.SkippedPolicyCount++
-				if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName+"/", domain.DataSourceScanOutcomeSkipped, "policy", "directory excluded by scan policy", "", 0); saveErr != nil {
+				if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName+"/", domain.DataSourceScanOutcomeSkipped, "policy", "directory excluded by scan policy", "", 0, ""); saveErr != nil {
 					return saveErr
 				}
 				return filepath.SkipDir
@@ -233,7 +240,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		if entry.Type()&os.ModeSymlink != 0 {
 			result.SkippedCount++
 			result.SkippedPolicyCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "symlink", "symbolic links are skipped", "", 0); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "symlink", "symbolic links are skipped", "", 0, ""); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -241,7 +248,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		if policy.shouldSkipName(entry.Name()) {
 			result.SkippedCount++
 			result.SkippedPolicyCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "policy", "hidden file excluded by scan policy", "", 0); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "policy", "hidden file excluded by scan policy", "", 0, ""); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -250,7 +257,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		fileInfo, err := entry.Info()
 		if err != nil {
 			result.FailedCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "stat_failed", err.Error(), "", 0); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "stat_failed", err.Error(), "", 0, ""); saveErr != nil {
 				return saveErr
 			}
 			if firstFailure == nil {
@@ -262,7 +269,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			result.SkippedCount++
 			result.SkippedTooLargeCount++
 			message := fmt.Sprintf("%d bytes exceeds scan limit of %d bytes", fileInfo.Size(), policy.MaxFileBytes)
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "too_large", message, "", fileInfo.Size()); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "too_large", message, "", fileInfo.Size(), ""); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -272,7 +279,25 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		if err := ingest.ValidateDocumentType(relativeName, contentType); err != nil {
 			result.SkippedCount++
 			result.SkippedUnsupportedCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "unsupported_type", err.Error(), "", fileInfo.Size()); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "unsupported_type", err.Error(), "", fileInfo.Size(), ""); saveErr != nil {
+				return saveErr
+			}
+			return nil
+		}
+		contentHash, err := fileContentHash(path)
+		if err != nil {
+			result.FailedCount++
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "hash_failed", err.Error(), "", fileInfo.Size(), ""); saveErr != nil {
+				return saveErr
+			}
+			if firstFailure == nil {
+				firstFailure = fmt.Errorf("%s: %w", relativeName, err)
+			}
+			return nil
+		}
+		if previous, ok := previousImported[relativeName]; ok && previous.ContentHash == contentHash {
+			result.SkippedCount++
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "unchanged", "unchanged since previous scan", previous.DocumentID, fileInfo.Size(), contentHash); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -280,7 +305,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		file, err := os.Open(path)
 		if err != nil {
 			result.FailedCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "open_failed", err.Error(), "", fileInfo.Size()); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "open_failed", err.Error(), "", fileInfo.Size(), contentHash); saveErr != nil {
 				return saveErr
 			}
 			if firstFailure == nil {
@@ -299,7 +324,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		closeErr := file.Close()
 		if uploadErr != nil {
 			result.FailedCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "upload_failed", uploadErr.Error(), "", fileInfo.Size()); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "upload_failed", uploadErr.Error(), "", fileInfo.Size(), contentHash); saveErr != nil {
 				return saveErr
 			}
 			if firstFailure == nil {
@@ -309,7 +334,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		}
 		if closeErr != nil {
 			result.FailedCount++
-			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "close_failed", closeErr.Error(), uploadResult.Document.ID, fileInfo.Size()); saveErr != nil {
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "close_failed", closeErr.Error(), uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
 				return saveErr
 			}
 			if firstFailure == nil {
@@ -318,7 +343,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			return nil
 		}
 		result.ImportedCount++
-		if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeImported, "", "", uploadResult.Document.ID, fileInfo.Size()); saveErr != nil {
+		if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeImported, "", "", uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
 			return saveErr
 		}
 		return nil
@@ -332,23 +357,55 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	return result, nil
 }
 
-func (w SourceScanWorker) recordScanEntry(ctx context.Context, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, message string, documentID domain.DocumentID, sizeBytes int64) error {
+func (w SourceScanWorker) latestImportedEntries(ctx context.Context, source domain.DataSource) (map[string]domain.DataSourceScanEntry, error) {
+	entries, err := w.repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 0)
+	if err != nil {
+		return nil, err
+	}
+	latest := make(map[string]domain.DataSourceScanEntry)
+	for _, entry := range entries {
+		if entry.Outcome != domain.DataSourceScanOutcomeImported || entry.ContentHash == "" {
+			continue
+		}
+		if _, exists := latest[entry.Path]; !exists {
+			latest[entry.Path] = entry
+		}
+	}
+	return latest, nil
+}
+
+func (w SourceScanWorker) recordScanEntry(ctx context.Context, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, message string, documentID domain.DocumentID, sizeBytes int64, contentHash string) error {
 	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
-		TenantID:   source.TenantID,
-		JobID:      jobID,
-		SourceID:   source.ID,
-		Path:       path,
-		Outcome:    outcome,
-		Reason:     reason,
-		Message:    message,
-		DocumentID: documentID,
-		SizeBytes:  sizeBytes,
-		Now:        w.clock.Now(),
+		TenantID:    source.TenantID,
+		JobID:       jobID,
+		SourceID:    source.ID,
+		Path:        path,
+		Outcome:     outcome,
+		Reason:      reason,
+		Message:     message,
+		DocumentID:  documentID,
+		SizeBytes:   sizeBytes,
+		ContentHash: contentHash,
+		Now:         w.clock.Now(),
 	})
 	if err != nil {
 		return err
 	}
 	return w.repos.SaveDataSourceScanEntry(ctx, entry)
+}
+
+func fileContentHash(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func (w SourceScanWorker) markSourceFailed(ctx context.Context, source domain.DataSource, result SourceScanResult) error {

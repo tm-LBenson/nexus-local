@@ -337,9 +337,9 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 func (s *Store) SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO data_source_scan_entries (
-			tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, created_at
+			tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, content_hash, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (tenant_id, job_id, path) DO UPDATE
 		SET source_id = EXCLUDED.source_id,
 		    outcome = EXCLUDED.outcome,
@@ -347,19 +347,25 @@ func (s *Store) SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSo
 		    message = EXCLUDED.message,
 		    document_id = EXCLUDED.document_id,
 		    size_bytes = EXCLUDED.size_bytes,
+		    content_hash = EXCLUDED.content_hash,
 		    created_at = EXCLUDED.created_at
-	`, entry.TenantID, entry.JobID, entry.SourceID, entry.Path, entry.Outcome, entry.Reason, entry.Message, entry.DocumentID, entry.SizeBytes, entry.CreatedAt)
+	`, entry.TenantID, entry.JobID, entry.SourceID, entry.Path, entry.Outcome, entry.Reason, entry.Message, entry.DocumentID, entry.SizeBytes, entry.ContentHash, entry.CreatedAt)
 	return err
 }
 
 func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, limit int) ([]domain.DataSourceScanEntry, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, created_at
+	query := `
+		SELECT tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, content_hash, created_at
 		FROM data_source_scan_entries
 		WHERE tenant_id = $1 AND source_id = $2
 		ORDER BY created_at DESC, path
-		LIMIT $3
-	`, tenantID, sourceID, limit)
+	`
+	args := []any{tenantID, sourceID}
+	if limit > 0 {
+		query += " LIMIT $3"
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +384,7 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 			&entry.Message,
 			&entry.DocumentID,
 			&entry.SizeBytes,
+			&entry.ContentHash,
 			&entry.CreatedAt,
 		); err != nil {
 			return nil, err

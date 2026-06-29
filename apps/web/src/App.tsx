@@ -1806,7 +1806,7 @@ export function App() {
                       {sourceDetail.scan_entries.map((entry) => (
                         <div className="scanEntryRow" key={`${entry.job_id}:${entry.path}`}>
                           <strong title={entry.path}>{entry.path}</strong>
-                          <span className={scanOutcomeClass(entry.outcome)}>
+                          <span className={scanOutcomeClass(entry)}>
                             {titleCase(entry.outcome)}
                           </span>
                           <em title={scanEntryMessage(entry)}>{scanEntryReason(entry)}</em>
@@ -3376,13 +3376,16 @@ function sourceFailureMessage(detail: DataSourceDetailResponse) {
   );
 }
 
-function scanOutcomeClass(outcome: string) {
-  switch (outcome) {
+function scanOutcomeClass(entry: DataSourceDetailResponse['scan_entries'][number]) {
+  switch (entry.outcome) {
     case 'imported':
       return 'stateBadge stateReady';
     case 'failed':
       return 'stateBadge stateFailed';
     case 'skipped':
+      if (entry.reason === 'unchanged') {
+        return 'stateBadge stateReady';
+      }
       return 'stateBadge stateActive';
     default:
       return 'stateBadge';

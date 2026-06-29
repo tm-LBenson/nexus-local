@@ -149,6 +149,7 @@ export type DataSourceScanEntry = {
   message: string;
   document_id?: string;
   size_bytes: number;
+  content_hash?: string;
   created_at: string;
 };
 
