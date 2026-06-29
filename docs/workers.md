@@ -75,6 +75,8 @@ Document ingestion behavior:
 
 If ingestion fails, the worker transitions the document to `failed`, transitions the job to `failed`, and stores a concise `error_message` on the job. The document detail and activity views surface that message next to the retry action.
 
+Document ingestion can be parallelized with `WORKER_DOCUMENT_CONCURRENCY`. The default is `1`, which is safest for small local machines and weak model/embedding gateways. Increase it only when Postgres, object storage, embeddings, and Qdrant have enough capacity. Source scans remain single-threaded; they queue document ingestion jobs that the worker can then process concurrently.
+
 Current extraction support:
 
 - Text-like UTF-8 files: `.txt`, `.md`, `.json`, `.html`, `.htm`, `.csv`, `.tsv`, and `.vtt`.

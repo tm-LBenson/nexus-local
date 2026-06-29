@@ -40,6 +40,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.16 | Source scan recovery actions. | Failed scans surface direct actions to show failed files, export a failed-only CSV, and retry the scan after fixing the source. |
 | 2.17 | Live source scan progress. | An active scan shows current file-result counts as entries arrive, plus a refresh affordance for long imports. |
 | 2.18 | Source-level failed document retry. | Users can retry failed document-ingestion jobs for a source without manually opening each failed document. |
+| 2.19 | Configurable document ingestion concurrency. | Operators can tune parallel ingestion for larger imports while job claiming stays atomic and tested. |
 
 ## Dependencies
 
@@ -56,4 +57,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.18 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, and source-level failed document retry. Next, harden it with import performance tuning and richer batch import reporting for large customer folders.
+Slices 2.1 through 2.19 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, and configurable document ingestion concurrency. Next, harden it with richer batch import reporting and large-folder stress tests.

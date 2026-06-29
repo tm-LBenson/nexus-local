@@ -119,6 +119,7 @@ services:
       VECTOR_COLLECTION: ${VECTOR_COLLECTION:-documents}
       VECTOR_API_KEY: ${VECTOR_API_KEY:-}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
+      WORKER_DOCUMENT_CONCURRENCY: ${WORKER_DOCUMENT_CONCURRENCY:-1}
     depends_on:
       api:
         condition: service_started

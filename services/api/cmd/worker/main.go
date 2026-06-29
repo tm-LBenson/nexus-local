@@ -50,8 +50,12 @@ func main() {
 	if pollInterval <= 0 {
 		pollInterval = 2 * time.Second
 	}
+	documentConcurrency := cfg.WorkerDocumentConcurrency
+	if documentConcurrency < 1 {
+		documentConcurrency = 1
+	}
 
-	log.Printf("worker started with poll interval %s", pollInterval)
+	log.Printf("worker started with poll interval %s and document concurrency %d", pollInterval, documentConcurrency)
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,13 +88,18 @@ func main() {
 			continue
 		}
 
-		result, err := ingestionWorker.ProcessNext(ctx)
-		if err == nil {
-			log.Printf("processed document ingestion job=%s document=%s", result.JobID, result.DocumentID)
-			continue
-		}
-		if !errors.Is(err, store.ErrNotFound) {
+		batchResult, err := worker.ProcessDocumentIngestionBatch(ctx, ingestionWorker, documentConcurrency)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			log.Printf("worker error: %v", err)
+		}
+		if batchResult.Processed > 0 {
+			log.Printf(
+				"processed document ingestion batch processed=%d empty=%d failed=%d",
+				batchResult.Processed,
+				batchResult.Empty,
+				batchResult.Failed,
+			)
+			continue
 		}
 
 		timer := time.NewTimer(pollInterval)

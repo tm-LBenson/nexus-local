@@ -236,6 +236,7 @@ The API is configured through environment variables. Common settings:
 | `GENERAL_MODEL_ID` | `Qwen/Qwen2.5-7B-Instruct` | Default model ID sent to the gateway. |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.80` | Local vLLM GPU memory target for `gpu-local`. |
 | `VLLM_MAX_MODEL_LEN` | `8192` | Local vLLM max context length for `gpu-local`. |
+| `WORKER_DOCUMENT_CONCURRENCY` | `1` | Number of document ingestion jobs the worker can process in parallel. Raise carefully on machines with enough CPU, memory, embedding throughput, and vector-store capacity. |
 
 See [.env.example](.env.example) and [Deployment Profiles](docs/deployment-profiles.md) for more deployment-oriented settings.
 

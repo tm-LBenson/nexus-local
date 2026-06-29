@@ -123,7 +123,7 @@ failed -> processing | deleted
 
 Terminal states should stay terminal unless we intentionally add a recovery workflow.
 
-Jobs may carry `resource_type` and `resource_id` so a worker can claim work without needing to infer the subject from side effects. Document ingestion jobs use `document/<document_id>`. Failed jobs should carry a concise `error_message`; retrying creates a fresh queued job and clears any stale error when it is claimed.
+Jobs may carry `resource_type` and `resource_id` so a worker can claim work without needing to infer the subject from side effects. Document ingestion jobs use `document/<document_id>`. Failed jobs should carry a concise `error_message`; retrying creates a fresh queued job and clears any stale error when it is claimed. `WORKER_DOCUMENT_CONCURRENCY` allows one worker process to claim multiple document ingestion jobs in parallel; repository job claiming must remain atomic so no queued job is processed twice.
 
 ## TDD Boundary
 

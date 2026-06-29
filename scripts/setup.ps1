@@ -336,7 +336,7 @@ function Write-EnvFile($path, $values) {
         "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "VLLM_GPU_MEMORY_UTILIZATION",
         "VLLM_MAX_MODEL_LEN", "HUGGING_FACE_HUB_TOKEN",
-        "WORKER_POLL_INTERVAL"
+        "WORKER_POLL_INTERVAL", "WORKER_DOCUMENT_CONCURRENCY"
       )
     },
     @{ Title = "Web and Production Auth"; Keys = @(
@@ -625,6 +625,7 @@ Set-EnvValue $values "VLLM_GPU_MEMORY_UTILIZATION" (Get-EnvDefault $existingValu
 Set-EnvValue $values "VLLM_MAX_MODEL_LEN" (Get-EnvDefault $existingValues "VLLM_MAX_MODEL_LEN" "8192")
 Set-EnvValue $values "HUGGING_FACE_HUB_TOKEN" (Get-EnvDefault $existingValues "HUGGING_FACE_HUB_TOKEN" "")
 Set-EnvValue $values "WORKER_POLL_INTERVAL" "2s"
+Set-EnvValue $values "WORKER_DOCUMENT_CONCURRENCY" (Get-EnvDefault $existingValues "WORKER_DOCUMENT_CONCURRENCY" "1")
 Set-EnvValue $values "VITE_API_BASE_URL" $defaultWebApiBase
 Set-EnvValue $values "NEXUS_PUBLIC_URL" $publicUrlValue
 Set-EnvValue $values "NEXUS_SITE_ADDRESS" (Get-SiteAddress $publicUrlValue)
