@@ -1754,6 +1754,18 @@ h3 {
   justify-content: flex-end;
 }
 
+.auditToolbar {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.9fr) minmax(130px, 0.8fr) minmax(220px, 1.6fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.auditToolbar select,
+.auditToolbar input {
+  min-width: 0;
+}
+
 .statusGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1942,6 +1954,10 @@ h3 {
     display: grid;
     grid-template-columns: 1fr 1fr;
     width: 100%;
+  }
+
+  .auditToolbar {
+    grid-template-columns: 1fr;
   }
 
   .compactUpload {

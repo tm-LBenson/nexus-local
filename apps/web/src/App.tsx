@@ -75,6 +75,12 @@ const initialMemberForm = {
   role: 'member',
 };
 
+const initialAuditFilters = {
+  action: '',
+  outcome: '',
+  query: '',
+};
+
 const supportedDocumentAccept = [
   '.txt',
   '.md',
@@ -120,6 +126,7 @@ export function App() {
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
+  const [auditFilters, setAuditFilters] = useState(initialAuditFilters);
   const [tenantMembers, setTenantMembers] = useState<ListTenantMembersResponse | null>(null);
   const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
   const [conversationMessages, setConversationMessages] =
@@ -225,6 +232,21 @@ export function App() {
   const visibleAskModel = askResult?.completion.model || askForm.model_target;
   const showAskProgress = asking || askPhase === 'failed';
   const showAskResult = Boolean(askResult || visibleAskAnswer || showAskProgress || streamStatus);
+  const auditActionOptions = useMemo(
+    () => uniqueSorted(auditEvents?.events.map((event) => event.action) ?? []),
+    [auditEvents],
+  );
+  const auditOutcomeOptions = useMemo(
+    () => uniqueSorted(auditEvents?.events.map((event) => event.outcome) ?? []),
+    [auditEvents],
+  );
+  const filteredAuditEvents = useMemo(
+    () => filterAuditEvents(auditEvents?.events ?? [], auditFilters),
+    [auditEvents, auditFilters],
+  );
+  const auditFiltersActive = Boolean(
+    auditFilters.action || auditFilters.outcome || auditFilters.query.trim(),
+  );
   const contentTitle =
     activeView === 'ask'
       ? 'Dashboard'
@@ -2102,10 +2124,68 @@ export function App() {
                 <details className="settingsDetails">
                   <summary>
                     <span>Audit</span>
-                    <em>{auditEvents ? `${auditEvents.events.length} recent` : 'not loaded'}</em>
+                    <em>
+                      {auditEvents
+                        ? auditFiltersActive
+                          ? `${filteredAuditEvents.length}/${auditEvents.events.length} recent`
+                          : `${auditEvents.events.length} recent`
+                        : 'not loaded'}
+                    </em>
                   </summary>
                   <div className="settingsDetailsBody">
-                    <div className="settingsDetailsActions">
+                    <div className="auditToolbar">
+                      <select
+                        aria-label="Audit action filter"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            action: event.target.value,
+                          }))
+                        }
+                        value={auditFilters.action}
+                      >
+                        <option value="">All actions</option>
+                        {auditActionOptions.map((action) => (
+                          <option key={action} value={action}>
+                            {action}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Audit outcome filter"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            outcome: event.target.value,
+                          }))
+                        }
+                        value={auditFilters.outcome}
+                      >
+                        <option value="">All outcomes</option>
+                        {auditOutcomeOptions.map((outcome) => (
+                          <option key={outcome} value={outcome}>
+                            {outcome}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        aria-label="Audit text filter"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            query: event.target.value,
+                          }))
+                        }
+                        placeholder="Actor, resource, metadata"
+                        value={auditFilters.query}
+                      />
+                      <button
+                        disabled={!auditFiltersActive}
+                        onClick={() => setAuditFilters(initialAuditFilters)}
+                        type="button"
+                      >
+                        Clear
+                      </button>
                       <button
                         disabled={loadingAudit}
                         onClick={() => void refreshAuditEvents()}
@@ -2115,7 +2195,7 @@ export function App() {
                       </button>
                     </div>
                     <div className="tableList">
-                      {auditEvents?.events.map((event) => (
+                      {filteredAuditEvents.map((event) => (
                         <div className="auditRow" key={event.id} title={event.id}>
                           <strong>{event.action}</strong>
                           <span className={stateClass(event.outcome)}>{event.outcome}</span>
@@ -2130,6 +2210,11 @@ export function App() {
                       {auditEvents && auditEvents.events.length === 0 && (
                         <p className="muted">No audit events</p>
                       )}
+                      {auditEvents &&
+                        auditEvents.events.length > 0 &&
+                        filteredAuditEvents.length === 0 && (
+                          <p className="muted">No matching audit events</p>
+                        )}
                       {!auditEvents && !loadingAudit && <p className="muted">Audit not loaded</p>}
                     </div>
                   </div>
@@ -2871,6 +2956,38 @@ function auditResourceLabel(event: ListAuditEventsResponse['events'][number]) {
   return event.resource_type || event.resource_id || event.id;
 }
 
+function filterAuditEvents(
+  events: ListAuditEventsResponse['events'],
+  filters: typeof initialAuditFilters,
+) {
+  const query = filters.query.trim().toLowerCase();
+  return events.filter((event) => {
+    if (filters.action && event.action !== filters.action) {
+      return false;
+    }
+    if (filters.outcome && event.outcome !== filters.outcome) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const metadata = Object.entries(event.metadata)
+      .map(([key, value]) => `${key} ${value}`)
+      .join(' ');
+    const haystack = [
+      event.id,
+      event.actor_user_id,
+      event.action,
+      event.outcome,
+      auditResourceLabel(event),
+      metadata,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
 function auditMetadataLabel(metadata: Record<string, string>) {
   const entries = Object.entries(metadata).filter(([, value]) => value.trim() !== '');
   if (entries.length === 0) {
@@ -2880,6 +2997,12 @@ function auditMetadataLabel(metadata: Record<string, string>) {
     .slice(0, 4)
     .map(([key, value]) => `${key}=${value}`)
     .join(' / ');
+}
+
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values.filter((value) => value.trim() !== ''))).sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 function stateClass(state: string) {
