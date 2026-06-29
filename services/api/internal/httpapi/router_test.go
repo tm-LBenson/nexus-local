@@ -869,6 +869,106 @@ func TestDataSourceEndpointCanArchiveAndDeleteDocuments(t *testing.T) {
 	}
 }
 
+func TestDataSourceEndpointCanReindexDocuments(t *testing.T) {
+	server := newTestServerWithSeed(t, func(repos *memory.Store) {
+		source, err := domain.NewDataSource(domain.DataSourceCreate{
+			ID:       domain.DataSourceID("src_reindex"),
+			TenantID: domain.TenantID("tenant_1"),
+			OwnerID:  domain.UserID("user_1"),
+			Type:     domain.DataSourceTypeFolder,
+			Name:     "Reindex Source",
+			RootPath: "/sources/reindex",
+			Now:      httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new source: %v", err)
+		}
+		if err := repos.SaveDataSource(context.Background(), source); err != nil {
+			t.Fatalf("save source: %v", err)
+		}
+		document, err := domain.NewDocument(domain.DocumentCreate{
+			ID:         domain.DocumentID("doc_reindex"),
+			TenantID:   source.TenantID,
+			OwnerID:    source.OwnerID,
+			Name:       "reindex.md",
+			StorageKey: "tenants/tenant_1/documents/doc_reindex/reindex.md",
+			SizeBytes:  42,
+			Now:        httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new document: %v", err)
+		}
+		if err := repos.SaveDocument(context.Background(), document); err != nil {
+			t.Fatalf("save document: %v", err)
+		}
+		entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+			TenantID:    source.TenantID,
+			JobID:       domain.JobID("job_scan_reindex"),
+			SourceID:    source.ID,
+			Path:        "reindex.md",
+			Outcome:     domain.DataSourceScanOutcomeImported,
+			DocumentID:  document.ID,
+			SizeBytes:   document.SizeBytes,
+			ContentHash: "sha256:reindex",
+			Now:         httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new scan entry: %v", err)
+		}
+		if err := repos.SaveDataSourceScanEntry(context.Background(), entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	})
+
+	reindex := httptest.NewRecorder()
+	reindexReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_reindex/reindex?tenant_id=tenant_1", nil)
+	server.ServeHTTP(reindex, reindexReq)
+	if reindex.Code != http.StatusAccepted {
+		t.Fatalf("reindex status = %d, want %d, body = %s", reindex.Code, http.StatusAccepted, reindex.Body.String())
+	}
+	var reindexBody struct {
+		Source           dataSourcePayload `json:"source"`
+		Jobs             []jobPayload      `json:"jobs"`
+		QueuedDocuments  int               `json:"queued_documents"`
+		SkippedDocuments int               `json:"skipped_documents"`
+	}
+	if err := json.NewDecoder(reindex.Body).Decode(&reindexBody); err != nil {
+		t.Fatalf("decode reindex: %v", err)
+	}
+	if reindexBody.Source.ID != "src_reindex" ||
+		reindexBody.QueuedDocuments != 1 ||
+		reindexBody.SkippedDocuments != 0 ||
+		len(reindexBody.Jobs) != 1 ||
+		reindexBody.Jobs[0].Type != "document_ingestion" ||
+		reindexBody.Jobs[0].ResourceID != "doc_reindex" {
+		t.Fatalf("reindex body = %#v", reindexBody)
+	}
+
+	audit := httptest.NewRecorder()
+	auditReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1", nil)
+	server.ServeHTTP(audit, auditReq)
+	if audit.Code != http.StatusOK {
+		t.Fatalf("audit status = %d, want %d, body = %s", audit.Code, http.StatusOK, audit.Body.String())
+	}
+	var auditBody struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
+		t.Fatalf("decode audit: %v", err)
+	}
+	hasReindexAudit := false
+	for _, event := range auditBody.Events {
+		if event.Action == "data_source.reindex_requested" &&
+			event.ResourceID == "src_reindex" &&
+			event.Metadata["queued_documents"] == "1" {
+			hasReindexAudit = true
+		}
+	}
+	if !hasReindexAudit {
+		t.Fatalf("audit events = %#v, want reindex_requested event", auditBody.Events)
+	}
+}
+
 func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 

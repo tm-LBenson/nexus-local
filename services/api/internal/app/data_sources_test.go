@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -422,6 +423,120 @@ func TestRequestDataSourceScanRejectsArchivedSource(t *testing.T) {
 	}
 }
 
+func TestRequestDataSourceReindexQueuesDocumentJobs(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, &sourceReindexIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	firstDocument := newSourceDocument(t, "doc_source_1", "source/one.md")
+	secondDocument := newSourceDocument(t, "doc_source_2", "source/two.md")
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	for _, document := range []domain.Document{firstDocument, secondDocument} {
+		if err := repos.SaveDocument(ctx, document); err != nil {
+			t.Fatalf("save document %s: %v", document.ID, err)
+		}
+	}
+	for _, entry := range []domain.DataSourceScanEntry{
+		newSourceScanEntry(t, source, domain.JobID("job_scan_1"), "one.md", domain.DataSourceScanOutcomeImported, "", firstDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_1"), "two.md", domain.DataSourceScanOutcomeSkipped, "unchanged", secondDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_2"), "gone.md", domain.DataSourceScanOutcomeDeleted, "missing", domain.DocumentID("doc_gone")),
+	} {
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry %s: %v", entry.Path, err)
+		}
+	}
+	activeJob, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_active_ingestion"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   string(secondDocument.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new active job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, activeJob); err != nil {
+		t.Fatalf("save active job: %v", err)
+	}
+
+	result, err := service.RequestReindex(ctx, ReindexDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("request reindex: %v", err)
+	}
+	if result.Source.ID != source.ID || len(result.Jobs) != 1 || result.SkippedDocumentCount != 1 {
+		t.Fatalf("result = %#v, want one queued and one skipped", result)
+	}
+	if result.Jobs[0].Type != domain.JobTypeDocumentIngestion ||
+		result.Jobs[0].ResourceType != "document" ||
+		result.Jobs[0].ResourceID != string(firstDocument.ID) ||
+		result.Jobs[0].State != domain.JobStateQueued {
+		t.Fatalf("queued job = %#v", result.Jobs[0])
+	}
+	savedJob, err := repos.GetJob(ctx, source.TenantID, result.Jobs[0].ID)
+	if err != nil {
+		t.Fatalf("get saved reindex job: %v", err)
+	}
+	if savedJob.ResourceID != string(firstDocument.ID) {
+		t.Fatalf("saved job = %#v", savedJob)
+	}
+}
+
+func TestRequestDataSourceReindexRejectsActiveScan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, &sourceReindexIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_scan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourceScan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new scan job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save scan job: %v", err)
+	}
+
+	_, err = service.RequestReindex(ctx, ReindexDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
+func TestRequestDataSourceReindexRejectsArchivedSource(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, &sourceReindexIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusArchived)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	_, err := service.RequestReindex(ctx, ReindexDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
 func TestGetDataSourceRejectsMissingSource(t *testing.T) {
 	service := NewDataSourceService(memory.New(), fixedIDs{}, fixedClock{})
 
@@ -491,4 +606,21 @@ func newSourceScanEntry(t *testing.T, source domain.DataSource, jobID domain.Job
 		t.Fatalf("new scan entry: %v", err)
 	}
 	return entry
+}
+
+type sourceReindexIDs struct {
+	job int
+}
+
+func (g *sourceReindexIDs) NewDocumentID() domain.DocumentID {
+	return domain.DocumentID("doc_reindex")
+}
+
+func (g *sourceReindexIDs) NewDataSourceID() domain.DataSourceID {
+	return domain.DataSourceID("src_reindex")
+}
+
+func (g *sourceReindexIDs) NewJobID() domain.JobID {
+	g.job++
+	return domain.JobID(fmt.Sprintf("job_reindex_%d", g.job))
 }

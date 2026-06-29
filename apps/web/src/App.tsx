@@ -40,6 +40,7 @@ import {
   listDocuments,
   listJobs,
   listTenantMembers,
+  reindexDataSource,
   retryDocument,
   scanDataSource,
   searchDocuments,
@@ -167,6 +168,7 @@ export function App() {
   const [archivingSourceID, setArchivingSourceID] = useState('');
   const [deletingSourceDocumentsID, setDeletingSourceDocumentsID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
+  const [reindexingSourceID, setReindexingSourceID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
@@ -908,6 +910,31 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setScanningSourceID('');
+    }
+  }
+
+  async function requestDataSourceReindex(source: ListDataSourcesResponse['sources'][number]) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setReindexingSourceID(source.id);
+    setError(null);
+    try {
+      const result = await reindexDataSource(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id ? { ...current, source: result.source } : current,
+      );
+      await Promise.all([
+        refreshDataSources(tenantID),
+        refreshDocuments(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setReindexingSourceID('');
     }
   }
 
@@ -1804,6 +1831,19 @@ export function App() {
                                 : 'Rescan'}
                           </button>
                           <button
+                            disabled={
+                              Boolean(scanJob) ||
+                              reindexingSourceID === source.id ||
+                              source.status === 'archived' ||
+                              archivingSourceID === source.id ||
+                              deletingSourceDocumentsID === source.id
+                            }
+                            onClick={() => void requestDataSourceReindex(source)}
+                            type="button"
+                          >
+                            {reindexingSourceID === source.id ? 'Reindexing' : 'Reindex'}
+                          </button>
+                          <button
                             className="dangerButton"
                             disabled={
                               archivingSourceID === source.id ||
@@ -1868,6 +1908,20 @@ export function App() {
                       <details className="rowMenu detailMenu">
                         <summary>More</summary>
                         <div className="rowMenuActions">
+                          <button
+                            disabled={
+                              reindexingSourceID === sourceDetail.source.id ||
+                              sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActiveScanJob(sourceDetail)
+                            }
+                            onClick={() => void requestDataSourceReindex(sourceDetail.source)}
+                            type="button"
+                          >
+                            {reindexingSourceID === sourceDetail.source.id
+                              ? 'Reindexing'
+                              : 'Reindex'}
+                          </button>
                           <button
                             className="dangerButton"
                             disabled={

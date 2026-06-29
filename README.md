@@ -136,7 +136,7 @@ Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint
 
 The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
-The app Library can also create managed sources, edit source paths, refresh source detail, queue rescans, archive sources, and explicitly delete documents imported from a source. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
+The app Library can also create managed sources, edit source paths, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
 
 Stop the stack:
 
@@ -260,6 +260,7 @@ Useful endpoints during development:
 - `GET /v1/data-sources/{source_id}?tenant_id=tenant_1`
 - `PATCH /v1/data-sources/{source_id}`
 - `POST /v1/data-sources/{source_id}/scan?tenant_id=tenant_1`
+- `POST /v1/data-sources/{source_id}/reindex?tenant_id=tenant_1`
 - `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1`
 - `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1&delete_documents=true`
 - `GET /v1/jobs?tenant_id=tenant_1`
@@ -275,7 +276,7 @@ The stream endpoint returns server-sent events: `status`, `delta`, `error`, and 
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
 Job responses include `error_message` when ingestion fails, and failed documents can be retried from the document detail view or retry endpoint.
-Source detail responses include recent source-scan jobs and per-file scan entries. Source scan jobs import supported files from managed source roots, skip unsupported/unsafe/unchanged files, replace prior documents for changed source paths, delete prior documents for missing source paths, queue normal document ingestion jobs for each imported file, and report last-scan imported/skipped/failed counts on the source.
+Source detail responses include recent source-scan jobs and per-file scan entries. Source scan jobs import supported files from managed source roots, skip unsupported/unsafe/unchanged files, replace prior documents for changed source paths, delete prior documents for missing source paths, queue normal document ingestion jobs for each imported file, and report last-scan imported/skipped/failed counts on the source. Source reindex requests queue fresh ingestion jobs for currently active documents referenced by the latest source scan entries while skipping documents that are deleted, missing, or already queued.
 Audit event responses include tenant, actor, action, resource, outcome, metadata, and timestamp fields for administrative review.
 
 Example document upload:

@@ -62,6 +62,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/data-sources", listDataSourcesHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/scan", scanDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("POST /v1/data-sources/{source_id}/reindex", reindexDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/data-sources/{source_id}", getDataSourceHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("PATCH /v1/data-sources/{source_id}", updateDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("DELETE /v1/data-sources/{source_id}", archiveDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
@@ -978,6 +979,35 @@ func scanDataSourceHandler(service app.DataSourceService, authorizer internalaut
 	}
 }
 
+func reindexDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.RequestReindex(r.Context(), app.ReindexDataSourceInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "reindex data source", err)
+			return
+		}
+		jobs := make([]jobPayload, 0, len(result.Jobs))
+		for _, job := range result.Jobs {
+			jobs = append(jobs, encodeJob(job))
+		}
+		recordDataSourceReindexAudit(r.Context(), audit, tenantID, principal.UserID, result.Source, len(result.Jobs), result.SkippedDocumentCount)
+		writeJSON(w, http.StatusAccepted, envelope{
+			"source":            encodeDataSource(result.Source),
+			"jobs":              jobs,
+			"queued_documents":  len(result.Jobs),
+			"skipped_documents": result.SkippedDocumentCount,
+		})
+	}
+}
+
 func archiveDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
@@ -1051,6 +1081,25 @@ func recordDataSourceDocumentsDeletedAudit(ctx context.Context, audit app.AuditS
 			"root_path":         source.RootPath,
 			"status":            string(source.Status),
 			"deleted_documents": strconv.Itoa(deletedDocuments),
+		},
+	})
+}
+
+func recordDataSourceReindexAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, source domain.DataSource, queuedDocuments int, skippedDocuments int) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       "data_source.reindex_requested",
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Metadata: map[string]string{
+			"name":              source.Name,
+			"type":              string(source.Type),
+			"root_path":         source.RootPath,
+			"status":            string(source.Status),
+			"queued_documents":  strconv.Itoa(queuedDocuments),
+			"skipped_documents": strconv.Itoa(skippedDocuments),
 		},
 	})
 }

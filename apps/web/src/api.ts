@@ -182,6 +182,13 @@ export type DataSourceScanResponse = {
   job: RegisteredJob;
 };
 
+export type DataSourceReindexResponse = {
+  source: DataSource;
+  jobs: RegisteredJob[];
+  queued_documents: number;
+  skipped_documents: number;
+};
+
 export type DocumentDetailResponse = {
   document: RegisteredDocument;
   jobs: RegisteredJob[];
@@ -402,6 +409,14 @@ export async function scanDataSource(tenantId: string, sourceId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<DataSourceScanResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}/scan?${params.toString()}`,
+    { method: 'POST' },
+  );
+}
+
+export async function reindexDataSource(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceReindexResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}/reindex?${params.toString()}`,
     { method: 'POST' },
   );
 }

@@ -30,6 +30,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.6 | Source detail panel with failures, retries, scan totals, recent jobs, and per-file scan outcomes. | User can answer "what happened to this import?" from the UI. |
 | 2.7 | Source management controls for edit, refresh, rescan, and archive. | User can correct source paths and manage scans from Library without scripts. |
 | 2.8 | Explicit destructive source cleanup. | User can archive a source and delete documents imported from that source, with audit trail and active-scan protection. |
+| 2.9 | Source-level reindex controls. | User can queue fresh ingestion jobs for documents from a source without rescanning the folder. |
 
 ## Dependencies
 
@@ -46,4 +47,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.8 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, and explicit destructive cleanup. Next, harden it with source-level reindex controls and richer include/exclude configuration.
+Slices 2.1 through 2.9 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, and manual reindexing. Next, harden it with richer include/exclude configuration and scheduled source maintenance.

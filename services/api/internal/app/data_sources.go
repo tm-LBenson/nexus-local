@@ -61,6 +61,11 @@ type ScanDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type ReindexDataSourceInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+}
+
 type DataSourceResult struct {
 	Source               domain.DataSource
 	DeletedDocumentCount int
@@ -75,6 +80,12 @@ type DataSourceDetailResult struct {
 type ScanDataSourceResult struct {
 	Source domain.DataSource
 	Job    domain.Job
+}
+
+type ReindexDataSourceResult struct {
+	Source               domain.DataSource
+	Jobs                 []domain.Job
+	SkippedDocumentCount int
 }
 
 type ListDataSourcesResult struct {
@@ -326,6 +337,80 @@ func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSource
 	}, nil
 }
 
+func (s DataSourceService) RequestReindex(ctx context.Context, input ReindexDataSourceInput) (ReindexDataSourceResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ReindexDataSourceResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return ReindexDataSourceResult{}, fmt.Errorf("reindex data source: %w", domain.ErrInvalidEntity)
+	}
+
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return ReindexDataSourceResult{}, err
+	}
+	if source.Status == domain.DataSourceStatusArchived {
+		return ReindexDataSourceResult{}, fmt.Errorf("archived data source %s cannot be reindexed: %w", source.ID, domain.ErrInvalidStateTransition)
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return ReindexDataSourceResult{}, err
+	}
+	for _, job := range jobs {
+		if isActiveDataSourceScanJob(job, source.ID) {
+			return ReindexDataSourceResult{}, fmt.Errorf("source %s has an active scan job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+	}
+
+	documentIDs, err := s.activeDocumentIDsForSource(ctx, source)
+	if err != nil {
+		return ReindexDataSourceResult{}, err
+	}
+	queued := make([]domain.Job, 0, len(documentIDs))
+	skipped := 0
+	for _, documentID := range documentIDs {
+		document, err := s.repos.GetDocument(ctx, source.TenantID, documentID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				skipped++
+				continue
+			}
+			return ReindexDataSourceResult{}, err
+		}
+		if document.Status == domain.DocumentStatusDeleted {
+			skipped++
+			continue
+		}
+		if hasActiveDocumentIngestionJob(jobs, document.ID) {
+			skipped++
+			continue
+		}
+
+		job, err := domain.NewJob(domain.JobCreate{
+			ID:           s.ids.NewJobID(),
+			TenantID:     document.TenantID,
+			Type:         domain.JobTypeDocumentIngestion,
+			ResourceType: "document",
+			ResourceID:   string(document.ID),
+			Now:          s.clock.Now(),
+		})
+		if err != nil {
+			return ReindexDataSourceResult{}, err
+		}
+		if err := s.repos.SaveJob(ctx, job); err != nil {
+			return ReindexDataSourceResult{}, err
+		}
+		queued = append(queued, job)
+	}
+
+	return ReindexDataSourceResult{
+		Source:               source,
+		Jobs:                 queued,
+		SkippedDocumentCount: skipped,
+	}, nil
+}
+
 func filterActiveDataSources(sources []domain.DataSource) []domain.DataSource {
 	active := sources[:0]
 	for _, source := range sources {
@@ -341,4 +426,13 @@ func isActiveDataSourceScanJob(job domain.Job, sourceID domain.DataSourceID) boo
 		return false
 	}
 	return job.State == domain.JobStateQueued || job.State == domain.JobStateRunning || job.State == domain.JobStateRetrying
+}
+
+func hasActiveDocumentIngestionJob(jobs []domain.Job, documentID domain.DocumentID) bool {
+	for _, job := range jobs {
+		if isActiveDocumentIngestionJob(job, documentID) {
+			return true
+		}
+	}
+	return false
 }
