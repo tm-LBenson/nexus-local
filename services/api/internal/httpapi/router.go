@@ -985,16 +985,24 @@ func archiveDataSourceHandler(service app.DataSourceService, authorizer internal
 		if !ok {
 			return
 		}
+		deleteDocuments := strings.EqualFold(r.URL.Query().Get("delete_documents"), "true")
 		result, err := service.Archive(r.Context(), app.ArchiveDataSourceInput{
-			TenantID:     tenantID,
-			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+			TenantID:        tenantID,
+			DataSourceID:    domain.DataSourceID(r.PathValue("source_id")),
+			DeleteDocuments: deleteDocuments,
 		})
 		if err != nil {
 			writeDataSourceError(w, "archive data source", err)
 			return
 		}
 		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.archived", result.Source, domain.AuditOutcomeSucceeded)
-		writeJSON(w, http.StatusOK, envelope{"source": encodeDataSource(result.Source)})
+		if deleteDocuments {
+			recordDataSourceDocumentsDeletedAudit(r.Context(), audit, tenantID, principal.UserID, result.Source, result.DeletedDocumentCount)
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"source":            encodeDataSource(result.Source),
+			"deleted_documents": result.DeletedDocumentCount,
+		})
 	}
 }
 
@@ -1025,6 +1033,24 @@ func recordDataSourceAudit(ctx context.Context, audit app.AuditService, tenantID
 			"type":      string(source.Type),
 			"root_path": source.RootPath,
 			"status":    string(source.Status),
+		},
+	})
+}
+
+func recordDataSourceDocumentsDeletedAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, source domain.DataSource, deletedDocuments int) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       "data_source.documents_deleted",
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Metadata: map[string]string{
+			"name":              source.Name,
+			"type":              string(source.Type),
+			"root_path":         source.RootPath,
+			"status":            string(source.Status),
+			"deleted_documents": strconv.Itoa(deletedDocuments),
 		},
 	})
 }

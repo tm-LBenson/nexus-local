@@ -168,6 +168,7 @@ export type ListDataSourcesResponse = {
 
 export type DataSourceResponse = {
   source: DataSource;
+  deleted_documents?: number;
 };
 
 export type DataSourceDetailResponse = {
@@ -382,8 +383,15 @@ export async function getDataSource(tenantId: string, sourceId: string) {
   );
 }
 
-export async function archiveDataSource(tenantId: string, sourceId: string) {
+export async function archiveDataSource(
+  tenantId: string,
+  sourceId: string,
+  options: { delete_documents?: boolean } = {},
+) {
   const params = new URLSearchParams({ tenant_id: tenantId });
+  if (options.delete_documents) {
+    params.set('delete_documents', 'true');
+  }
   return request<DataSourceResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}?${params.toString()}`,
     { method: 'DELETE' },

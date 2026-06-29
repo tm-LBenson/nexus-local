@@ -136,7 +136,7 @@ Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint
 
 The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
-The app Library can also create managed sources, edit source paths, refresh source detail, queue rescans, and archive sources from the source menu/detail panel. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
+The app Library can also create managed sources, edit source paths, refresh source detail, queue rescans, archive sources, and explicitly delete documents imported from a source. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
 
 Stop the stack:
 
@@ -261,6 +261,7 @@ Useful endpoints during development:
 - `PATCH /v1/data-sources/{source_id}`
 - `POST /v1/data-sources/{source_id}/scan?tenant_id=tenant_1`
 - `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1`
+- `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1&delete_documents=true`
 - `GET /v1/jobs?tenant_id=tenant_1`
 - `GET /v1/audit-events?tenant_id=tenant_1`
 - `POST /v1/search`

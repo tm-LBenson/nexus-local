@@ -2,22 +2,26 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 )
 
 type DataSourceIDs interface {
+	NewDocumentID() domain.DocumentID
 	NewDataSourceID() domain.DataSourceID
 	NewJobID() domain.JobID
 }
 
 type DataSourceService struct {
-	repos store.RepositorySet
-	ids   DataSourceIDs
-	clock Clock
+	repos     store.RepositorySet
+	ids       DataSourceIDs
+	clock     Clock
+	documents DocumentService
 }
 
 type CreateDataSourceInput struct {
@@ -47,8 +51,9 @@ type ListDataSourcesInput struct {
 }
 
 type ArchiveDataSourceInput struct {
-	TenantID     domain.TenantID
-	DataSourceID domain.DataSourceID
+	TenantID        domain.TenantID
+	DataSourceID    domain.DataSourceID
+	DeleteDocuments bool
 }
 
 type ScanDataSourceInput struct {
@@ -57,7 +62,8 @@ type ScanDataSourceInput struct {
 }
 
 type DataSourceResult struct {
-	Source domain.DataSource
+	Source               domain.DataSource
+	DeletedDocumentCount int
 }
 
 type DataSourceDetailResult struct {
@@ -76,10 +82,25 @@ type ListDataSourcesResult struct {
 }
 
 func NewDataSourceService(repos store.RepositorySet, ids DataSourceIDs, clock Clock) DataSourceService {
-	return DataSourceService{repos: repos, ids: ids, clock: clock}
+	return DataSourceService{
+		repos:     repos,
+		ids:       ids,
+		clock:     clock,
+		documents: NewDocumentService(repos, ids, clock),
+	}
 }
 
 const maxScanEntryListLimit = 100
+
+func (s DataSourceService) WithObjectStore(objects providers.ObjectStore) DataSourceService {
+	s.documents = s.documents.WithObjectStore(objects)
+	return s
+}
+
+func (s DataSourceService) WithVectorIndex(vectors providers.VectorIndex) DataSourceService {
+	s.documents = s.documents.WithVectorIndex(vectors)
+	return s
+}
 
 func (s DataSourceService) Create(ctx context.Context, input CreateDataSourceInput) (DataSourceResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -173,9 +194,47 @@ func (s DataSourceService) Archive(ctx context.Context, input ArchiveDataSourceI
 	if err := ctx.Err(); err != nil {
 		return DataSourceResult{}, err
 	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return DataSourceResult{}, fmt.Errorf("archive data source: %w", domain.ErrInvalidEntity)
+	}
 	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
 	if err != nil {
 		return DataSourceResult{}, err
+	}
+	deletedDocuments := 0
+	if input.DeleteDocuments {
+		jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+		if err != nil {
+			return DataSourceResult{}, err
+		}
+		for _, job := range jobs {
+			if isActiveDataSourceScanJob(job, source.ID) {
+				return DataSourceResult{}, fmt.Errorf("source %s has an active scan job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+			}
+		}
+		documentIDs, err := s.activeDocumentIDsForSource(ctx, source)
+		if err != nil {
+			return DataSourceResult{}, err
+		}
+		for _, documentID := range documentIDs {
+			document, err := s.repos.GetDocument(ctx, source.TenantID, documentID)
+			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					continue
+				}
+				return DataSourceResult{}, err
+			}
+			if document.Status == domain.DocumentStatusDeleted {
+				continue
+			}
+			if _, err := s.documents.DeleteDocument(ctx, DeleteDocumentInput{
+				TenantID:   source.TenantID,
+				DocumentID: documentID,
+			}); err != nil {
+				return DataSourceResult{}, err
+			}
+			deletedDocuments++
+		}
 	}
 	if source.Status != domain.DataSourceStatusArchived {
 		if err := source.Transition(domain.DataSourceStatusArchived, s.clock.Now()); err != nil {
@@ -185,7 +244,39 @@ func (s DataSourceService) Archive(ctx context.Context, input ArchiveDataSourceI
 			return DataSourceResult{}, err
 		}
 	}
-	return DataSourceResult{Source: source}, nil
+	return DataSourceResult{Source: source, DeletedDocumentCount: deletedDocuments}, nil
+}
+
+func (s DataSourceService) activeDocumentIDsForSource(ctx context.Context, source domain.DataSource) ([]domain.DocumentID, error) {
+	entries, err := s.repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 0)
+	if err != nil {
+		return nil, err
+	}
+	latestSeen := map[string]bool{}
+	uniqueDocuments := map[domain.DocumentID]bool{}
+	documentIDs := make([]domain.DocumentID, 0)
+	for _, entry := range entries {
+		if latestSeen[entry.Path] {
+			continue
+		}
+		latestSeen[entry.Path] = true
+		if !isActiveSourceDocumentEntry(entry) || uniqueDocuments[entry.DocumentID] {
+			continue
+		}
+		uniqueDocuments[entry.DocumentID] = true
+		documentIDs = append(documentIDs, entry.DocumentID)
+	}
+	return documentIDs, nil
+}
+
+func isActiveSourceDocumentEntry(entry domain.DataSourceScanEntry) bool {
+	if entry.DocumentID == "" {
+		return false
+	}
+	if entry.Outcome == domain.DataSourceScanOutcomeImported {
+		return true
+	}
+	return entry.Outcome == domain.DataSourceScanOutcomeSkipped && entry.Reason == "unchanged"
 }
 
 func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSourceInput) (ScanDataSourceResult, error) {

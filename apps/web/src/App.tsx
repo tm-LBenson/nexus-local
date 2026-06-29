@@ -165,6 +165,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [creatingSource, setCreatingSource] = useState(false);
   const [archivingSourceID, setArchivingSourceID] = useState('');
+  const [deletingSourceDocumentsID, setDeletingSourceDocumentsID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
@@ -842,19 +843,32 @@ export function App() {
     }
   }
 
-  async function removeDataSource(source: ListDataSourcesResponse['sources'][number]) {
-    if (!window.confirm(`Archive ${source.name}?`)) {
+  async function removeDataSource(
+    source: ListDataSourcesResponse['sources'][number],
+    deleteDocuments = false,
+  ) {
+    const prompt = deleteDocuments
+      ? `Archive ${source.name} and delete documents imported from this source?`
+      : `Archive ${source.name}?`;
+    if (!window.confirm(prompt)) {
       return;
     }
-    setArchivingSourceID(source.id);
+    if (deleteDocuments) {
+      setDeletingSourceDocumentsID(source.id);
+    } else {
+      setArchivingSourceID(source.id);
+    }
     setError(null);
     try {
-      const result = await archiveDataSource(tenantID, source.id);
+      const result = await archiveDataSource(tenantID, source.id, {
+        delete_documents: deleteDocuments,
+      });
       setSourceDetail((current) =>
         current && current.source.id === source.id ? { ...current, source: result.source } : current,
       );
       await Promise.all([
         refreshDataSources(tenantID),
+        deleteDocuments ? refreshDocuments(tenantID) : Promise.resolve(),
         refreshJobs(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
       ]);
@@ -862,6 +876,7 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setArchivingSourceID('');
+      setDeletingSourceDocumentsID('');
     }
   }
 
@@ -1790,7 +1805,10 @@ export function App() {
                           </button>
                           <button
                             className="dangerButton"
-                            disabled={archivingSourceID === source.id}
+                            disabled={
+                              archivingSourceID === source.id ||
+                              deletingSourceDocumentsID === source.id
+                            }
                             onClick={() => void removeDataSource(source)}
                             type="button"
                           >
@@ -1854,12 +1872,27 @@ export function App() {
                             className="dangerButton"
                             disabled={
                               sourceDetail.source.status === 'archived' ||
-                              archivingSourceID === sourceDetail.source.id
+                              archivingSourceID === sourceDetail.source.id ||
+                              deletingSourceDocumentsID === sourceDetail.source.id
                             }
                             onClick={() => void removeDataSource(sourceDetail.source)}
                             type="button"
                           >
                             {archivingSourceID === sourceDetail.source.id ? 'Archiving' : 'Archive'}
+                          </button>
+                          <button
+                            className="dangerButton"
+                            disabled={
+                              deletingSourceDocumentsID === sourceDetail.source.id ||
+                              Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActiveScanJob(sourceDetail)
+                            }
+                            onClick={() => void removeDataSource(sourceDetail.source, true)}
+                            type="button"
+                          >
+                            {deletingSourceDocumentsID === sourceDetail.source.id
+                              ? 'Deleting'
+                              : 'Delete docs'}
                           </button>
                         </div>
                       </details>

@@ -760,6 +760,115 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 }
 
+func TestDataSourceEndpointCanArchiveAndDeleteDocuments(t *testing.T) {
+	server := newTestServerWithSeed(t, func(repos *memory.Store) {
+		source, err := domain.NewDataSource(domain.DataSourceCreate{
+			ID:       domain.DataSourceID("src_cleanup"),
+			TenantID: domain.TenantID("tenant_1"),
+			OwnerID:  domain.UserID("user_1"),
+			Type:     domain.DataSourceTypeFolder,
+			Name:     "Cleanup Source",
+			RootPath: "/sources/cleanup",
+			Now:      httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new source: %v", err)
+		}
+		if err := repos.SaveDataSource(context.Background(), source); err != nil {
+			t.Fatalf("save source: %v", err)
+		}
+		document, err := domain.NewDocument(domain.DocumentCreate{
+			ID:         domain.DocumentID("doc_cleanup"),
+			TenantID:   source.TenantID,
+			OwnerID:    source.OwnerID,
+			Name:       "cleanup.md",
+			StorageKey: "tenants/tenant_1/documents/doc_cleanup/cleanup.md",
+			SizeBytes:  42,
+			Now:        httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new document: %v", err)
+		}
+		if err := repos.SaveDocument(context.Background(), document); err != nil {
+			t.Fatalf("save document: %v", err)
+		}
+		entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+			TenantID:    source.TenantID,
+			JobID:       domain.JobID("job_scan_cleanup"),
+			SourceID:    source.ID,
+			Path:        "cleanup.md",
+			Outcome:     domain.DataSourceScanOutcomeImported,
+			DocumentID:  document.ID,
+			SizeBytes:   document.SizeBytes,
+			ContentHash: "sha256:cleanup",
+			Now:         httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new scan entry: %v", err)
+		}
+		if err := repos.SaveDataSourceScanEntry(context.Background(), entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	})
+
+	remove := httptest.NewRecorder()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/data-sources/src_cleanup?tenant_id=tenant_1&delete_documents=true", nil)
+	server.ServeHTTP(remove, removeReq)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, want %d, body = %s", remove.Code, http.StatusOK, remove.Body.String())
+	}
+	var removeBody struct {
+		Source           dataSourcePayload `json:"source"`
+		DeletedDocuments int               `json:"deleted_documents"`
+	}
+	if err := json.NewDecoder(remove.Body).Decode(&removeBody); err != nil {
+		t.Fatalf("decode archive: %v", err)
+	}
+	if removeBody.Source.Status != "archived" || removeBody.DeletedDocuments != 1 {
+		t.Fatalf("remove body = %#v, want archived with one deleted document", removeBody)
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/documents?tenant_id=tenant_1", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list documents status = %d, want %d, body = %s", list.Code, http.StatusOK, list.Body.String())
+	}
+	var listBody struct {
+		Documents []documentPayload `json:"documents"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list documents: %v", err)
+	}
+	if len(listBody.Documents) != 0 {
+		t.Fatalf("documents = %#v, want deleted source document hidden", listBody.Documents)
+	}
+
+	audit := httptest.NewRecorder()
+	auditReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1", nil)
+	server.ServeHTTP(audit, auditReq)
+	if audit.Code != http.StatusOK {
+		t.Fatalf("audit status = %d, want %d, body = %s", audit.Code, http.StatusOK, audit.Body.String())
+	}
+	var auditBody struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
+		t.Fatalf("decode audit: %v", err)
+	}
+	hasDeleteAudit := false
+	for _, event := range auditBody.Events {
+		if event.Action == "data_source.documents_deleted" &&
+			event.ResourceID == "src_cleanup" &&
+			event.Metadata["deleted_documents"] == "1" {
+			hasDeleteAudit = true
+		}
+	}
+	if !hasDeleteAudit {
+		t.Fatalf("audit events = %#v, want documents_deleted event", auditBody.Events)
+	}
+}
+
 func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 
@@ -1574,11 +1683,14 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 	}
 	ids := &httpIDs{}
 	embedder := embeddinghash.New("test", 16)
+	objectStore := objectmemory.New()
 	vectorIndex := vectormemory.New()
 	documents := app.NewDocumentService(repos, ids, httpClock{}).
-		WithObjectStore(objectmemory.New()).
+		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
-	dataSources := app.NewDataSourceService(repos, ids, httpClock{})
+	dataSources := app.NewDataSourceService(repos, ids, httpClock{}).
+		WithObjectStore(objectStore).
+		WithVectorIndex(vectorIndex)
 	jobs := app.NewJobService(repos)
 	audit := app.NewAuditService(repos, ids, httpClock{})
 	seedEmbedding, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})

@@ -55,7 +55,9 @@ func main() {
 	documentService := app.NewDocumentService(repos, ids, clock).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
-	dataSourceService := app.NewDataSourceService(repos, ids, clock)
+	dataSourceService := app.NewDataSourceService(repos, ids, clock).
+		WithObjectStore(objectStore).
+		WithVectorIndex(vectorIndex)
 	jobService := app.NewJobService(repos)
 	auditService := app.NewAuditService(repos, ids, clock)
 	searchService := app.NewSearchService(embedder, vectorIndex)

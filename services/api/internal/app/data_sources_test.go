@@ -3,9 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
+	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
+	vectormemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/vector/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
@@ -197,6 +201,138 @@ func TestArchiveDataSource(t *testing.T) {
 	}
 }
 
+func TestArchiveDataSourceCanDeleteImportedDocuments(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	vectors := vectormemory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{}).
+		WithObjectStore(objects).
+		WithVectorIndex(vectors)
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	firstDocument := newSourceDocument(t, "doc_source_1", "source/one.md")
+	secondDocument := newSourceDocument(t, "doc_source_2", "source/two.md")
+	otherDocument := newSourceDocument(t, "doc_other", "other.md")
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	for _, document := range []domain.Document{firstDocument, secondDocument, otherDocument} {
+		if err := repos.SaveDocument(ctx, document); err != nil {
+			t.Fatalf("save document %s: %v", document.ID, err)
+		}
+		if _, err := objects.PutObject(ctx, providers.ObjectPut{
+			TenantID:    document.TenantID,
+			Key:         document.StorageKey,
+			Body:        strings.NewReader(string(document.ID)),
+			ContentType: "text/markdown",
+			SizeBytes:   int64(len(document.ID)),
+		}); err != nil {
+			t.Fatalf("put object %s: %v", document.ID, err)
+		}
+	}
+	if err := vectors.Upsert(ctx, []providers.Vector{
+		{
+			TenantID:   source.TenantID,
+			DocumentID: firstDocument.ID,
+			ChunkID:    "chunk_1",
+			Values:     []float32{1},
+			Text:       "one",
+		},
+		{
+			TenantID:   source.TenantID,
+			DocumentID: secondDocument.ID,
+			ChunkID:    "chunk_2",
+			Values:     []float32{1},
+			Text:       "two",
+		},
+	}); err != nil {
+		t.Fatalf("upsert vectors: %v", err)
+	}
+	for _, entry := range []domain.DataSourceScanEntry{
+		newSourceScanEntry(t, source, domain.JobID("job_scan_1"), "one.md", domain.DataSourceScanOutcomeImported, "", firstDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_1"), "two.md", domain.DataSourceScanOutcomeSkipped, "unchanged", secondDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_2"), "gone.md", domain.DataSourceScanOutcomeDeleted, "missing", domain.DocumentID("doc_gone")),
+	} {
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry %s: %v", entry.Path, err)
+		}
+	}
+
+	result, err := service.Archive(ctx, ArchiveDataSourceInput{
+		TenantID:        source.TenantID,
+		DataSourceID:    source.ID,
+		DeleteDocuments: true,
+	})
+	if err != nil {
+		t.Fatalf("archive source with documents: %v", err)
+	}
+	if result.Source.Status != domain.DataSourceStatusArchived || result.DeletedDocumentCount != 2 {
+		t.Fatalf("result = %#v, want archived with two deleted documents", result)
+	}
+	for _, documentID := range []domain.DocumentID{firstDocument.ID, secondDocument.ID} {
+		document, err := repos.GetDocument(ctx, source.TenantID, documentID)
+		if err != nil {
+			t.Fatalf("get document %s: %v", documentID, err)
+		}
+		if document.Status != domain.DocumentStatusDeleted {
+			t.Fatalf("document %s status = %q, want deleted", documentID, document.Status)
+		}
+	}
+	other, err := repos.GetDocument(ctx, source.TenantID, otherDocument.ID)
+	if err != nil {
+		t.Fatalf("get other document: %v", err)
+	}
+	if other.Status == domain.DocumentStatusDeleted {
+		t.Fatalf("other document status = %q, want active", other.Status)
+	}
+	if keys := objects.Keys(); len(keys) != 1 || keys[0] != otherDocument.StorageKey {
+		t.Fatalf("object keys = %v, want only other document object", keys)
+	}
+	if vectors.Count() != 0 {
+		t.Fatalf("vector count = %d, want source vectors deleted", vectors.Count())
+	}
+}
+
+func TestArchiveDataSourceWithDocumentsRejectsActiveScan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_scan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourceScan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new scan job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save scan job: %v", err)
+	}
+
+	_, err = service.Archive(ctx, ArchiveDataSourceInput{
+		TenantID:        source.TenantID,
+		DataSourceID:    source.ID,
+		DeleteDocuments: true,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+	saved, err := repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if saved.Status != domain.DataSourceStatusActive {
+		t.Fatalf("source status = %q, want active", saved.Status)
+	}
+}
+
 func TestRequestDataSourceScanQueuesJob(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -318,4 +454,41 @@ func newDataSource(t *testing.T, id string, status domain.DataSourceStatus) doma
 		}
 	}
 	return source
+}
+
+func newSourceDocument(t *testing.T, id string, name string) domain.Document {
+	t.Helper()
+	document, err := domain.NewDocument(domain.DocumentCreate{
+		ID:         domain.DocumentID(id),
+		TenantID:   domain.TenantID("tenant_1"),
+		OwnerID:    domain.UserID("user_1"),
+		Name:       name,
+		StorageKey: "tenants/tenant_1/documents/" + id + "/" + name,
+		SizeBytes:  42,
+		Now:        fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new document: %v", err)
+	}
+	return document
+}
+
+func newSourceScanEntry(t *testing.T, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, documentID domain.DocumentID) domain.DataSourceScanEntry {
+	t.Helper()
+	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+		TenantID:    source.TenantID,
+		JobID:       jobID,
+		SourceID:    source.ID,
+		Path:        path,
+		Outcome:     outcome,
+		Reason:      reason,
+		DocumentID:  documentID,
+		SizeBytes:   42,
+		ContentHash: "sha256:" + string(documentID),
+		Now:         fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new scan entry: %v", err)
+	}
+	return entry
 }
