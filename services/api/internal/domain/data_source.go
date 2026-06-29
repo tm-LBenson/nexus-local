@@ -41,6 +41,8 @@ type DataSource struct {
 	Type             DataSourceType
 	Name             string
 	RootPath         string
+	IncludePatterns  []string
+	ExcludePatterns  []string
 	Status           DataSourceStatus
 	LastScanAt       *time.Time
 	LastScanImported int
@@ -65,13 +67,15 @@ type DataSourceScanEntry struct {
 }
 
 type DataSourceCreate struct {
-	ID       DataSourceID
-	TenantID TenantID
-	OwnerID  UserID
-	Type     DataSourceType
-	Name     string
-	RootPath string
-	Now      time.Time
+	ID              DataSourceID
+	TenantID        TenantID
+	OwnerID         UserID
+	Type            DataSourceType
+	Name            string
+	RootPath        string
+	IncludePatterns []string
+	ExcludePatterns []string
+	Now             time.Time
 }
 
 type DataSourceScanEntryCreate struct {
@@ -93,6 +97,14 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 	if sourceType == "" {
 		sourceType = DataSourceTypeFolder
 	}
+	includePatterns, err := NormalizeDataSourcePatterns(input.IncludePatterns)
+	if err != nil {
+		return DataSource{}, fmt.Errorf("data source include patterns: %w", err)
+	}
+	excludePatterns, err := NormalizeDataSourcePatterns(input.ExcludePatterns)
+	if err != nil {
+		return DataSource{}, fmt.Errorf("data source exclude patterns: %w", err)
+	}
 	if emptyID(string(input.ID)) ||
 		emptyID(string(input.TenantID)) ||
 		emptyID(string(input.OwnerID)) ||
@@ -107,15 +119,17 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 	}
 
 	return DataSource{
-		ID:        input.ID,
-		TenantID:  input.TenantID,
-		OwnerID:   input.OwnerID,
-		Type:      sourceType,
-		Name:      strings.TrimSpace(input.Name),
-		RootPath:  strings.TrimSpace(input.RootPath),
-		Status:    DataSourceStatusActive,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:              input.ID,
+		TenantID:        input.TenantID,
+		OwnerID:         input.OwnerID,
+		Type:            sourceType,
+		Name:            strings.TrimSpace(input.Name),
+		RootPath:        strings.TrimSpace(input.RootPath),
+		IncludePatterns: includePatterns,
+		ExcludePatterns: excludePatterns,
+		Status:          DataSourceStatusActive,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}, nil
 }
 
@@ -148,9 +162,17 @@ func NewDataSourceScanEntry(input DataSourceScanEntryCreate) (DataSourceScanEntr
 	}, nil
 }
 
-func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, now time.Time) error {
+func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, includePatterns []string, excludePatterns []string, now time.Time) error {
 	if sourceType == "" {
 		sourceType = s.Type
+	}
+	normalizedInclude, err := NormalizeDataSourcePatterns(includePatterns)
+	if err != nil {
+		return fmt.Errorf("data source update include patterns: %w", err)
+	}
+	normalizedExclude, err := NormalizeDataSourcePatterns(excludePatterns)
+	if err != nil {
+		return fmt.Errorf("data source update exclude patterns: %w", err)
 	}
 	if !sourceType.Valid() ||
 		strings.TrimSpace(name) == "" ||
@@ -164,6 +186,8 @@ func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath str
 	s.Name = strings.TrimSpace(name)
 	s.Type = sourceType
 	s.RootPath = strings.TrimSpace(rootPath)
+	s.IncludePatterns = normalizedInclude
+	s.ExcludePatterns = normalizedExclude
 	s.UpdatedAt = now
 	return nil
 }
@@ -248,6 +272,45 @@ func validateScanCounts(imported int, skipped int, failed int) error {
 		return fmt.Errorf("data source scan counts: %w", ErrInvalidEntity)
 	}
 	return nil
+}
+
+const maxDataSourcePatterns = 100
+const maxDataSourcePatternLength = 240
+
+func NormalizeDataSourcePatterns(patterns []string) ([]string, error) {
+	normalized := make([]string, 0, len(patterns))
+	seen := map[string]bool{}
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(strings.ReplaceAll(pattern, "\\", "/"))
+		pattern = strings.TrimPrefix(pattern, "/")
+		if pattern == "" || strings.HasPrefix(pattern, "#") {
+			continue
+		}
+		if len(pattern) > maxDataSourcePatternLength {
+			return nil, fmt.Errorf("pattern %q is too long: %w", pattern, ErrInvalidEntity)
+		}
+		if strings.Contains(pattern, "\x00") || hasParentPathSegment(pattern) {
+			return nil, fmt.Errorf("pattern %q is not allowed: %w", pattern, ErrInvalidEntity)
+		}
+		if seen[pattern] {
+			continue
+		}
+		seen[pattern] = true
+		normalized = append(normalized, pattern)
+		if len(normalized) > maxDataSourcePatterns {
+			return nil, fmt.Errorf("too many patterns: %w", ErrInvalidEntity)
+		}
+	}
+	return normalized, nil
+}
+
+func hasParentPathSegment(pattern string) bool {
+	for _, segment := range strings.Split(pattern, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func (s DataSourceStatus) CanTransition(next DataSourceStatus) bool {

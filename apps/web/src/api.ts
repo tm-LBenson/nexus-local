@@ -117,6 +117,8 @@ export type DataSource = {
   type: string;
   name: string;
   root_path: string;
+  include_patterns: string[];
+  exclude_patterns: string[];
   status: string;
   last_scan_at?: string;
   last_scan_imported: number;
@@ -366,6 +368,8 @@ export async function createDataSource(input: {
   type: string;
   name: string;
   root_path: string;
+  include_patterns: string[];
+  exclude_patterns: string[];
 }) {
   return request<DataSourceResponse>('/v1/data-sources', {
     method: 'POST',
@@ -375,7 +379,14 @@ export async function createDataSource(input: {
 
 export async function updateDataSource(
   sourceId: string,
-  input: { tenant_id: string; type: string; name: string; root_path: string },
+  input: {
+    tenant_id: string;
+    type: string;
+    name: string;
+    root_path: string;
+    include_patterns: string[];
+    exclude_patterns: string[];
+  },
 ) {
   return request<DataSourceResponse>(`/v1/data-sources/${encodeURIComponent(sourceId)}`, {
     method: 'PATCH',

@@ -457,6 +457,58 @@ func TestSourceScanWorkerAppliesDefaultSafetyPolicy(t *testing.T) {
 	}
 }
 
+func TestSourceScanWorkerAppliesSourcePatterns(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "keep.md"), "alpha")
+	mustWriteFile(t, filepath.Join(root, "notes.txt"), "text docs")
+	mustWriteFile(t, filepath.Join(root, "draft.md"), "draft docs")
+	mustWriteFile(t, filepath.Join(root, "archive", "old.md"), "old docs")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	source.IncludePatterns = []string{"*.md"}
+	source.ExcludePatterns = []string{"draft.md", "archive/**"}
+	job := newSourceScanJob(t, source)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	worker := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).WithObjectStore(objects)
+	result, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("process source scan: %v", err)
+	}
+	if result.ImportedCount != 1 ||
+		result.SkippedCount != 3 ||
+		result.SkippedPolicyCount != 3 ||
+		result.FailedCount != 0 {
+		t.Fatalf("result = %#v, want 1 imported and 3 pattern skips", result)
+	}
+
+	documents, err := repos.ListDocuments(ctx, source.TenantID)
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(documents) != 1 || documents[0].Name != "keep.md" {
+		t.Fatalf("documents = %#v, want only keep.md", documents)
+	}
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	outcomes := scanEntriesByPath(entries)
+	if outcomes["keep.md"].Outcome != domain.DataSourceScanOutcomeImported ||
+		outcomes["notes.txt"].Reason != "not_included" ||
+		outcomes["draft.md"].Reason != "excluded" ||
+		outcomes["archive/"].Reason != "excluded" {
+		t.Fatalf("scan entries = %#v", outcomes)
+	}
+}
+
 func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

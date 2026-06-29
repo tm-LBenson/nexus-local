@@ -850,6 +850,17 @@ h3 {
   width: 100%;
 }
 
+.sourcePatternFields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sourcePatternFields textarea {
+  min-height: 74px;
+}
+
 .uploadBar input[type="file"] {
   min-height: 36px;
   padding: 5px 8px;
@@ -2127,5 +2138,9 @@ h3 {
 
   .sourceHeader em {
     justify-self: start;
+  }
+
+  .sourcePatternFields {
+    grid-template-columns: 1fr;
   }
 }

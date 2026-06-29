@@ -29,6 +29,48 @@ func TestNewDataSourceDefaultsToActiveFolder(t *testing.T) {
 	if source.CreatedAt != now || source.UpdatedAt != now {
 		t.Fatalf("timestamps = %s/%s, want %s", source.CreatedAt, source.UpdatedAt, now)
 	}
+	if len(source.IncludePatterns) != 0 || len(source.ExcludePatterns) != 0 {
+		t.Fatalf("patterns = %#v/%#v, want empty defaults", source.IncludePatterns, source.ExcludePatterns)
+	}
+}
+
+func TestNewDataSourceNormalizesPatterns(t *testing.T) {
+	source, err := NewDataSource(DataSourceCreate{
+		ID:              DataSourceID("src_1"),
+		TenantID:        TenantID("tenant_1"),
+		OwnerID:         UserID("user_1"),
+		Name:            "Support Docs",
+		RootPath:        "C:\\Docs",
+		IncludePatterns: []string{" **/*.md ", "", "# comment", "\\cases\\**", "**/*.md"},
+		ExcludePatterns: []string{"/archive/**", "tmp/**"},
+	})
+	if err != nil {
+		t.Fatalf("new data source: %v", err)
+	}
+	if len(source.IncludePatterns) != 2 ||
+		source.IncludePatterns[0] != "**/*.md" ||
+		source.IncludePatterns[1] != "cases/**" {
+		t.Fatalf("include patterns = %#v", source.IncludePatterns)
+	}
+	if len(source.ExcludePatterns) != 2 ||
+		source.ExcludePatterns[0] != "archive/**" ||
+		source.ExcludePatterns[1] != "tmp/**" {
+		t.Fatalf("exclude patterns = %#v", source.ExcludePatterns)
+	}
+}
+
+func TestNewDataSourceRejectsUnsafePattern(t *testing.T) {
+	_, err := NewDataSource(DataSourceCreate{
+		ID:              DataSourceID("src_1"),
+		TenantID:        TenantID("tenant_1"),
+		OwnerID:         UserID("user_1"),
+		Name:            "Support Docs",
+		RootPath:        "C:\\Docs",
+		IncludePatterns: []string{"../secrets/**"},
+	})
+	if !errors.Is(err, ErrInvalidEntity) {
+		t.Fatalf("err = %v, want invalid entity", err)
+	}
 }
 
 func TestNewDataSourceRejectsInvalidInput(t *testing.T) {
@@ -57,16 +99,20 @@ func TestDataSourceUpdateAndArchive(t *testing.T) {
 		t.Fatalf("new data source: %v", err)
 	}
 	updatedAt := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
-	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", updatedAt); err != nil {
+	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", []string{"**/*.md"}, []string{"archive/**"}, updatedAt); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if source.Name != "Runbooks" || source.Type != DataSourceTypeNetworkShare || source.RootPath != "\\\\nas\\runbooks" {
 		t.Fatalf("source after update = %#v", source)
 	}
+	if len(source.IncludePatterns) != 1 || source.IncludePatterns[0] != "**/*.md" ||
+		len(source.ExcludePatterns) != 1 || source.ExcludePatterns[0] != "archive/**" {
+		t.Fatalf("patterns after update = %#v/%#v", source.IncludePatterns, source.ExcludePatterns)
+	}
 	if err := source.Transition(DataSourceStatusArchived, updatedAt.Add(time.Hour)); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
+	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", nil, nil, updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
 		t.Fatalf("err = %v, want invalid entity", err)
 	}
 }

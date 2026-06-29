@@ -247,10 +247,12 @@ type registerDocumentRequest struct {
 }
 
 type dataSourceRequest struct {
-	TenantID string `json:"tenant_id"`
-	Type     string `json:"type"`
-	Name     string `json:"name"`
-	RootPath string `json:"root_path"`
+	TenantID        string   `json:"tenant_id"`
+	Type            string   `json:"type"`
+	Name            string   `json:"name"`
+	RootPath        string   `json:"root_path"`
+	IncludePatterns []string `json:"include_patterns"`
+	ExcludePatterns []string `json:"exclude_patterns"`
 }
 
 type createTenantRequest struct {
@@ -305,19 +307,21 @@ type documentPayload struct {
 }
 
 type dataSourcePayload struct {
-	ID               string `json:"id"`
-	TenantID         string `json:"tenant_id"`
-	OwnerID          string `json:"owner_id"`
-	Type             string `json:"type"`
-	Name             string `json:"name"`
-	RootPath         string `json:"root_path"`
-	Status           string `json:"status"`
-	LastScanAt       string `json:"last_scan_at,omitempty"`
-	LastScanImported int    `json:"last_scan_imported"`
-	LastScanSkipped  int    `json:"last_scan_skipped"`
-	LastScanFailed   int    `json:"last_scan_failed"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	ID               string   `json:"id"`
+	TenantID         string   `json:"tenant_id"`
+	OwnerID          string   `json:"owner_id"`
+	Type             string   `json:"type"`
+	Name             string   `json:"name"`
+	RootPath         string   `json:"root_path"`
+	IncludePatterns  []string `json:"include_patterns"`
+	ExcludePatterns  []string `json:"exclude_patterns"`
+	Status           string   `json:"status"`
+	LastScanAt       string   `json:"last_scan_at,omitempty"`
+	LastScanImported int      `json:"last_scan_imported"`
+	LastScanSkipped  int      `json:"last_scan_skipped"`
+	LastScanFailed   int      `json:"last_scan_failed"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
 }
 
 type dataSourceScanEntryPayload struct {
@@ -882,11 +886,13 @@ func createDataSourceHandler(service app.DataSourceService, authorizer internala
 		}
 
 		result, err := service.Create(r.Context(), app.CreateDataSourceInput{
-			TenantID: tenantID,
-			OwnerID:  principal.UserID,
-			Type:     domain.DataSourceType(req.Type),
-			Name:     req.Name,
-			RootPath: req.RootPath,
+			TenantID:        tenantID,
+			OwnerID:         principal.UserID,
+			Type:            domain.DataSourceType(req.Type),
+			Name:            req.Name,
+			RootPath:        req.RootPath,
+			IncludePatterns: req.IncludePatterns,
+			ExcludePatterns: req.ExcludePatterns,
 		})
 		if err != nil {
 			writeDataSourceError(w, "create data source", err)
@@ -941,11 +947,13 @@ func updateDataSourceHandler(service app.DataSourceService, authorizer internala
 		}
 
 		result, err := service.Update(r.Context(), app.UpdateDataSourceInput{
-			TenantID:     tenantID,
-			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
-			Type:         domain.DataSourceType(req.Type),
-			Name:         req.Name,
-			RootPath:     req.RootPath,
+			TenantID:        tenantID,
+			DataSourceID:    domain.DataSourceID(r.PathValue("source_id")),
+			Type:            domain.DataSourceType(req.Type),
+			Name:            req.Name,
+			RootPath:        req.RootPath,
+			IncludePatterns: req.IncludePatterns,
+			ExcludePatterns: req.ExcludePatterns,
 		})
 		if err != nil {
 			writeDataSourceError(w, "update data source", err)
@@ -1513,6 +1521,8 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 		Type:             string(source.Type),
 		Name:             source.Name,
 		RootPath:         source.RootPath,
+		IncludePatterns:  append([]string{}, source.IncludePatterns...),
+		ExcludePatterns:  append([]string{}, source.ExcludePatterns...),
 		Status:           string(source.Status),
 		LastScanAt:       lastScanAt,
 		LastScanImported: source.LastScanImported,

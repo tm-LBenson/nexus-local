@@ -582,7 +582,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"tenant_id": "tenant_1",
 		"type": "synced_folder",
 		"name": "OneDrive Support Docs",
-		"root_path": "C:\\Users\\team\\OneDrive\\Support"
+		"root_path": "C:\\Users\\team\\OneDrive\\Support",
+		"include_patterns": ["**/*.md", "**/*.pdf"],
+		"exclude_patterns": ["archive/**"]
 	}`))
 	server.ServeHTTP(create, createReq)
 	if create.Code != http.StatusCreated {
@@ -599,6 +601,12 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 	if createBody.Source.Status != "active" {
 		t.Fatalf("status = %q, want active", createBody.Source.Status)
+	}
+	if len(createBody.Source.IncludePatterns) != 2 ||
+		createBody.Source.IncludePatterns[0] != "**/*.md" ||
+		len(createBody.Source.ExcludePatterns) != 1 ||
+		createBody.Source.ExcludePatterns[0] != "archive/**" {
+		t.Fatalf("create patterns = %#v/%#v", createBody.Source.IncludePatterns, createBody.Source.ExcludePatterns)
 	}
 
 	list := httptest.NewRecorder()
@@ -622,7 +630,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"tenant_id": "tenant_1",
 		"type": "network_share",
 		"name": "NAS Runbooks",
-		"root_path": "\\\\nas\\runbooks"
+		"root_path": "\\\\nas\\runbooks",
+		"include_patterns": ["runbooks/**"],
+		"exclude_patterns": ["drafts/**", "*.tmp"]
 	}`))
 	server.ServeHTTP(update, updateReq)
 	if update.Code != http.StatusOK {
@@ -636,6 +646,12 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 	if updateBody.Source.Type != "network_share" || updateBody.Source.Name != "NAS Runbooks" {
 		t.Fatalf("updated source = %#v", updateBody.Source)
+	}
+	if len(updateBody.Source.IncludePatterns) != 1 ||
+		updateBody.Source.IncludePatterns[0] != "runbooks/**" ||
+		len(updateBody.Source.ExcludePatterns) != 2 ||
+		updateBody.Source.ExcludePatterns[1] != "*.tmp" {
+		t.Fatalf("updated patterns = %#v/%#v", updateBody.Source.IncludePatterns, updateBody.Source.ExcludePatterns)
 	}
 
 	get := httptest.NewRecorder()
@@ -654,6 +670,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 	if getBody.Source.ID != "src_http" || len(getBody.Jobs) != 0 || len(getBody.ScanEntries) != 0 {
 		t.Fatalf("get body = %#v, want source with no jobs", getBody)
+	}
+	if len(getBody.Source.IncludePatterns) != 1 || getBody.Source.IncludePatterns[0] != "runbooks/**" {
+		t.Fatalf("get patterns = %#v", getBody.Source.IncludePatterns)
 	}
 
 	scan := httptest.NewRecorder()

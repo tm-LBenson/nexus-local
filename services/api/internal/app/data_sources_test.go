@@ -21,11 +21,13 @@ func TestCreateDataSource(t *testing.T) {
 	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
 
 	result, err := service.Create(ctx, CreateDataSourceInput{
-		TenantID: domain.TenantID("tenant_1"),
-		OwnerID:  domain.UserID("user_1"),
-		Type:     domain.DataSourceTypeSyncedFolder,
-		Name:     "OneDrive Docs",
-		RootPath: "C:\\Users\\team\\OneDrive\\Docs",
+		TenantID:        domain.TenantID("tenant_1"),
+		OwnerID:         domain.UserID("user_1"),
+		Type:            domain.DataSourceTypeSyncedFolder,
+		Name:            "OneDrive Docs",
+		RootPath:        "C:\\Users\\team\\OneDrive\\Docs",
+		IncludePatterns: []string{"**/*.md"},
+		ExcludePatterns: []string{"archive/**"},
 	})
 	if err != nil {
 		t.Fatalf("create source: %v", err)
@@ -41,8 +43,12 @@ func TestCreateDataSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get source: %v", err)
 	}
-	if saved.Name != "OneDrive Docs" {
-		t.Fatalf("name = %q, want OneDrive Docs", saved.Name)
+	if saved.Name != "OneDrive Docs" ||
+		len(saved.IncludePatterns) != 1 ||
+		saved.IncludePatterns[0] != "**/*.md" ||
+		len(saved.ExcludePatterns) != 1 ||
+		saved.ExcludePatterns[0] != "archive/**" {
+		t.Fatalf("saved source = %#v", saved)
 	}
 }
 
@@ -90,17 +96,25 @@ func TestUpdateDataSource(t *testing.T) {
 	}
 
 	result, err := service.Update(ctx, UpdateDataSourceInput{
-		TenantID:     source.TenantID,
-		DataSourceID: source.ID,
-		Type:         domain.DataSourceTypeNetworkShare,
-		Name:         "NAS Runbooks",
-		RootPath:     "\\\\nas\\runbooks",
+		TenantID:        source.TenantID,
+		DataSourceID:    source.ID,
+		Type:            domain.DataSourceTypeNetworkShare,
+		Name:            "NAS Runbooks",
+		RootPath:        "\\\\nas\\runbooks",
+		IncludePatterns: []string{"runbooks/**"},
+		ExcludePatterns: []string{"drafts/**"},
 	})
 	if err != nil {
 		t.Fatalf("update source: %v", err)
 	}
 	if result.Source.Name != "NAS Runbooks" || result.Source.Type != domain.DataSourceTypeNetworkShare {
 		t.Fatalf("source = %#v", result.Source)
+	}
+	if len(result.Source.IncludePatterns) != 1 ||
+		result.Source.IncludePatterns[0] != "runbooks/**" ||
+		len(result.Source.ExcludePatterns) != 1 ||
+		result.Source.ExcludePatterns[0] != "drafts/**" {
+		t.Fatalf("patterns = %#v/%#v", result.Source.IncludePatterns, result.Source.ExcludePatterns)
 	}
 }
 

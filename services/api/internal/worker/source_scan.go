@@ -9,7 +9,9 @@ import (
 	"io"
 	"mime"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
@@ -234,6 +236,14 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		}
 		relativeName := sourceRelativePath(root, path)
 		if entry.IsDir() {
+			if sourcePatternMatches(source.ExcludePatterns, relativeName, true) {
+				result.SkippedCount++
+				result.SkippedPolicyCount++
+				if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName+"/", domain.DataSourceScanOutcomeSkipped, "excluded", "directory excluded by source pattern", "", 0, ""); saveErr != nil {
+					return saveErr
+				}
+				return filepath.SkipDir
+			}
 			if policy.shouldSkipName(entry.Name()) || policy.shouldSkipDirectory(entry.Name()) {
 				result.SkippedCount++
 				result.SkippedPolicyCount++
@@ -245,8 +255,8 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			}
 			return nil
 		}
-		seenPaths[relativeName] = true
 		if entry.Type()&os.ModeSymlink != 0 {
+			seenPaths[relativeName] = true
 			result.SkippedCount++
 			result.SkippedPolicyCount++
 			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "symlink", "symbolic links are skipped", "", 0, ""); saveErr != nil {
@@ -255,6 +265,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			return nil
 		}
 		if policy.shouldSkipName(entry.Name()) {
+			seenPaths[relativeName] = true
 			result.SkippedCount++
 			result.SkippedPolicyCount++
 			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "policy", "hidden file excluded by scan policy", "", 0, ""); saveErr != nil {
@@ -262,6 +273,23 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			}
 			return nil
 		}
+		if sourcePatternMatches(source.ExcludePatterns, relativeName, false) {
+			result.SkippedCount++
+			result.SkippedPolicyCount++
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "excluded", "file excluded by source pattern", "", 0, ""); saveErr != nil {
+				return saveErr
+			}
+			return nil
+		}
+		if len(source.IncludePatterns) > 0 && !sourcePatternMatches(source.IncludePatterns, relativeName, false) {
+			result.SkippedCount++
+			result.SkippedPolicyCount++
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeSkipped, "not_included", "file does not match source include patterns", "", 0, ""); saveErr != nil {
+				return saveErr
+			}
+			return nil
+		}
+		seenPaths[relativeName] = true
 
 		fileInfo, err := entry.Info()
 		if err != nil {
@@ -522,6 +550,72 @@ func sourceRelativePath(root string, path string) string {
 		return "."
 	}
 	return relativeName
+}
+
+func sourcePatternMatches(patterns []string, relativePath string, directory bool) bool {
+	relativePath = strings.Trim(strings.ReplaceAll(relativePath, "\\", "/"), "/")
+	if directory && relativePath != "" {
+		relativePath += "/"
+	}
+	for _, pattern := range patterns {
+		if sourcePatternMatchesOne(pattern, relativePath, directory) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourcePatternMatchesOne(pattern string, relativePath string, directory bool) bool {
+	pattern = strings.TrimPrefix(strings.TrimSpace(strings.ReplaceAll(pattern, "\\", "/")), "/")
+	if pattern == "" || relativePath == "" {
+		return false
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		pathWithoutSlash := strings.TrimSuffix(relativePath, "/")
+		return pathWithoutSlash == prefix || strings.HasPrefix(pathWithoutSlash, prefix+"/")
+	}
+	if strings.HasSuffix(pattern, "/") {
+		return strings.HasPrefix(relativePath, pattern)
+	}
+	if !strings.Contains(pattern, "/") {
+		name := path.Base(strings.TrimSuffix(relativePath, "/"))
+		if matched, err := path.Match(pattern, name); err == nil && matched {
+			return true
+		}
+		return pattern == name
+	}
+	expression := "^" + globPatternToRegex(pattern) + "$"
+	if directory {
+		expression = "^" + globPatternToRegex(strings.TrimSuffix(pattern, "/")) + "/?$"
+	}
+	matched, err := regexp.MatchString(expression, strings.TrimSuffix(relativePath, "/"))
+	return err == nil && matched
+}
+
+func globPatternToRegex(pattern string) string {
+	var builder strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '*':
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				i++
+				if i+1 < len(pattern) && pattern[i+1] == '/' {
+					i++
+					builder.WriteString("(?:.*/)?")
+					continue
+				}
+				builder.WriteString(".*")
+				continue
+			}
+			builder.WriteString("[^/]*")
+		case '?':
+			builder.WriteString("[^/]")
+		default:
+			builder.WriteString(regexp.QuoteMeta(string(pattern[i])))
+		}
+	}
+	return builder.String()
 }
 
 func (p SourceScanPolicy) normalized() SourceScanPolicy {

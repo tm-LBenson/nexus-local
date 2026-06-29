@@ -94,6 +94,8 @@ const initialSourceForm = {
   type: 'synced_folder',
   name: '',
   root_path: '',
+  include_patterns: '',
+  exclude_patterns: '',
 };
 
 const supportedDocumentAccept = [
@@ -796,6 +798,8 @@ export function App() {
         type: sourceForm.type,
         name: sourceForm.name.trim(),
         root_path: sourceForm.root_path.trim(),
+        include_patterns: patternLinesToList(sourceForm.include_patterns),
+        exclude_patterns: patternLinesToList(sourceForm.exclude_patterns),
       });
       setSourceForm(initialSourceForm);
       await Promise.all([
@@ -827,6 +831,8 @@ export function App() {
         type: sourceEditForm.type,
         name: sourceEditForm.name.trim(),
         root_path: sourceEditForm.root_path.trim(),
+        include_patterns: patternLinesToList(sourceEditForm.include_patterns),
+        exclude_patterns: patternLinesToList(sourceEditForm.exclude_patterns),
       });
       setSourceDetail((current) =>
         current && current.source.id === result.source.id
@@ -1781,6 +1787,36 @@ export function App() {
                     placeholder="C:\\Docs, /mnt/docs, or \\\\server\\share"
                     value={sourceForm.root_path}
                   />
+                  <div className="sourcePatternFields">
+                    <label>
+                      <span>Include</span>
+                      <textarea
+                        aria-label="Source include patterns"
+                        onChange={(event) =>
+                          setSourceForm((current) => ({
+                            ...current,
+                            include_patterns: event.target.value,
+                          }))
+                        }
+                        placeholder={'**/*.md\ncases/**'}
+                        value={sourceForm.include_patterns}
+                      />
+                    </label>
+                    <label>
+                      <span>Exclude</span>
+                      <textarea
+                        aria-label="Source exclude patterns"
+                        onChange={(event) =>
+                          setSourceForm((current) => ({
+                            ...current,
+                            exclude_patterns: event.target.value,
+                          }))
+                        }
+                        placeholder={'archive/**\n*.draft.md'}
+                        value={sourceForm.exclude_patterns}
+                      />
+                    </label>
+                  </div>
                   <button disabled={creatingSource || !workspaceReady} type="submit">
                     {creatingSource ? 'Adding' : 'Add'}
                   </button>
@@ -2049,6 +2085,44 @@ export function App() {
                         }
                         value={sourceEditForm.root_path}
                       />
+                      <div className="sourcePatternFields">
+                        <label>
+                          <span>Include</span>
+                          <textarea
+                            aria-label="Edit source include patterns"
+                            disabled={
+                              sourceDetail.source.status === 'archived' ||
+                              savingSourceID === sourceDetail.source.id
+                            }
+                            onChange={(event) =>
+                              setSourceEditForm((current) => ({
+                                ...current,
+                                include_patterns: event.target.value,
+                              }))
+                            }
+                            placeholder={'**/*.md\ncases/**'}
+                            value={sourceEditForm.include_patterns}
+                          />
+                        </label>
+                        <label>
+                          <span>Exclude</span>
+                          <textarea
+                            aria-label="Edit source exclude patterns"
+                            disabled={
+                              sourceDetail.source.status === 'archived' ||
+                              savingSourceID === sourceDetail.source.id
+                            }
+                            onChange={(event) =>
+                              setSourceEditForm((current) => ({
+                                ...current,
+                                exclude_patterns: event.target.value,
+                              }))
+                            }
+                            placeholder={'archive/**\n*.draft.md'}
+                            value={sourceEditForm.exclude_patterns}
+                          />
+                        </label>
+                      </div>
                       <button
                         disabled={
                           sourceDetail.source.status === 'archived' ||
@@ -3481,7 +3555,16 @@ function sourceFormFromSource(source: ListDataSourcesResponse['sources'][number]
     type: source.type,
     name: source.name,
     root_path: source.root_path,
+    include_patterns: (source.include_patterns ?? []).join('\n'),
+    exclude_patterns: (source.exclude_patterns ?? []).join('\n'),
   };
+}
+
+function patternLinesToList(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
 }
 
 function sourceScanSummary(source: ListDataSourcesResponse['sources'][number]) {

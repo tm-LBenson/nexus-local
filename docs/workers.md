@@ -21,7 +21,7 @@ Source scan behavior:
 2. Load the data source by tenant and resource ID.
 3. Transition source `active/failed -> scanning`.
 4. Walk the source root path from the worker machine/container.
-5. Skip symlinks, hidden names, common cache/build folders, oversized files, and unsupported document types.
+5. Apply source include/exclude patterns, then skip symlinks, hidden names, common cache/build folders, oversized files, and unsupported document types.
 6. Hash each supported file with SHA-256.
 7. Skip unchanged files when the latest imported entry for the same path has the same content hash.
 8. Upload new or changed supported files through the normal document upload path.
@@ -37,6 +37,9 @@ The source path must be visible to the worker process. In Docker deployments, mo
 Default source scan safety:
 
 - Maximum file size: 10 MiB.
+- Source include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes.
+- Files outside include patterns are skipped with reason `not_included`.
+- Files or directories matching exclude patterns are skipped with reason `excluded`.
 - Hidden names are skipped.
 - Common cache/build folders are skipped, including `.git`, `node_modules`, `.cache`, `__pycache__`, `.next`, `dist`, `build`, `target`, `tmp`, and virtual environment folders.
 - Unsupported document types are counted as skipped, not failed.
@@ -45,7 +48,7 @@ Default source scan safety:
 
 If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, stores imported/skipped/failed counts on the source, records file-level failure entries, and stores a concise count summary plus the first failure in `error_message`.
 
-Changed files replace the previously imported document for the same source path. Missing files delete the previously imported document for that source path after the current scan completes without file-level failures.
+Changed files replace the previously imported document for the same source path. Missing files and files removed by the current source filters delete the previously imported document for that source path after the current scan completes without file-level failures.
 
 Document ingestion behavior:
 
