@@ -1866,6 +1866,26 @@ h3 {
   background: #fff6f4;
 }
 
+.sourceDocumentRecoveryPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #d8bf86;
+  border-left: 4px solid #c58b22;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffaf0;
+}
+
+.sourceDocumentRecoveryPanel .sourceRecoveryText strong {
+  color: #7a4a08;
+}
+
+.sourceDocumentRecoveryPanel .sourceRecoveryText span {
+  color: #604714;
+}
+
 .sourceRecoveryText {
   display: grid;
   gap: 3px;
@@ -2418,7 +2438,8 @@ h3 {
     grid-column: 1 / -1;
   }
 
-  .sourceRecoveryPanel {
+  .sourceRecoveryPanel,
+  .sourceDocumentRecoveryPanel {
     grid-template-columns: 1fr;
   }
 

@@ -1109,6 +1109,125 @@ func TestDataSourceEndpointCanReindexDocuments(t *testing.T) {
 	}
 }
 
+func TestDataSourceEndpointCanRetryFailedDocuments(t *testing.T) {
+	server := newTestServerWithSeed(t, func(repos *memory.Store) {
+		source, err := domain.NewDataSource(domain.DataSourceCreate{
+			ID:       domain.DataSourceID("src_retry_failed"),
+			TenantID: domain.TenantID("tenant_1"),
+			OwnerID:  domain.UserID("user_1"),
+			Type:     domain.DataSourceTypeFolder,
+			Name:     "Retry Failed Source",
+			RootPath: "/sources/retry-failed",
+			Now:      httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new source: %v", err)
+		}
+		if err := repos.SaveDataSource(context.Background(), source); err != nil {
+			t.Fatalf("save source: %v", err)
+		}
+		document, err := domain.NewDocument(domain.DocumentCreate{
+			ID:         domain.DocumentID("doc_retry_failed"),
+			TenantID:   source.TenantID,
+			OwnerID:    source.OwnerID,
+			Name:       "failed.md",
+			StorageKey: "tenants/tenant_1/documents/doc_retry_failed/failed.md",
+			SizeBytes:  42,
+			Now:        httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new document: %v", err)
+		}
+		if err := document.Transition(domain.DocumentStatusFailed, httpClock{}.Now()); err != nil {
+			t.Fatalf("mark failed document: %v", err)
+		}
+		if err := repos.SaveDocument(context.Background(), document); err != nil {
+			t.Fatalf("save document: %v", err)
+		}
+		entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+			TenantID:    source.TenantID,
+			JobID:       domain.JobID("job_scan_retry_failed"),
+			SourceID:    source.ID,
+			Path:        "failed.md",
+			Outcome:     domain.DataSourceScanOutcomeImported,
+			DocumentID:  document.ID,
+			SizeBytes:   document.SizeBytes,
+			ContentHash: "sha256:retry-failed",
+			Now:         httpClock{}.Now(),
+		})
+		if err != nil {
+			t.Fatalf("new scan entry: %v", err)
+		}
+		if err := repos.SaveDataSourceScanEntry(context.Background(), entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	})
+
+	retry := httptest.NewRecorder()
+	retryReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_retry_failed/retry-failed-documents?tenant_id=tenant_1", nil)
+	server.ServeHTTP(retry, retryReq)
+	if retry.Code != http.StatusAccepted {
+		t.Fatalf("retry status = %d, want %d, body = %s", retry.Code, http.StatusAccepted, retry.Body.String())
+	}
+	var retryBody struct {
+		Source           dataSourcePayload `json:"source"`
+		Jobs             []jobPayload      `json:"jobs"`
+		QueuedDocuments  int               `json:"queued_documents"`
+		SkippedDocuments int               `json:"skipped_documents"`
+	}
+	if err := json.NewDecoder(retry.Body).Decode(&retryBody); err != nil {
+		t.Fatalf("decode retry: %v", err)
+	}
+	if retryBody.Source.ID != "src_retry_failed" ||
+		retryBody.QueuedDocuments != 1 ||
+		retryBody.SkippedDocuments != 0 ||
+		len(retryBody.Jobs) != 1 ||
+		retryBody.Jobs[0].Type != "document_ingestion" ||
+		retryBody.Jobs[0].ResourceID != "doc_retry_failed" {
+		t.Fatalf("retry body = %#v", retryBody)
+	}
+
+	detail := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_retry_failed?tenant_id=tenant_1", nil)
+	server.ServeHTTP(detail, detailReq)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body = %s", detail.Code, http.StatusOK, detail.Body.String())
+	}
+	var detailBody struct {
+		FailedDocuments int `json:"failed_documents"`
+	}
+	if err := json.NewDecoder(detail.Body).Decode(&detailBody); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if detailBody.FailedDocuments != 1 {
+		t.Fatalf("failed documents = %d, want 1", detailBody.FailedDocuments)
+	}
+
+	audit := httptest.NewRecorder()
+	auditReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1", nil)
+	server.ServeHTTP(audit, auditReq)
+	if audit.Code != http.StatusOK {
+		t.Fatalf("audit status = %d, want %d, body = %s", audit.Code, http.StatusOK, audit.Body.String())
+	}
+	var auditBody struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
+		t.Fatalf("decode audit: %v", err)
+	}
+	hasRetryAudit := false
+	for _, event := range auditBody.Events {
+		if event.Action == "data_source.failed_documents_retry_requested" &&
+			event.ResourceID == "src_retry_failed" &&
+			event.Metadata["queued_documents"] == "1" {
+			hasRetryAudit = true
+		}
+	}
+	if !hasRetryAudit {
+		t.Fatalf("audit events = %#v, want failed_documents_retry_requested event", auditBody.Events)
+	}
+}
+
 func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 

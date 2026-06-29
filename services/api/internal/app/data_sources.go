@@ -76,6 +76,11 @@ type ReindexDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type RetryFailedDataSourceDocumentsInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+}
+
 type ExportDataSourceScanEntriesInput struct {
 	TenantID     domain.TenantID
 	DataSourceID domain.DataSourceID
@@ -88,11 +93,12 @@ type DataSourceResult struct {
 }
 
 type DataSourceDetailResult struct {
-	Source      domain.DataSource
-	Jobs        []domain.Job
-	ScanEntries []domain.DataSourceScanEntry
-	ScanSummary DataSourceScanSummary
-	ScanPage    DataSourceScanEntryPage
+	Source          domain.DataSource
+	Jobs            []domain.Job
+	ScanEntries     []domain.DataSourceScanEntry
+	ScanSummary     DataSourceScanSummary
+	ScanPage        DataSourceScanEntryPage
+	FailedDocuments int
 }
 
 type DataSourceScanSummary struct {
@@ -119,6 +125,12 @@ type ScanDataSourceResult struct {
 }
 
 type ReindexDataSourceResult struct {
+	Source               domain.DataSource
+	Jobs                 []domain.Job
+	SkippedDocumentCount int
+}
+
+type RetryFailedDataSourceDocumentsResult struct {
 	Source               domain.DataSource
 	Jobs                 []domain.Job
 	SkippedDocumentCount int
@@ -244,6 +256,10 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 	if err != nil {
 		return DataSourceDetailResult{}, err
 	}
+	failedDocuments, err := s.failedDocumentCountForSource(ctx, source)
+	if err != nil {
+		return DataSourceDetailResult{}, err
+	}
 	return DataSourceDetailResult{
 		Source:      source,
 		Jobs:        relatedJobs,
@@ -255,6 +271,7 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 			Offset:  page.Offset,
 			Outcome: input.ScanEntryOutcome,
 		},
+		FailedDocuments: failedDocuments,
 	}, nil
 }
 
@@ -555,6 +572,101 @@ func (s DataSourceService) RequestReindex(ctx context.Context, input ReindexData
 		Jobs:                 queued,
 		SkippedDocumentCount: skipped,
 	}, nil
+}
+
+func (s DataSourceService) RequestRetryFailedDocuments(ctx context.Context, input RetryFailedDataSourceDocumentsInput) (RetryFailedDataSourceDocumentsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return RetryFailedDataSourceDocumentsResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return RetryFailedDataSourceDocumentsResult{}, fmt.Errorf("retry failed data source documents: %w", domain.ErrInvalidEntity)
+	}
+
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return RetryFailedDataSourceDocumentsResult{}, err
+	}
+	if source.Status == domain.DataSourceStatusArchived {
+		return RetryFailedDataSourceDocumentsResult{}, fmt.Errorf("archived data source %s cannot retry failed documents: %w", source.ID, domain.ErrInvalidStateTransition)
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return RetryFailedDataSourceDocumentsResult{}, err
+	}
+	for _, job := range jobs {
+		if isActiveDataSourceScanJob(job, source.ID) {
+			return RetryFailedDataSourceDocumentsResult{}, fmt.Errorf("source %s has an active scan job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+	}
+
+	documentIDs, err := s.activeDocumentIDsForSource(ctx, source)
+	if err != nil {
+		return RetryFailedDataSourceDocumentsResult{}, err
+	}
+	queued := make([]domain.Job, 0)
+	skipped := 0
+	for _, documentID := range documentIDs {
+		document, err := s.repos.GetDocument(ctx, source.TenantID, documentID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				skipped++
+				continue
+			}
+			return RetryFailedDataSourceDocumentsResult{}, err
+		}
+		if document.Status != domain.DocumentStatusFailed {
+			skipped++
+			continue
+		}
+		if hasActiveDocumentIngestionJob(jobs, document.ID) {
+			skipped++
+			continue
+		}
+
+		job, err := domain.NewJob(domain.JobCreate{
+			ID:           s.ids.NewJobID(),
+			TenantID:     document.TenantID,
+			Type:         domain.JobTypeDocumentIngestion,
+			ResourceType: "document",
+			ResourceID:   string(document.ID),
+			Now:          s.clock.Now(),
+		})
+		if err != nil {
+			return RetryFailedDataSourceDocumentsResult{}, err
+		}
+		if err := s.repos.SaveJob(ctx, job); err != nil {
+			return RetryFailedDataSourceDocumentsResult{}, err
+		}
+		queued = append(queued, job)
+	}
+
+	return RetryFailedDataSourceDocumentsResult{
+		Source:               source,
+		Jobs:                 queued,
+		SkippedDocumentCount: skipped,
+	}, nil
+}
+
+func (s DataSourceService) failedDocumentCountForSource(ctx context.Context, source domain.DataSource) (int, error) {
+	documentIDs, err := s.activeDocumentIDsForSource(ctx, source)
+	if err != nil {
+		return 0, err
+	}
+	failed := 0
+	for _, documentID := range documentIDs {
+		document, err := s.repos.GetDocument(ctx, source.TenantID, documentID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return 0, err
+		}
+		if document.Status == domain.DocumentStatusFailed {
+			failed++
+		}
+	}
+	return failed, nil
 }
 
 func filterActiveDataSources(sources []domain.DataSource) []domain.DataSource {

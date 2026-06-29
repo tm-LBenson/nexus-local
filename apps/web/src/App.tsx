@@ -42,6 +42,7 @@ import {
   listJobs,
   listTenantMembers,
   reindexDataSource,
+  retryFailedDataSourceDocuments,
   retryDocument,
   scanDataSource,
   searchDocuments,
@@ -290,6 +291,7 @@ export function App() {
   const [deletingSourceDocumentsID, setDeletingSourceDocumentsID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
   const [reindexingSourceID, setReindexingSourceID] = useState('');
+  const [retryingSourceFailuresID, setRetryingSourceFailuresID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
@@ -1041,6 +1043,7 @@ export function App() {
             scan_entries: [],
             scan_summary: emptyDataSourceScanSummary(),
             scan_entries_page: emptyDataSourceScanEntryPage(),
+            failed_documents: 0,
           };
         }
         return {
@@ -1049,6 +1052,7 @@ export function App() {
           scan_entries: current.scan_entries,
           scan_summary: current.scan_summary,
           scan_entries_page: current.scan_entries_page,
+          failed_documents: current.failed_documents,
         };
       });
       await Promise.all([
@@ -1085,6 +1089,45 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setReindexingSourceID('');
+    }
+  }
+
+  async function requestRetryFailedSourceDocuments(
+    source: ListDataSourcesResponse['sources'][number],
+  ) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setRetryingSourceFailuresID(source.id);
+    setError(null);
+    try {
+      const result = await retryFailedDataSourceDocuments(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id
+          ? {
+              ...current,
+              source: result.source,
+              jobs: [
+                ...result.jobs,
+                ...current.jobs.filter(
+                  (job) => !result.jobs.some((queued) => queued.id === job.id),
+                ),
+              ],
+            }
+          : current,
+      );
+      await Promise.all([
+        refreshDocuments(tenantID),
+        refreshDataSources(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        sourceDetail?.source.id === source.id ? refreshSourceDetail(source.id) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setRetryingSourceFailuresID('');
     }
   }
 
@@ -2191,6 +2234,23 @@ export function App() {
                               : 'Reindex'}
                           </button>
                           <button
+                            disabled={
+                              retryingSourceFailuresID === sourceDetail.source.id ||
+                              sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActiveScanJob(sourceDetail) ||
+                              sourceDetail.failed_documents === 0
+                            }
+                            onClick={() =>
+                              void requestRetryFailedSourceDocuments(sourceDetail.source)
+                            }
+                            type="button"
+                          >
+                            {retryingSourceFailuresID === sourceDetail.source.id
+                              ? 'Retrying'
+                              : 'Retry failed docs'}
+                          </button>
+                          <button
                             className="dangerButton"
                             disabled={
                               sourceDetail.source.status === 'archived' ||
@@ -2302,6 +2362,10 @@ export function App() {
                       <dt>Failed</dt>
                       <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
                     </div>
+                    <div>
+                      <dt>Failed docs</dt>
+                      <dd>{sourceDetail.failed_documents}</dd>
+                    </div>
                   </dl>
                   {sourceDetail.scan_summary.total > 0 && (
                     <section className="sourceScanSummary" aria-label="Latest scan summary">
@@ -2362,6 +2426,32 @@ export function App() {
                             : sourceHasActiveScanJob(sourceDetail)
                               ? 'Queued'
                               : 'Retry scan'}
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                  {sourceDetail.failed_documents > 0 && (
+                    <section className="sourceDocumentRecoveryPanel" aria-label="Document recovery">
+                      <div className="sourceRecoveryText">
+                        <strong>{sourceDetail.failed_documents} failed documents</strong>
+                        <span>Retry imported files whose ingestion failed after the source scan.</span>
+                      </div>
+                      <div className="sourceRecoveryActions">
+                        <button
+                          disabled={
+                            retryingSourceFailuresID === sourceDetail.source.id ||
+                            sourceDetail.source.status === 'archived' ||
+                            Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActiveScanJob(sourceDetail)
+                          }
+                          onClick={() =>
+                            void requestRetryFailedSourceDocuments(sourceDetail.source)
+                          }
+                          type="button"
+                        >
+                          {retryingSourceFailuresID === sourceDetail.source.id
+                            ? 'Retrying'
+                            : 'Retry failed docs'}
                         </button>
                       </div>
                     </section>

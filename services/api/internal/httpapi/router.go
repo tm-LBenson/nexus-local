@@ -64,6 +64,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/scan", scanDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/reindex", reindexDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("POST /v1/data-sources/{source_id}/retry-failed-documents", retryFailedDataSourceDocumentsHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/data-sources/{source_id}/scan-entries.csv", exportDataSourceScanEntriesHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("GET /v1/data-sources/{source_id}", getDataSourceHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("PATCH /v1/data-sources/{source_id}", updateDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
@@ -964,6 +965,7 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 			"scan_entries":      entries,
 			"scan_summary":      encodeDataSourceScanSummary(result.ScanSummary),
 			"scan_entries_page": encodeDataSourceScanEntryPage(result.ScanPage),
+			"failed_documents":  result.FailedDocuments,
 		})
 	}
 }
@@ -1108,6 +1110,35 @@ func reindexDataSourceHandler(service app.DataSourceService, authorizer internal
 	}
 }
 
+func retryFailedDataSourceDocumentsHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.RequestRetryFailedDocuments(r.Context(), app.RetryFailedDataSourceDocumentsInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "retry failed data source documents", err)
+			return
+		}
+		jobs := make([]jobPayload, 0, len(result.Jobs))
+		for _, job := range result.Jobs {
+			jobs = append(jobs, encodeJob(job))
+		}
+		recordDataSourceFailedDocumentRetryAudit(r.Context(), audit, tenantID, principal.UserID, result.Source, len(result.Jobs), result.SkippedDocumentCount)
+		writeJSON(w, http.StatusAccepted, envelope{
+			"source":            encodeDataSource(result.Source),
+			"jobs":              jobs,
+			"queued_documents":  len(result.Jobs),
+			"skipped_documents": result.SkippedDocumentCount,
+		})
+	}
+}
+
 func archiveDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
@@ -1190,6 +1221,25 @@ func recordDataSourceReindexAudit(ctx context.Context, audit app.AuditService, t
 		TenantID:     tenantID,
 		ActorUserID:  actorUserID,
 		Action:       "data_source.reindex_requested",
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Metadata: map[string]string{
+			"name":              source.Name,
+			"type":              string(source.Type),
+			"root_path":         source.RootPath,
+			"status":            string(source.Status),
+			"queued_documents":  strconv.Itoa(queuedDocuments),
+			"skipped_documents": strconv.Itoa(skippedDocuments),
+		},
+	})
+}
+
+func recordDataSourceFailedDocumentRetryAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, source domain.DataSource, queuedDocuments int, skippedDocuments int) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       "data_source.failed_documents_retry_requested",
 		ResourceType: "data_source",
 		ResourceID:   string(source.ID),
 		Outcome:      domain.AuditOutcomeSucceeded,

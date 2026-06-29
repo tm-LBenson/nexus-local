@@ -653,6 +653,107 @@ func TestRequestDataSourceReindexRejectsArchivedSource(t *testing.T) {
 	}
 }
 
+func TestRequestRetryFailedDataSourceDocumentsQueuesOnlyFailedDocuments(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, &sourceReindexIDs{}, fixedClock{})
+	source := newDataSource(t, "src_retry", domain.DataSourceStatusActive)
+	failedDocument := newSourceDocument(t, "doc_failed", "source/failed.md")
+	readyDocument := newSourceDocument(t, "doc_ready", "source/ready.md")
+	activeFailedDocument := newSourceDocument(t, "doc_active_failed", "source/active-failed.md")
+	for _, document := range []*domain.Document{&failedDocument, &activeFailedDocument} {
+		if err := document.Transition(domain.DocumentStatusFailed, fixedClock{}.Now()); err != nil {
+			t.Fatalf("mark failed document %s: %v", document.ID, err)
+		}
+	}
+	if err := readyDocument.Transition(domain.DocumentStatusProcessing, fixedClock{}.Now()); err != nil {
+		t.Fatalf("mark ready processing: %v", err)
+	}
+	if err := readyDocument.Transition(domain.DocumentStatusReady, fixedClock{}.Now()); err != nil {
+		t.Fatalf("mark ready: %v", err)
+	}
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	for _, document := range []domain.Document{failedDocument, readyDocument, activeFailedDocument} {
+		if err := repos.SaveDocument(ctx, document); err != nil {
+			t.Fatalf("save document %s: %v", document.ID, err)
+		}
+	}
+	for _, entry := range []domain.DataSourceScanEntry{
+		newSourceScanEntry(t, source, domain.JobID("job_scan_retry"), "failed.md", domain.DataSourceScanOutcomeImported, "", failedDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_retry"), "ready.md", domain.DataSourceScanOutcomeImported, "", readyDocument.ID),
+		newSourceScanEntry(t, source, domain.JobID("job_scan_retry"), "active-failed.md", domain.DataSourceScanOutcomeImported, "", activeFailedDocument.ID),
+	} {
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry %s: %v", entry.Path, err)
+		}
+	}
+	activeJob, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_active_failed_retry"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   string(activeFailedDocument.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new active job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, activeJob); err != nil {
+		t.Fatalf("save active job: %v", err)
+	}
+
+	result, err := service.RequestRetryFailedDocuments(ctx, RetryFailedDataSourceDocumentsInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("retry failed source documents: %v", err)
+	}
+	if result.Source.ID != source.ID || len(result.Jobs) != 1 || result.SkippedDocumentCount != 2 {
+		t.Fatalf("result = %#v, want one queued and two skipped", result)
+	}
+	if result.Jobs[0].Type != domain.JobTypeDocumentIngestion ||
+		result.Jobs[0].ResourceType != "document" ||
+		result.Jobs[0].ResourceID != string(failedDocument.ID) ||
+		result.Jobs[0].State != domain.JobStateQueued {
+		t.Fatalf("queued job = %#v", result.Jobs[0])
+	}
+}
+
+func TestGetDataSourceCountsFailedDocuments(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_failed_docs", domain.DataSourceStatusActive)
+	failedDocument := newSourceDocument(t, "doc_failed_count", "source/failed.md")
+	if err := failedDocument.Transition(domain.DocumentStatusFailed, fixedClock{}.Now()); err != nil {
+		t.Fatalf("mark failed document: %v", err)
+	}
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveDocument(ctx, failedDocument); err != nil {
+		t.Fatalf("save failed document: %v", err)
+	}
+	entry := newSourceScanEntry(t, source, domain.JobID("job_scan_failed_docs"), "failed.md", domain.DataSourceScanOutcomeImported, "", failedDocument.ID)
+	if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+		t.Fatalf("save scan entry: %v", err)
+	}
+
+	result, err := service.Get(ctx, DataSourceDetailInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if result.FailedDocuments != 1 {
+		t.Fatalf("failed documents = %d, want 1", result.FailedDocuments)
+	}
+}
+
 func TestGetDataSourceRejectsMissingSource(t *testing.T) {
 	service := NewDataSourceService(memory.New(), fixedIDs{}, fixedClock{})
 

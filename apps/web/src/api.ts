@@ -200,6 +200,7 @@ export type DataSourceDetailResponse = {
   scan_entries: DataSourceScanEntry[];
   scan_summary: DataSourceScanSummary;
   scan_entries_page: DataSourceScanEntryPage;
+  failed_documents: number;
 };
 
 export type DataSourceScanResponse = {
@@ -482,6 +483,14 @@ export async function reindexDataSource(tenantId: string, sourceId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<DataSourceReindexResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}/reindex?${params.toString()}`,
+    { method: 'POST' },
+  );
+}
+
+export async function retryFailedDataSourceDocuments(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceReindexResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}/retry-failed-documents?${params.toString()}`,
     { method: 'POST' },
   );
 }
