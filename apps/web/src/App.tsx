@@ -1648,7 +1648,7 @@ export function App() {
                         {scanJob ? `scan ${scanJob.state}` : source.status}
                       </span>
                       <em>{sourceTypeLabel(source.type)}</em>
-                      <small title={source.root_path}>{source.root_path}</small>
+                      <small title={source.root_path}>{sourceScanSummary(source)}</small>
                       <details className="rowMenu">
                         <summary>More</summary>
                         <div className="rowMenuActions">
@@ -3057,6 +3057,23 @@ function sourceTypeLabel(value: string) {
     default:
       return titleCase(value.replace(/_/g, ' '));
   }
+}
+
+function sourceScanSummary(source: ListDataSourcesResponse['sources'][number]) {
+  if (!source.last_scan_at) {
+    return source.root_path;
+  }
+  const imported = source.last_scan_imported ?? 0;
+  const skipped = source.last_scan_skipped ?? 0;
+  const failed = source.last_scan_failed ?? 0;
+  const parts = [`${imported} imported`];
+  if (skipped > 0) {
+    parts.push(`${skipped} skipped`);
+  }
+  if (failed > 0) {
+    parts.push(`${failed} failed`);
+  }
+  return `${source.root_path} / ${parts.join(', ')}`;
 }
 
 function compactEndpoint(value?: string) {

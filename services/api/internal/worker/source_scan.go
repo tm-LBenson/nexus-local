@@ -25,14 +25,24 @@ type SourceScanWorker struct {
 	repos     store.RepositorySet
 	clock     Clock
 	documents app.DocumentService
+	policy    SourceScanPolicy
 }
 
 type SourceScanResult struct {
-	JobID         domain.JobID
-	SourceID      domain.DataSourceID
-	ImportedCount int
-	SkippedCount  int
-	FailedCount   int
+	JobID                   domain.JobID
+	SourceID                domain.DataSourceID
+	ImportedCount           int
+	SkippedCount            int
+	SkippedUnsupportedCount int
+	SkippedPolicyCount      int
+	SkippedTooLargeCount    int
+	FailedCount             int
+}
+
+type SourceScanPolicy struct {
+	MaxFileBytes      int64
+	SkipHiddenNames   bool
+	SkipDirectoryName map[string]bool
 }
 
 func NewSourceScanWorker(repos store.RepositorySet, ids SourceScanIDs, clock Clock) SourceScanWorker {
@@ -40,12 +50,47 @@ func NewSourceScanWorker(repos store.RepositorySet, ids SourceScanIDs, clock Clo
 		repos:     repos,
 		clock:     clock,
 		documents: app.NewDocumentService(repos, ids, clock),
+		policy:    DefaultSourceScanPolicy(),
 	}
 }
 
 func (w SourceScanWorker) WithObjectStore(objects providers.ObjectStore) SourceScanWorker {
 	w.documents = w.documents.WithObjectStore(objects)
 	return w
+}
+
+func (w SourceScanWorker) WithPolicy(policy SourceScanPolicy) SourceScanWorker {
+	w.policy = policy.normalized()
+	return w
+}
+
+const defaultSourceScanMaxFileBytes = 10 << 20
+
+func DefaultSourceScanPolicy() SourceScanPolicy {
+	return SourceScanPolicy{
+		MaxFileBytes:    defaultSourceScanMaxFileBytes,
+		SkipHiddenNames: true,
+		SkipDirectoryName: map[string]bool{
+			"node_modules":              true,
+			".git":                      true,
+			".hg":                       true,
+			".svn":                      true,
+			".cache":                    true,
+			"__pycache__":               true,
+			".pytest_cache":             true,
+			".mypy_cache":               true,
+			".next":                     true,
+			"dist":                      true,
+			"build":                     true,
+			"target":                    true,
+			"tmp":                       true,
+			"temp":                      true,
+			".venv":                     true,
+			"venv":                      true,
+			"$recycle.bin":              true,
+			"system volume information": true,
+		},
+	}
 }
 
 func (w SourceScanWorker) ProcessNext(ctx context.Context) (SourceScanResult, error) {
@@ -111,7 +156,7 @@ func (w SourceScanWorker) processClaimedJob(ctx context.Context, job domain.Job)
 
 	result, scanErr := w.scanSource(ctx, source, result)
 	if scanErr != nil {
-		_ = w.markSourceFailed(ctx, source)
+		_ = w.markSourceFailed(ctx, source, result)
 		return result, scanErr
 	}
 
@@ -125,7 +170,7 @@ func (w SourceScanWorker) processClaimedJob(ctx context.Context, job domain.Job)
 				return SourceScanResult{}, err
 			}
 		}
-		if err := latestSource.Transition(domain.DataSourceStatusActive, w.clock.Now()); err != nil {
+		if err := latestSource.CompleteScan(result.ImportedCount, result.SkippedCount, result.FailedCount, w.clock.Now()); err != nil {
 			return SourceScanResult{}, err
 		}
 		if err := w.repos.SaveDataSource(ctx, latestSource); err != nil {
@@ -139,12 +184,15 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	root := filepath.Clean(source.RootPath)
 	info, err := os.Stat(root)
 	if err != nil {
+		result.FailedCount++
 		return result, fmt.Errorf("source scan cannot access %q: %w", source.RootPath, err)
 	}
 	if !info.IsDir() {
+		result.FailedCount++
 		return result, fmt.Errorf("source scan root %q is not a directory", source.RootPath)
 	}
 
+	policy := w.policy.normalized()
 	var firstFailure error
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -160,11 +208,22 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		if path == root {
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			result.SkippedCount++
+		if entry.IsDir() {
+			if policy.shouldSkipName(entry.Name()) || policy.shouldSkipDirectory(entry.Name()) {
+				result.SkippedCount++
+				result.SkippedPolicyCount++
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if entry.IsDir() {
+		if entry.Type()&os.ModeSymlink != 0 {
+			result.SkippedCount++
+			result.SkippedPolicyCount++
+			return nil
+		}
+		if policy.shouldSkipName(entry.Name()) {
+			result.SkippedCount++
+			result.SkippedPolicyCount++
 			return nil
 		}
 
@@ -173,11 +232,6 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			relativeName = filepath.Base(path)
 		}
 		relativeName = filepath.ToSlash(relativeName)
-		contentType := contentTypeForPath(path)
-		if err := ingest.ValidateDocumentType(relativeName, contentType); err != nil {
-			result.SkippedCount++
-			return nil
-		}
 
 		fileInfo, err := entry.Info()
 		if err != nil {
@@ -185,6 +239,18 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			if firstFailure == nil {
 				firstFailure = fmt.Errorf("%s: %w", relativeName, err)
 			}
+			return nil
+		}
+		if policy.MaxFileBytes > 0 && fileInfo.Size() > policy.MaxFileBytes {
+			result.SkippedCount++
+			result.SkippedTooLargeCount++
+			return nil
+		}
+
+		contentType := contentTypeForPath(path)
+		if err := ingest.ValidateDocumentType(relativeName, contentType); err != nil {
+			result.SkippedCount++
+			result.SkippedUnsupportedCount++
 			return nil
 		}
 		file, err := os.Open(path)
@@ -230,18 +296,41 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	return result, nil
 }
 
-func (w SourceScanWorker) markSourceFailed(ctx context.Context, source domain.DataSource) error {
+func (w SourceScanWorker) markSourceFailed(ctx context.Context, source domain.DataSource, result SourceScanResult) error {
 	latest, err := w.repos.GetDataSource(ctx, source.TenantID, source.ID)
 	if err != nil {
 		return err
 	}
-	if latest.Status == domain.DataSourceStatusArchived || latest.Status == domain.DataSourceStatusFailed {
+	if latest.Status == domain.DataSourceStatusArchived {
 		return nil
 	}
-	if err := latest.Transition(domain.DataSourceStatusFailed, w.clock.Now()); err != nil {
+	if err := latest.FailScan(result.ImportedCount, result.SkippedCount, result.FailedCount, w.clock.Now()); err != nil {
 		return err
 	}
 	return w.repos.SaveDataSource(ctx, latest)
+}
+
+func (p SourceScanPolicy) normalized() SourceScanPolicy {
+	if p.MaxFileBytes == 0 {
+		p.MaxFileBytes = defaultSourceScanMaxFileBytes
+	}
+	if p.SkipDirectoryName == nil {
+		p.SkipDirectoryName = map[string]bool{}
+	}
+	normalized := make(map[string]bool, len(p.SkipDirectoryName))
+	for name, skip := range p.SkipDirectoryName {
+		normalized[strings.ToLower(strings.TrimSpace(name))] = skip
+	}
+	p.SkipDirectoryName = normalized
+	return p
+}
+
+func (p SourceScanPolicy) shouldSkipDirectory(name string) bool {
+	return p.SkipDirectoryName[strings.ToLower(strings.TrimSpace(name))]
+}
+
+func (p SourceScanPolicy) shouldSkipName(name string) bool {
+	return p.SkipHiddenNames && strings.HasPrefix(name, ".")
 }
 
 func contentTypeForPath(path string) string {

@@ -50,6 +50,11 @@ func TestSourceScanWorkerImportsSupportedFiles(t *testing.T) {
 	if updatedSource.LastScanAt == nil {
 		t.Fatal("last scan time is nil")
 	}
+	if updatedSource.LastScanImported != 2 ||
+		updatedSource.LastScanSkipped != 1 ||
+		updatedSource.LastScanFailed != 0 {
+		t.Fatalf("source scan counts = %d/%d/%d, want 2/1/0", updatedSource.LastScanImported, updatedSource.LastScanSkipped, updatedSource.LastScanFailed)
+	}
 
 	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
 	if err != nil {
@@ -87,6 +92,61 @@ func TestSourceScanWorkerImportsSupportedFiles(t *testing.T) {
 	}
 }
 
+func TestSourceScanWorkerAppliesDefaultSafetyPolicy(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "ok.md"), "alpha")
+	mustWriteFile(t, filepath.Join(root, ".hidden.md"), "hidden docs")
+	mustWriteFile(t, filepath.Join(root, "node_modules", "package.md"), "dependency docs")
+	mustWriteFile(t, filepath.Join(root, "large.md"), "large docs")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	job := newSourceScanJob(t, source)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	worker := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).
+		WithObjectStore(objects).
+		WithPolicy(SourceScanPolicy{
+			MaxFileBytes:    6,
+			SkipHiddenNames: true,
+			SkipDirectoryName: map[string]bool{
+				"node_modules": true,
+			},
+		})
+	result, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("process source scan: %v", err)
+	}
+	if result.ImportedCount != 1 ||
+		result.SkippedCount != 3 ||
+		result.SkippedPolicyCount != 2 ||
+		result.SkippedTooLargeCount != 1 ||
+		result.FailedCount != 0 {
+		t.Fatalf("result = %#v, want 1 imported, 3 skipped with policy/large counts", result)
+	}
+
+	documents, err := repos.ListDocuments(ctx, source.TenantID)
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(documents) != 1 || documents[0].Name != "ok.md" {
+		t.Fatalf("documents = %#v, want only ok.md", documents)
+	}
+	updatedSource, err := repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if updatedSource.LastScanImported != 1 || updatedSource.LastScanSkipped != 3 {
+		t.Fatalf("source counts = %d/%d, want 1/3", updatedSource.LastScanImported, updatedSource.LastScanSkipped)
+	}
+}
+
 func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -111,6 +171,11 @@ func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
 	}
 	if updatedSource.Status != domain.DataSourceStatusFailed {
 		t.Fatalf("source status = %q, want failed", updatedSource.Status)
+	}
+	if updatedSource.LastScanImported != 0 ||
+		updatedSource.LastScanSkipped != 0 ||
+		updatedSource.LastScanFailed != 1 {
+		t.Fatalf("source counts = %d/%d/%d, want 0/0/1", updatedSource.LastScanImported, updatedSource.LastScanSkipped, updatedSource.LastScanFailed)
 	}
 	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
 	if err != nil {

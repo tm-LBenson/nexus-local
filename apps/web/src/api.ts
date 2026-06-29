@@ -119,6 +119,9 @@ export type DataSource = {
   root_path: string;
   status: string;
   last_scan_at?: string;
+  last_scan_imported: number;
+  last_scan_skipped: number;
+  last_scan_failed: number;
   created_at: string;
   updated_at: string;
 };

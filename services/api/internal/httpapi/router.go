@@ -304,16 +304,19 @@ type documentPayload struct {
 }
 
 type dataSourcePayload struct {
-	ID         string `json:"id"`
-	TenantID   string `json:"tenant_id"`
-	OwnerID    string `json:"owner_id"`
-	Type       string `json:"type"`
-	Name       string `json:"name"`
-	RootPath   string `json:"root_path"`
-	Status     string `json:"status"`
-	LastScanAt string `json:"last_scan_at,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	ID               string `json:"id"`
+	TenantID         string `json:"tenant_id"`
+	OwnerID          string `json:"owner_id"`
+	Type             string `json:"type"`
+	Name             string `json:"name"`
+	RootPath         string `json:"root_path"`
+	Status           string `json:"status"`
+	LastScanAt       string `json:"last_scan_at,omitempty"`
+	LastScanImported int    `json:"last_scan_imported"`
+	LastScanSkipped  int    `json:"last_scan_skipped"`
+	LastScanFailed   int    `json:"last_scan_failed"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 type jobPayload struct {
@@ -1403,16 +1406,19 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 		lastScanAt = source.LastScanAt.Format(time.RFC3339)
 	}
 	return dataSourcePayload{
-		ID:         string(source.ID),
-		TenantID:   string(source.TenantID),
-		OwnerID:    string(source.OwnerID),
-		Type:       string(source.Type),
-		Name:       source.Name,
-		RootPath:   source.RootPath,
-		Status:     string(source.Status),
-		LastScanAt: lastScanAt,
-		CreatedAt:  source.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:  source.UpdatedAt.Format(time.RFC3339),
+		ID:               string(source.ID),
+		TenantID:         string(source.TenantID),
+		OwnerID:          string(source.OwnerID),
+		Type:             string(source.Type),
+		Name:             source.Name,
+		RootPath:         source.RootPath,
+		Status:           string(source.Status),
+		LastScanAt:       lastScanAt,
+		LastScanImported: source.LastScanImported,
+		LastScanSkipped:  source.LastScanSkipped,
+		LastScanFailed:   source.LastScanFailed,
+		CreatedAt:        source.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:        source.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

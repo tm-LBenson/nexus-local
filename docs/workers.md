@@ -21,15 +21,22 @@ Source scan behavior:
 2. Load the data source by tenant and resource ID.
 3. Transition source `active/failed -> scanning`.
 4. Walk the source root path from the worker machine/container.
-5. Skip symlinks and unsupported document types.
+5. Skip symlinks, hidden names, common cache/build folders, oversized files, and unsupported document types.
 6. Upload each supported file through the normal document upload path.
 7. Queue one `document_ingestion` job per imported file.
-8. Transition source `scanning -> active` and stamp `last_scan_at`.
+8. Transition source `scanning -> active`, stamp `last_scan_at`, and persist imported/skipped/failed counts.
 9. Transition the source scan job `running -> succeeded`.
 
 The source path must be visible to the worker process. In Docker deployments, mount the folder, synced drive, or network share into the worker container and use the container-visible path in the source record. For example, a Windows folder can be mounted as `/sources/customer-docs`, and the source root should use `/sources/customer-docs`, not the Windows host path.
 
-If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, and stores a concise count summary plus the first failure in `error_message`. Unsupported file types are counted as skipped, not failed.
+Default source scan safety:
+
+- Maximum file size: 10 MiB.
+- Hidden names are skipped.
+- Common cache/build folders are skipped, including `.git`, `node_modules`, `.cache`, `__pycache__`, `.next`, `dist`, `build`, `target`, `tmp`, and virtual environment folders.
+- Unsupported document types are counted as skipped, not failed.
+
+If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, stores imported/skipped/failed counts on the source, and stores a concise count summary plus the first failure in `error_message`.
 
 Document ingestion behavior:
 

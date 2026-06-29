@@ -238,9 +238,11 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO data_sources (
-			tenant_id, id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+			tenant_id, id, owner_id, type, name, root_path, status, last_scan_at,
+			last_scan_imported, last_scan_skipped, last_scan_failed,
+			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (tenant_id, id) DO UPDATE
 		SET owner_id = EXCLUDED.owner_id,
 		    type = EXCLUDED.type,
@@ -248,8 +250,11 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 		    root_path = EXCLUDED.root_path,
 		    status = EXCLUDED.status,
 		    last_scan_at = EXCLUDED.last_scan_at,
+		    last_scan_imported = EXCLUDED.last_scan_imported,
+		    last_scan_skipped = EXCLUDED.last_scan_skipped,
+		    last_scan_failed = EXCLUDED.last_scan_failed,
 		    updated_at = EXCLUDED.updated_at
-	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.Status, lastScanAt, source.CreatedAt, source.UpdatedAt)
+	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.Status, lastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed, source.CreatedAt, source.UpdatedAt)
 	return err
 }
 
@@ -257,7 +262,9 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 	var source domain.DataSource
 	var lastScanAt sql.NullTime
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at,
+		       last_scan_imported, last_scan_skipped, last_scan_failed,
+		       created_at, updated_at
 		FROM data_sources
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id).Scan(
@@ -269,6 +276,9 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 		&source.RootPath,
 		&source.Status,
 		&lastScanAt,
+		&source.LastScanImported,
+		&source.LastScanSkipped,
+		&source.LastScanFailed,
 		&source.CreatedAt,
 		&source.UpdatedAt,
 	)
@@ -283,7 +293,9 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 
 func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at,
+		       last_scan_imported, last_scan_skipped, last_scan_failed,
+		       created_at, updated_at
 		FROM data_sources
 		WHERE tenant_id = $1
 		ORDER BY updated_at DESC, id
@@ -306,6 +318,9 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 			&source.RootPath,
 			&source.Status,
 			&lastScanAt,
+			&source.LastScanImported,
+			&source.LastScanSkipped,
+			&source.LastScanFailed,
 			&source.CreatedAt,
 			&source.UpdatedAt,
 		); err != nil {

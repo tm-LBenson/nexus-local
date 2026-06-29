@@ -26,16 +26,19 @@ const (
 )
 
 type DataSource struct {
-	ID         DataSourceID
-	TenantID   TenantID
-	OwnerID    UserID
-	Type       DataSourceType
-	Name       string
-	RootPath   string
-	Status     DataSourceStatus
-	LastScanAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID               DataSourceID
+	TenantID         TenantID
+	OwnerID          UserID
+	Type             DataSourceType
+	Name             string
+	RootPath         string
+	Status           DataSourceStatus
+	LastScanAt       *time.Time
+	LastScanImported int
+	LastScanSkipped  int
+	LastScanFailed   int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type DataSourceCreate struct {
@@ -115,6 +118,40 @@ func (s *DataSource) Transition(next DataSourceStatus, now time.Time) error {
 	return nil
 }
 
+func (s *DataSource) CompleteScan(imported int, skipped int, failed int, now time.Time) error {
+	if err := validateScanCounts(imported, skipped, failed); err != nil {
+		return err
+	}
+	if err := s.Transition(DataSourceStatusActive, now); err != nil {
+		return err
+	}
+	s.LastScanImported = imported
+	s.LastScanSkipped = skipped
+	s.LastScanFailed = failed
+	return nil
+}
+
+func (s *DataSource) FailScan(imported int, skipped int, failed int, now time.Time) error {
+	if err := validateScanCounts(imported, skipped, failed); err != nil {
+		return err
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if s.Status != DataSourceStatusFailed {
+		if err := s.Transition(DataSourceStatusFailed, now); err != nil {
+			return err
+		}
+	}
+	scannedAt := now
+	s.LastScanAt = &scannedAt
+	s.LastScanImported = imported
+	s.LastScanSkipped = skipped
+	s.LastScanFailed = failed
+	s.UpdatedAt = now
+	return nil
+}
+
 func (t DataSourceType) Valid() bool {
 	switch t {
 	case DataSourceTypeFolder,
@@ -126,6 +163,13 @@ func (t DataSourceType) Valid() bool {
 	default:
 		return false
 	}
+}
+
+func validateScanCounts(imported int, skipped int, failed int) error {
+	if imported < 0 || skipped < 0 || failed < 0 {
+		return fmt.Errorf("data source scan counts: %w", ErrInvalidEntity)
+	}
+	return nil
 }
 
 func (s DataSourceStatus) CanTransition(next DataSourceStatus) bool {
