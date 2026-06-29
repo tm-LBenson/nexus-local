@@ -164,10 +164,26 @@ export function App() {
   const canManageTenant = selectedTenant?.role === 'owner' || selectedTenant?.role === 'admin';
   const canManageMembers = canManageTenant;
   const ownerCount = tenantMembers?.members.filter((member) => member.role === 'owner').length ?? 0;
-  const activeJobCount = useMemo(
-    () => jobs?.jobs.filter((job) => isActiveJobState(job.state)).length ?? 0,
+  const activeJobs = useMemo(
+    () => jobs?.jobs.filter((job) => isActiveJobState(job.state)) ?? [],
     [jobs],
   );
+  const failedJobs = useMemo(
+    () => jobs?.jobs.filter((job) => job.state === 'failed') ?? [],
+    [jobs],
+  );
+  const failedDocuments = useMemo(
+    () => documents?.documents.filter((document) => document.status === 'failed') ?? [],
+    [documents],
+  );
+  const activeDocuments = useMemo(
+    () => documents?.documents.filter((document) => isActiveDocumentStatus(document.status)) ?? [],
+    [documents],
+  );
+  const readyDocumentCount =
+    documents?.documents.filter((document) => document.status === 'ready').length ?? 0;
+  const processingDocumentCount = activeDocuments.length;
+  const activeJobCount = activeJobs.length;
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
     () =>
@@ -489,6 +505,28 @@ export function App() {
     }
     try {
       setConversations(await listConversations(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function refreshWorkspaceOverview(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setDocuments({ documents: [] });
+      setJobs({ jobs: [] });
+      setConversations({ conversations: [] });
+      return;
+    }
+    try {
+      const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
+        listDocuments(nextTenantID),
+        listJobs(nextTenantID),
+        listConversations(nextTenantID),
+      ]);
+      setDocuments(documentsResult);
+      setJobs(jobsResult);
+      setConversations(conversationsResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -1054,6 +1092,22 @@ export function App() {
           {activeView === 'ask' && (
             workspaceReady ? (
               <div className="dashboardStack">
+                <DashboardAttentionPanel
+                  activeDocuments={activeDocuments}
+                  activeJobs={activeJobs}
+                  failedDocuments={failedDocuments}
+                  failedJobs={failedJobs}
+                  onOpenDocument={(document) => {
+                    setActiveView('documents');
+                    void openDocument(document);
+                  }}
+                  onRefresh={() => void refreshWorkspaceOverview()}
+                  onViewActivity={() => setActiveView('activity')}
+                  onViewLibrary={() => setActiveView('documents')}
+                  processingDocumentCount={processingDocumentCount}
+                  readyDocumentCount={readyDocumentCount}
+                />
+
                 <div className="workspaceSplit">
               <div className="workSurface chatSurface">
                 <div className="surfaceHeader">
@@ -2168,6 +2222,141 @@ function ResultHit({
         <span>{chunkLabel}</span>
       </div>
     </div>
+  );
+}
+
+function DashboardAttentionPanel({
+  activeDocuments,
+  activeJobs,
+  failedDocuments,
+  failedJobs,
+  onOpenDocument,
+  onRefresh,
+  onViewActivity,
+  onViewLibrary,
+  processingDocumentCount,
+  readyDocumentCount,
+}: {
+  activeDocuments: ListDocumentsResponse['documents'];
+  activeJobs: ListJobsResponse['jobs'];
+  failedDocuments: ListDocumentsResponse['documents'];
+  failedJobs: ListJobsResponse['jobs'];
+  onOpenDocument: (document: ListDocumentsResponse['documents'][number]) => void;
+  onRefresh: () => void;
+  onViewActivity: () => void;
+  onViewLibrary: () => void;
+  processingDocumentCount: number;
+  readyDocumentCount: number;
+}) {
+  const failedDocumentIDs = new Set(failedDocuments.map((document) => document.id));
+  const activeDocumentIDs = new Set(activeDocuments.map((document) => document.id));
+  const otherFailedJobs = failedJobs.filter(
+    (job) => !(job.resource_type === 'document' && failedDocumentIDs.has(job.resource_id)),
+  );
+  const otherActiveJobs = activeJobs.filter(
+    (job) => !(job.resource_type === 'document' && activeDocumentIDs.has(job.resource_id)),
+  );
+  const hasFailures = failedDocuments.length > 0 || otherFailedJobs.length > 0;
+  const activeAttentionCount = Math.max(activeJobs.length, processingDocumentCount);
+  const hasActive = activeAttentionCount > 0;
+  const totalAttention =
+    failedDocuments.length + otherFailedJobs.length + activeAttentionCount;
+
+  return (
+    <section
+      className={
+        hasFailures
+          ? 'workSurface attentionPanel attentionPanelFailed'
+          : hasActive
+            ? 'workSurface attentionPanel attentionPanelActive'
+            : 'workSurface attentionPanel'
+      }
+    >
+      <div className="attentionSummary">
+        <button className="attentionMetric" onClick={onViewLibrary} type="button">
+          <strong>{readyDocumentCount}</strong>
+          <span>Ready</span>
+        </button>
+        <button className="attentionMetric" onClick={onViewActivity} type="button">
+          <strong>{activeAttentionCount}</strong>
+          <span>Active</span>
+        </button>
+        <button className="attentionMetric" onClick={onViewActivity} type="button">
+          <strong>{failedDocuments.length + otherFailedJobs.length}</strong>
+          <span>Failed</span>
+        </button>
+      </div>
+
+      <div className="attentionFeed">
+        {failedDocuments.slice(0, 2).map((document) => (
+          <button
+            className="attentionItem attentionItemFailed"
+            key={document.id}
+            onClick={() => onOpenDocument(document)}
+            type="button"
+          >
+            <strong>{document.name}</strong>
+            <span className={stateClass(document.status)}>{document.status}</span>
+            <em>Open</em>
+          </button>
+        ))}
+        {otherFailedJobs.slice(0, 2).map((job) => (
+          <button
+            className="attentionItem attentionItemFailed"
+            key={job.id}
+            onClick={onViewActivity}
+            title={jobTitle(job)}
+            type="button"
+          >
+            <strong>{job.type}</strong>
+            <span className={stateClass(job.state)}>{job.state}</span>
+            <em>{jobDetail(job)}</em>
+          </button>
+        ))}
+        {!hasFailures &&
+          activeDocuments.slice(0, 2).map((document) => (
+            <button
+              className="attentionItem"
+              key={document.id}
+              onClick={() => onOpenDocument(document)}
+              type="button"
+            >
+              <strong>{document.name}</strong>
+              <span className={stateClass(document.status)}>{document.status}</span>
+              <em>Open</em>
+            </button>
+          ))}
+        {!hasFailures &&
+          otherActiveJobs.slice(0, 3).map((job) => (
+            <button
+              className="attentionItem"
+              key={job.id}
+              onClick={onViewActivity}
+              title={jobTitle(job)}
+              type="button"
+            >
+              <strong>{job.type}</strong>
+              <span className={stateClass(job.state)}>{job.state}</span>
+              <em>{formatDateTime(job.updated_at)}</em>
+            </button>
+          ))}
+        {!hasFailures && !hasActive && (
+          <div className="attentionReady">
+            <strong>Ready</strong>
+            <span>{readyDocumentCount > 0 ? 'Knowledge base idle' : 'Add documents to begin'}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="attentionActions">
+        <button onClick={onRefresh} type="button">
+          Refresh
+        </button>
+        <button onClick={totalAttention > 0 ? onViewActivity : onViewLibrary} type="button">
+          {totalAttention > 0 ? 'Activity' : 'Library'}
+        </button>
+      </div>
+    </section>
   );
 }
 

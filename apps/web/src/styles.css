@@ -617,6 +617,122 @@ h3 {
   gap: 6px;
 }
 
+.attentionPanel {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.attentionPanelActive {
+  border-color: #d8bf86;
+}
+
+.attentionPanelFailed {
+  border-color: #e3aca6;
+}
+
+.attentionSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, auto));
+  gap: 6px;
+}
+
+.attentionMetric {
+  display: grid;
+  gap: 1px;
+  justify-items: start;
+  min-height: 42px;
+  border: 1px solid #e2e9e9;
+  padding: 6px 9px;
+  color: #172026;
+  background: #f8fbfa;
+}
+
+.attentionMetric:hover {
+  background: #eef6f4;
+}
+
+.attentionMetric strong {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.attentionMetric span {
+  color: #69777d;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.attentionFeed {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.attentionItem,
+.attentionReady {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(78px, 120px);
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: #ffffff;
+}
+
+.attentionItem {
+  color: #172026;
+  text-align: left;
+}
+
+.attentionItem:hover {
+  background: #f8fbfa;
+}
+
+.attentionItemFailed {
+  border-color: #efd5d2;
+  background: #fff8f7;
+}
+
+.attentionItem strong,
+.attentionItem em,
+.attentionReady strong,
+.attentionReady span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attentionItem em {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.attentionReady {
+  grid-template-columns: auto minmax(0, 1fr);
+  color: #2f3c43;
+  background: #f8fbfa;
+}
+
+.attentionReady span {
+  color: #69777d;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.attentionActions {
+  display: inline-flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .dashboardStart {
   max-width: 680px;
 }
@@ -1766,6 +1882,7 @@ h3 {
   }
 
   .topbar,
+  .attentionPanel,
   .workspaceSplit,
   .dashboardSecondary,
   .settingsGrid,
@@ -1813,6 +1930,18 @@ h3 {
 
   .contextPanel {
     position: static;
+  }
+
+  .attentionSummary,
+  .attentionItem,
+  .attentionReady {
+    grid-template-columns: 1fr;
+  }
+
+  .attentionActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
   }
 
   .compactUpload {
