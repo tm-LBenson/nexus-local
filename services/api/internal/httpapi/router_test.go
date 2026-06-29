@@ -644,6 +644,16 @@ func TestDataSourceEndpoints(t *testing.T) {
 	if get.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
 	}
+	var getBody struct {
+		Source dataSourcePayload `json:"source"`
+		Jobs   []jobPayload      `json:"jobs"`
+	}
+	if err := json.NewDecoder(get.Body).Decode(&getBody); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if getBody.Source.ID != "src_http" || len(getBody.Jobs) != 0 {
+		t.Fatalf("get body = %#v, want source with no jobs", getBody)
+	}
 
 	scan := httptest.NewRecorder()
 	scanReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/scan?tenant_id=tenant_1", nil)
@@ -664,6 +674,23 @@ func TestDataSourceEndpoints(t *testing.T) {
 		scanBody.Job.ResourceID != "src_http" ||
 		scanBody.Job.State != "queued" {
 		t.Fatalf("scan body = %#v", scanBody)
+	}
+
+	getAfterScan := httptest.NewRecorder()
+	getAfterScanReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(getAfterScan, getAfterScanReq)
+	if getAfterScan.Code != http.StatusOK {
+		t.Fatalf("get after scan status = %d, want %d, body = %s", getAfterScan.Code, http.StatusOK, getAfterScan.Body.String())
+	}
+	var getAfterScanBody struct {
+		Source dataSourcePayload `json:"source"`
+		Jobs   []jobPayload      `json:"jobs"`
+	}
+	if err := json.NewDecoder(getAfterScan.Body).Decode(&getAfterScanBody); err != nil {
+		t.Fatalf("decode get after scan: %v", err)
+	}
+	if len(getAfterScanBody.Jobs) != 1 || getAfterScanBody.Jobs[0].Type != "source_scan" {
+		t.Fatalf("detail jobs = %#v, want source_scan job", getAfterScanBody.Jobs)
 	}
 
 	remove := httptest.NewRecorder()

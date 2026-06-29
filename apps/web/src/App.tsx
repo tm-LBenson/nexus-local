@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AskConversationResponse,
   CurrentUserResponse,
+  DataSourceDetailResponse,
   DocumentDetailResponse,
   Health,
   ListConversationMessagesResponse,
@@ -26,6 +27,7 @@ import {
   deleteDocument,
   deleteTenantMember,
   downloadDocument,
+  getDataSource,
   getDocument,
   getCurrentUser,
   getHealth,
@@ -135,6 +137,7 @@ export function App() {
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
+  const [sourceDetail, setSourceDetail] = useState<DataSourceDetailResponse | null>(null);
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
@@ -167,6 +170,7 @@ export function App() {
   const [removingMemberID, setRemovingMemberID] = useState('');
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [downloadingDocumentID, setDownloadingDocumentID] = useState('');
+  const [loadingSourceID, setLoadingSourceID] = useState('');
   const [loadingDocumentID, setLoadingDocumentID] = useState('');
   const [retryingDocumentID, setRetryingDocumentID] = useState('');
   const [deletingConversationID, setDeletingConversationID] = useState('');
@@ -228,6 +232,7 @@ export function App() {
   const processingDocumentCount = activeDocuments.length;
   const activeJobCount = activeJobs.length;
   const activeSourceScanCount = activeSourceScanJobs.size;
+  const trackedSourceID = sourceDetail?.source.id ?? '';
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
     () =>
@@ -362,12 +367,14 @@ export function App() {
     async function refreshIngestionState() {
       setIngestionSyncing(true);
       try {
-        const [documentsResult, dataSourcesResult, jobsResult, detailResult] = await Promise.all([
-          listDocuments(tenantID),
-          listDataSources(tenantID),
-          listJobs(tenantID),
-          trackedDocumentID ? getDocument(tenantID, trackedDocumentID) : Promise.resolve(null),
-        ]);
+        const [documentsResult, dataSourcesResult, jobsResult, sourceDetailResult, detailResult] =
+          await Promise.all([
+            listDocuments(tenantID),
+            listDataSources(tenantID),
+            listJobs(tenantID),
+            trackedSourceID ? getDataSource(tenantID, trackedSourceID) : Promise.resolve(null),
+            trackedDocumentID ? getDocument(tenantID, trackedDocumentID) : Promise.resolve(null),
+          ]);
         if (canceled) {
           return;
         }
@@ -375,6 +382,9 @@ export function App() {
         setDocuments(documentsResult);
         setDataSources(dataSourcesResult);
         setJobs(jobsResult);
+        if (sourceDetailResult) {
+          setSourceDetail(sourceDetailResult);
+        }
         if (detailResult) {
           setDocumentDetail(detailResult);
         }
@@ -399,7 +409,7 @@ export function App() {
       canceled = true;
       window.clearInterval(interval);
     };
-  }, [tenantID, trackedDocumentID, trackingIngestion]);
+  }, [tenantID, trackedDocumentID, trackedSourceID, trackingIngestion]);
 
   useEffect(() => {
     if (activeView !== 'settings' || !tenantID || !canManageMembers) {
@@ -669,6 +679,7 @@ export function App() {
   async function switchTenant(nextTenantID: string) {
     setTenantID(nextTenantID);
     setRegistration(null);
+    setSourceDetail(null);
     setDocumentDetail(null);
     setDataSources(null);
     setSearchResult(null);
@@ -682,6 +693,7 @@ export function App() {
     if (!nextTenantID) {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
+      setSourceDetail(null);
       setJobs({ jobs: [] });
       setTenantMembers(null);
       setAuditEvents(null);
@@ -802,6 +814,9 @@ export function App() {
         refreshDataSources(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
       ]);
+      if (sourceDetail?.source.id === source.id) {
+        setSourceDetail(null);
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -817,7 +832,16 @@ export function App() {
     setScanningSourceID(source.id);
     setError(null);
     try {
-      await scanDataSource(tenantID, source.id);
+      const result = await scanDataSource(tenantID, source.id);
+      setSourceDetail((current) => {
+        if (!current || current.source.id !== source.id) {
+          return { source: result.source, jobs: [result.job] };
+        }
+        return {
+          source: result.source,
+          jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+        };
+      });
       await Promise.all([
         refreshDataSources(tenantID),
         refreshJobs(tenantID),
@@ -827,6 +851,18 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setScanningSourceID('');
+    }
+  }
+
+  async function openSource(source: ListDataSourcesResponse['sources'][number]) {
+    setLoadingSourceID(source.id);
+    setError(null);
+    try {
+      setSourceDetail(await getDataSource(tenantID, source.id));
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setLoadingSourceID('');
     }
   }
 
@@ -1643,7 +1679,9 @@ export function App() {
                   const scanJob = activeSourceScanJobs.get(source.id);
                   return (
                     <div className="sourceRow" key={source.id}>
-                      <strong>{source.name}</strong>
+                      <button onClick={() => void openSource(source)} type="button">
+                        <strong>{source.name}</strong>
+                      </button>
                       <span className={stateClass(scanJob?.state ?? source.status)}>
                         {scanJob ? `scan ${scanJob.state}` : source.status}
                       </span>
@@ -1652,6 +1690,13 @@ export function App() {
                       <details className="rowMenu">
                         <summary>More</summary>
                         <div className="rowMenuActions">
+                          <button
+                            disabled={loadingSourceID === source.id}
+                            onClick={() => void openSource(source)}
+                            type="button"
+                          >
+                            {loadingSourceID === source.id ? 'Loading' : 'Details'}
+                          </button>
                           <button
                             disabled={
                               Boolean(scanJob) ||
@@ -1685,6 +1730,94 @@ export function App() {
                 )}
                 {!dataSources && <p className="muted">Loading sources</p>}
               </div>
+
+              {sourceDetail && (
+                <div className="detailPanel">
+                  <div className="detailHeader">
+                    <h3>{sourceDetail.source.name}</h3>
+                    <div className="detailActions">
+                      <span className={stateClass(sourceDetail.source.status)}>
+                        {sourceDetail.source.status}
+                      </span>
+                      <button
+                        disabled={
+                          Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActiveScanJob(sourceDetail) ||
+                          sourceDetail.source.status === 'archived' ||
+                          scanningSourceID === sourceDetail.source.id
+                        }
+                        onClick={() => void requestDataSourceScan(sourceDetail.source)}
+                        type="button"
+                      >
+                        {scanningSourceID === sourceDetail.source.id
+                          ? 'Queuing'
+                          : sourceHasActiveScanJob(sourceDetail)
+                            ? 'Queued'
+                            : sourceDetail.source.status === 'failed'
+                              ? 'Retry'
+                              : 'Scan'}
+                      </button>
+                    </div>
+                  </div>
+                  {sourceDetail.source.status === 'failed' && sourceFailureMessage(sourceDetail) && (
+                    <div className="failureNotice">
+                      <strong>Scan failed</strong>
+                      <span>{sourceFailureMessage(sourceDetail)}</span>
+                    </div>
+                  )}
+                  <dl className="runtimeList detailList">
+                    <div>
+                      <dt>ID</dt>
+                      <dd>{sourceDetail.source.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Type</dt>
+                      <dd>{sourceTypeLabel(sourceDetail.source.type)}</dd>
+                    </div>
+                    <div>
+                      <dt>Path</dt>
+                      <dd>{sourceDetail.source.root_path}</dd>
+                    </div>
+                    <div>
+                      <dt>Last scan</dt>
+                      <dd>
+                        {sourceDetail.source.last_scan_at
+                          ? formatDateTime(sourceDetail.source.last_scan_at)
+                          : 'Not scanned'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Imported</dt>
+                      <dd>{sourceDetail.source.last_scan_imported ?? 0}</dd>
+                    </div>
+                    <div>
+                      <dt>Skipped</dt>
+                      <dd>{sourceDetail.source.last_scan_skipped ?? 0}</dd>
+                    </div>
+                    <div>
+                      <dt>Failed</dt>
+                      <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
+                    </div>
+                  </dl>
+                  <details className="inlineDetails" open>
+                    <summary>Activity</summary>
+                    <div className="tableList">
+                      {sourceDetail.jobs.map((job) => (
+                        <div className="jobRow" key={job.id}>
+                          <strong>{job.type}</strong>
+                          <span className={stateClass(job.state)}>{job.state}</span>
+                          <em className={job.error_message ? 'jobError' : ''} title={jobTitle(job)}>
+                            {jobDetail(job)}
+                          </em>
+                          <small>{job.attempts} tries</small>
+                          <time dateTime={job.updated_at}>{formatDateTime(job.updated_at)}</time>
+                        </div>
+                      ))}
+                      {sourceDetail.jobs.length === 0 && <p className="muted">No activity</p>}
+                    </div>
+                  </details>
+                </div>
+              )}
             </section>
 
             <section className="workSurface">
@@ -3187,6 +3320,16 @@ function hasActiveIngestionJob(detail: DocumentDetailResponse) {
   );
 }
 
+function sourceHasActiveScanJob(detail: DataSourceDetailResponse) {
+  return detail.jobs.some(
+    (job) =>
+      job.type === 'source_scan' &&
+      job.resource_type === 'data_source' &&
+      job.resource_id === detail.source.id &&
+      isActiveJobState(job.state),
+  );
+}
+
 function isActiveJobState(state: string) {
   return ['queued', 'running', 'retrying'].includes(state);
 }
@@ -3196,6 +3339,13 @@ function isActiveDocumentStatus(status: string) {
 }
 
 function documentFailureMessage(detail: DocumentDetailResponse) {
+  return (
+    detail.jobs.find((job) => job.state === 'failed' && job.error_message.trim() !== '')
+      ?.error_message ?? ''
+  );
+}
+
+function sourceFailureMessage(detail: DataSourceDetailResponse) {
   return (
     detail.jobs.find((job) => job.state === 'failed' && job.error_message.trim() !== '')
       ?.error_message ?? ''

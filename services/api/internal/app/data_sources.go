@@ -60,6 +60,11 @@ type DataSourceResult struct {
 	Source domain.DataSource
 }
 
+type DataSourceDetailResult struct {
+	Source domain.DataSource
+	Jobs   []domain.Job
+}
+
 type ScanDataSourceResult struct {
 	Source domain.DataSource
 	Job    domain.Job
@@ -112,18 +117,31 @@ func (s DataSourceService) Update(ctx context.Context, input UpdateDataSourceInp
 	return DataSourceResult{Source: source}, nil
 }
 
-func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput) (DataSourceResult, error) {
+func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput) (DataSourceDetailResult, error) {
 	if err := ctx.Err(); err != nil {
-		return DataSourceResult{}, err
+		return DataSourceDetailResult{}, err
 	}
 	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
-		return DataSourceResult{}, fmt.Errorf("data source: %w", domain.ErrInvalidEntity)
+		return DataSourceDetailResult{}, fmt.Errorf("data source: %w", domain.ErrInvalidEntity)
 	}
 	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
 	if err != nil {
-		return DataSourceResult{}, err
+		return DataSourceDetailResult{}, err
 	}
-	return DataSourceResult{Source: source}, nil
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return DataSourceDetailResult{}, err
+	}
+	relatedJobs := jobs[:0]
+	for _, job := range jobs {
+		if job.ResourceType == "data_source" && job.ResourceID == string(source.ID) {
+			relatedJobs = append(relatedJobs, job)
+		}
+	}
+	return DataSourceDetailResult{
+		Source: source,
+		Jobs:   relatedJobs,
+	}, nil
 }
 
 func (s DataSourceService) List(ctx context.Context, input ListDataSourcesInput) (ListDataSourcesResult, error) {

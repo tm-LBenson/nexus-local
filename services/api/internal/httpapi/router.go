@@ -896,7 +896,14 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 			writeDataSourceError(w, "get data source", err)
 			return
 		}
-		writeJSON(w, http.StatusOK, envelope{"source": encodeDataSource(result.Source)})
+		jobs := make([]jobPayload, 0, len(result.Jobs))
+		for _, job := range result.Jobs {
+			jobs = append(jobs, encodeJob(job))
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"source": encodeDataSource(result.Source),
+			"jobs":   jobs,
+		})
 	}
 }
 

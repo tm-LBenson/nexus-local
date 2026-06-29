@@ -1284,6 +1284,20 @@ h3 {
   background: transparent;
 }
 
+.sourceRow > button:first-child {
+  min-height: 34px;
+  border: 0;
+  padding: 0;
+  color: #172026;
+  background: transparent;
+  text-align: left;
+}
+
+.sourceRow > button:first-child:hover {
+  color: #1d5262;
+  background: transparent;
+}
+
 .selectedRow {
   border-color: #9eb7be;
   background: #eef6f4;

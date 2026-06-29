@@ -156,6 +156,11 @@ export type DataSourceResponse = {
   source: DataSource;
 };
 
+export type DataSourceDetailResponse = {
+  source: DataSource;
+  jobs: RegisteredJob[];
+};
+
 export type DataSourceScanResponse = {
   source: DataSource;
   job: RegisteredJob;
@@ -353,6 +358,13 @@ export async function updateDataSource(
     method: 'PATCH',
     body: JSON.stringify(input),
   });
+}
+
+export async function getDataSource(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceDetailResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}?${params.toString()}`,
+  );
 }
 
 export async function archiveDataSource(tenantId: string, sourceId: string) {

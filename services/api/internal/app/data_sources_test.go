@@ -99,6 +99,58 @@ func TestUpdateDataSource(t *testing.T) {
 	}
 }
 
+func TestGetDataSourceIncludesRelatedJobs(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	sourceJob, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_source"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourceScan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new source job: %v", err)
+	}
+	otherJob, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_other"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeDocumentIngestion,
+		ResourceType: "document",
+		ResourceID:   "doc_1",
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new other job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, sourceJob); err != nil {
+		t.Fatalf("save source job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, otherJob); err != nil {
+		t.Fatalf("save other job: %v", err)
+	}
+
+	result, err := service.Get(ctx, DataSourceDetailInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if result.Source.ID != source.ID {
+		t.Fatalf("source id = %q, want %q", result.Source.ID, source.ID)
+	}
+	if len(result.Jobs) != 1 || result.Jobs[0].ID != sourceJob.ID {
+		t.Fatalf("jobs = %#v, want only source job", result.Jobs)
+	}
+}
+
 func TestArchiveDataSource(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

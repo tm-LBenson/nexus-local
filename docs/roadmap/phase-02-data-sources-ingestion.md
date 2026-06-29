@@ -27,7 +27,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.3 | Source scan worker that walks allowed files and creates document jobs. | Fixture folder imports without blocking the API. |
 | 2.4 | Default include/exclude safety for supported extensions, hidden/cache paths, symlinks, and max size. | Test folder shows expected accepted/rejected counts and the UI shows scan totals. |
 | 2.5 | Incremental scan with changed/new/deleted detection. | Re-scan updates only changed files and preserves stable records. |
-| 2.6 | Source detail page with failures, retries, skipped files, and recent jobs. | User can answer "what happened to this import?" from the UI. |
+| 2.6 | Source detail panel with failures, retries, scan totals, and recent jobs. | User can answer "what happened to this import?" from the UI. |
 
 ## Dependencies
 
