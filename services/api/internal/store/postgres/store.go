@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -227,6 +228,94 @@ func (s *Store) ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]
 		documents = append(documents, document)
 	}
 	return documents, rows.Err()
+}
+
+func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) error {
+	var lastScanAt any
+	if source.LastScanAt != nil {
+		lastScanAt = *source.LastScanAt
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO data_sources (
+			tenant_id, id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET owner_id = EXCLUDED.owner_id,
+		    type = EXCLUDED.type,
+		    name = EXCLUDED.name,
+		    root_path = EXCLUDED.root_path,
+		    status = EXCLUDED.status,
+		    last_scan_at = EXCLUDED.last_scan_at,
+		    updated_at = EXCLUDED.updated_at
+	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.Status, lastScanAt, source.CreatedAt, source.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id domain.DataSourceID) (domain.DataSource, error) {
+	var source domain.DataSource
+	var lastScanAt sql.NullTime
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+		FROM data_sources
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&source.ID,
+		&source.TenantID,
+		&source.OwnerID,
+		&source.Type,
+		&source.Name,
+		&source.RootPath,
+		&source.Status,
+		&lastScanAt,
+		&source.CreatedAt,
+		&source.UpdatedAt,
+	)
+	if err != nil {
+		return domain.DataSource{}, translateErr(err)
+	}
+	if lastScanAt.Valid {
+		source.LastScanAt = &lastScanAt.Time
+	}
+	return source, nil
+}
+
+func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, owner_id, type, name, root_path, status, last_scan_at, created_at, updated_at
+		FROM data_sources
+		WHERE tenant_id = $1
+		ORDER BY updated_at DESC, id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sources := make([]domain.DataSource, 0)
+	for rows.Next() {
+		var source domain.DataSource
+		var lastScanAt sql.NullTime
+		if err := rows.Scan(
+			&source.ID,
+			&source.TenantID,
+			&source.OwnerID,
+			&source.Type,
+			&source.Name,
+			&source.RootPath,
+			&source.Status,
+			&lastScanAt,
+			&source.CreatedAt,
+			&source.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if lastScanAt.Valid {
+			source.LastScanAt = &lastScanAt.Time
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
 }
 
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {

@@ -17,6 +17,7 @@ type Store struct {
 	users         map[domain.UserID]domain.User
 	memberships   map[membershipKey]domain.Membership
 	documents     map[tenantDocumentKey]domain.Document
+	dataSources   map[tenantDataSourceKey]domain.DataSource
 	jobs          map[tenantJobKey]domain.Job
 	conversations map[tenantConversationKey]domain.Conversation
 	messages      map[tenantMessageKey]domain.Message
@@ -31,6 +32,11 @@ type membershipKey struct {
 type tenantDocumentKey struct {
 	tenantID   domain.TenantID
 	documentID domain.DocumentID
+}
+
+type tenantDataSourceKey struct {
+	tenantID     domain.TenantID
+	dataSourceID domain.DataSourceID
 }
 
 type tenantJobKey struct {
@@ -60,6 +66,7 @@ func New() *Store {
 		users:         map[domain.UserID]domain.User{},
 		memberships:   map[membershipKey]domain.Membership{},
 		documents:     map[tenantDocumentKey]domain.Document{},
+		dataSources:   map[tenantDataSourceKey]domain.DataSource{},
 		jobs:          map[tenantJobKey]domain.Job{},
 		conversations: map[tenantConversationKey]domain.Conversation{},
 		messages:      map[tenantMessageKey]domain.Message{},
@@ -228,6 +235,54 @@ func (s *Store) ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]
 		return documents[i].CreatedAt.Before(documents[j].CreatedAt)
 	})
 	return documents, nil
+}
+
+func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dataSources[tenantDataSourceKey{
+		tenantID:     source.TenantID,
+		dataSourceID: source.ID,
+	}] = source
+	return nil
+}
+
+func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id domain.DataSourceID) (domain.DataSource, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.DataSource{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	source, ok := s.dataSources[tenantDataSourceKey{tenantID: tenantID, dataSourceID: id}]
+	if !ok {
+		return domain.DataSource{}, store.ErrNotFound
+	}
+	return source, nil
+}
+
+func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sources := make([]domain.DataSource, 0)
+	for _, source := range s.dataSources {
+		if source.TenantID == tenantID {
+			sources = append(sources, source)
+		}
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if sources[i].UpdatedAt.Equal(sources[j].UpdatedAt) {
+			return sources[i].ID < sources[j].ID
+		}
+		return sources[i].UpdatedAt.After(sources[j].UpdatedAt)
+	})
+	return sources, nil
 }
 
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {

@@ -600,6 +600,11 @@ h3 {
   align-items: start;
 }
 
+.libraryStack {
+  display: grid;
+  gap: 14px;
+}
+
 .dashboardStack {
   display: grid;
   gap: 14px;
@@ -832,6 +837,14 @@ h3 {
 .memberForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr) 112px 76px;
+  gap: 8px;
+  align-items: end;
+  width: 100%;
+}
+
+.sourceForm {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(140px, 180px) minmax(220px, 1.4fr) 76px;
   gap: 8px;
   align-items: end;
   width: 100%;
@@ -1217,6 +1230,7 @@ h3 {
 .conversationRow,
 .jobRow,
 .auditRow,
+.sourceRow,
 .searchHit {
   display: grid;
   align-items: center;
@@ -1229,6 +1243,11 @@ h3 {
 
 .documentRow {
   grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px 78px;
+  gap: 10px;
+}
+
+.sourceRow {
+  grid-template-columns: minmax(0, 1fr) 98px 130px minmax(180px, 0.9fr) 78px;
   gap: 10px;
 }
 
@@ -1378,6 +1397,9 @@ h3 {
 .auditRow small,
 .auditRow time,
 .auditRow p,
+.sourceRow strong,
+.sourceRow em,
+.sourceRow small,
 .tenantRow strong,
 .memberRow strong,
 .targetRow span,
@@ -1392,6 +1414,7 @@ h3 {
 .conversationRow span,
 .jobRow span,
 .auditRow span,
+.sourceRow span,
 .tenantRow span,
 .memberRow span {
   color: #0a684c;
@@ -1410,12 +1433,20 @@ h3 {
 .auditRow small,
 .auditRow time,
 .auditRow p,
+.sourceRow em,
+.sourceRow small,
 .targetRow em,
 .searchHit em {
   color: #69777d;
   font-size: 0.78rem;
   font-style: normal;
   font-weight: 700;
+}
+
+.sourceRow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jobRow .jobError {
@@ -2018,6 +2049,8 @@ h3 {
   .conversationRow,
   .jobRow,
   .auditRow,
+  .sourceForm,
+  .sourceRow,
   .dataHeader,
   .dataRow,
   .tenantRow,

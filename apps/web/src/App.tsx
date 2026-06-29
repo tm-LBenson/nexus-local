@@ -7,6 +7,7 @@ import {
   ListConversationMessagesResponse,
   ListConversationsResponse,
   ListAuditEventsResponse,
+  ListDataSourcesResponse,
   ListDocumentsResponse,
   ListJobsResponse,
   ListTenantMembersResponse,
@@ -15,9 +16,11 @@ import {
   RegisterDocumentResponse,
   SearchDocumentsResponse,
   addTenantMember,
+  archiveDataSource,
   askConversationStream,
   apiBase,
   checkModelTarget,
+  createDataSource,
   createTenant,
   deleteConversation,
   deleteDocument,
@@ -28,6 +31,7 @@ import {
   getHealth,
   getModelTargets,
   getReadiness,
+  listDataSources,
   listConversationMessages,
   listConversations,
   listAuditEvents,
@@ -81,6 +85,12 @@ const initialAuditFilters = {
   query: '',
 };
 
+const initialSourceForm = {
+  type: 'synced_folder',
+  name: '',
+  root_path: '',
+};
+
 const supportedDocumentAccept = [
   '.txt',
   '.md',
@@ -123,6 +133,7 @@ export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
+  const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
@@ -133,6 +144,7 @@ export function App() {
     useState<ListConversationMessagesResponse | null>(null);
   const [selectedConversationID, setSelectedConversationID] = useState('');
   const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
+  const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -145,6 +157,8 @@ export function App() {
   const [currentAskQuestion, setCurrentAskQuestion] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [creatingSource, setCreatingSource] = useState(false);
+  const [archivingSourceID, setArchivingSourceID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
@@ -402,6 +416,7 @@ export function App() {
     setTenantID(initialTenantID);
     if (!initialTenantID) {
       setDocuments({ documents: [] });
+      setDataSources({ sources: [] });
       setJobs({ jobs: [] });
       setAuditEvents(null);
       setConversations({ conversations: [] });
@@ -409,12 +424,14 @@ export function App() {
       return { targets: targetsResult.targets };
     }
 
-    const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
+    const [documentsResult, dataSourcesResult, jobsResult, conversationsResult] = await Promise.all([
       listDocuments(initialTenantID),
+      listDataSources(initialTenantID),
       listJobs(initialTenantID),
       listConversations(initialTenantID),
     ]);
     setDocuments(documentsResult);
+    setDataSources(dataSourcesResult);
     setJobs(jobsResult);
     setConversations(conversationsResult);
     return { targets: targetsResult.targets };
@@ -486,6 +503,19 @@ export function App() {
     }
   }
 
+  async function refreshDataSources(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setDataSources({ sources: [] });
+      return;
+    }
+    try {
+      setDataSources(await listDataSources(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
   async function refreshTenantMembers(nextTenantID = tenantID) {
     setError(null);
     if (!nextTenantID) {
@@ -545,17 +575,20 @@ export function App() {
     setError(null);
     if (!nextTenantID) {
       setDocuments({ documents: [] });
+      setDataSources({ sources: [] });
       setJobs({ jobs: [] });
       setConversations({ conversations: [] });
       return;
     }
     try {
-      const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
+      const [documentsResult, dataSourcesResult, jobsResult, conversationsResult] = await Promise.all([
         listDocuments(nextTenantID),
+        listDataSources(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
       ]);
       setDocuments(documentsResult);
+      setDataSources(dataSourcesResult);
       setJobs(jobsResult);
       setConversations(conversationsResult);
     } catch (err) {
@@ -618,6 +651,7 @@ export function App() {
     setTenantID(nextTenantID);
     setRegistration(null);
     setDocumentDetail(null);
+    setDataSources(null);
     setSearchResult(null);
     setTenantMembers(null);
     setAuditEvents(null);
@@ -628,6 +662,7 @@ export function App() {
     setError(null);
     if (!nextTenantID) {
       setDocuments({ documents: [] });
+      setDataSources({ sources: [] });
       setJobs({ jobs: [] });
       setTenantMembers(null);
       setAuditEvents(null);
@@ -635,13 +670,15 @@ export function App() {
       return;
     }
     try {
-      const [documentsResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
+      const [documentsResult, dataSourcesResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
         listDocuments(nextTenantID),
+        listDataSources(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
         listAuditEvents(nextTenantID).catch(() => null),
       ]);
       setDocuments(documentsResult);
+      setDataSources(dataSourcesResult);
       setJobs(jobsResult);
       setConversations(conversationsResult);
       setAuditEvents(auditResult);
@@ -700,6 +737,56 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function submitDataSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    if (!sourceForm.name.trim() || !sourceForm.root_path.trim()) {
+      setError('Enter a source name and path');
+      return;
+    }
+    setCreatingSource(true);
+    setError(null);
+    try {
+      await createDataSource({
+        tenant_id: tenantID,
+        type: sourceForm.type,
+        name: sourceForm.name.trim(),
+        root_path: sourceForm.root_path.trim(),
+      });
+      setSourceForm(initialSourceForm);
+      await Promise.all([
+        refreshDataSources(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setCreatingSource(false);
+    }
+  }
+
+  async function removeDataSource(source: ListDataSourcesResponse['sources'][number]) {
+    if (!window.confirm(`Archive ${source.name}?`)) {
+      return;
+    }
+    setArchivingSourceID(source.id);
+    setError(null);
+    try {
+      await archiveDataSource(tenantID, source.id);
+      await Promise.all([
+        refreshDataSources(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setArchivingSourceID('');
     }
   }
 
@@ -1458,7 +1545,86 @@ export function App() {
           )}
 
         {activeView === 'documents' && (
-          <div className="workSurface">
+          <div className="libraryStack">
+            <section className="workSurface sourceSurface">
+              <div className="surfaceHeader">
+                <h2>Sources</h2>
+                <div className="headerActions">
+                  <span className="syncStatus">{dataSources?.sources.length ?? 0} active</span>
+                  <button onClick={() => void refreshDataSources()} type="button">
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              <details className="inlineDetails">
+                <summary>Add source</summary>
+                <form className="sourceForm" onSubmit={submitDataSource}>
+                  <input
+                    aria-label="Source name"
+                    onChange={(event) =>
+                      setSourceForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Source name"
+                    value={sourceForm.name}
+                  />
+                  <select
+                    aria-label="Source type"
+                    onChange={(event) =>
+                      setSourceForm((current) => ({ ...current, type: event.target.value }))
+                    }
+                    value={sourceForm.type}
+                  >
+                    <option value="synced_folder">Synced folder</option>
+                    <option value="folder">Local folder</option>
+                    <option value="network_share">Network share</option>
+                    <option value="export">Export</option>
+                    <option value="connector">Connector</option>
+                  </select>
+                  <input
+                    aria-label="Source path"
+                    onChange={(event) =>
+                      setSourceForm((current) => ({ ...current, root_path: event.target.value }))
+                    }
+                    placeholder="C:\\Docs, /mnt/docs, or \\\\server\\share"
+                    value={sourceForm.root_path}
+                  />
+                  <button disabled={creatingSource || !workspaceReady} type="submit">
+                    {creatingSource ? 'Adding' : 'Add'}
+                  </button>
+                </form>
+              </details>
+
+              <div className="tableList sourceList">
+                {dataSources?.sources.map((source) => (
+                  <div className="sourceRow" key={source.id}>
+                    <strong>{source.name}</strong>
+                    <span className={stateClass(source.status)}>{source.status}</span>
+                    <em>{sourceTypeLabel(source.type)}</em>
+                    <small title={source.root_path}>{source.root_path}</small>
+                    <details className="rowMenu">
+                      <summary>More</summary>
+                      <div className="rowMenuActions">
+                        <button
+                          className="dangerButton"
+                          disabled={archivingSourceID === source.id}
+                          onClick={() => void removeDataSource(source)}
+                          type="button"
+                        >
+                          {archivingSourceID === source.id ? 'Archiving' : 'Archive'}
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                ))}
+                {dataSources && dataSources.sources.length === 0 && (
+                  <p className="muted">No sources</p>
+                )}
+                {!dataSources && <p className="muted">Loading sources</p>}
+              </div>
+            </section>
+
+            <section className="workSurface">
             <div className="surfaceHeader">
               <h2>Documents</h2>
               <div className="headerActions">
@@ -1638,6 +1804,7 @@ export function App() {
                 </details>
               </div>
             )}
+            </section>
           </div>
         )}
 
@@ -2809,6 +2976,23 @@ function formatProviderPreset(value?: string) {
       return 'Unknown';
     default:
       return value ?? 'Unknown';
+  }
+}
+
+function sourceTypeLabel(value: string) {
+  switch (value) {
+    case 'synced_folder':
+      return 'Synced folder';
+    case 'network_share':
+      return 'Network share';
+    case 'folder':
+      return 'Local folder';
+    case 'export':
+      return 'Export';
+    case 'connector':
+      return 'Connector';
+    default:
+      return titleCase(value.replace(/_/g, ' '));
   }
 }
 

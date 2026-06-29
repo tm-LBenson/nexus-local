@@ -7,6 +7,7 @@ The project is early, but the core shape is already in place: a replaceable back
 ## What It Does
 
 - Upload documents into tenant-scoped workspaces.
+- Create managed knowledge source records for folders, synced drives, exports, network shares, and future connectors.
 - Import local folders or synced document roots through a bulk import script.
 - Manage workspace members and roles for self-hosted team access.
 - Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
@@ -252,6 +253,11 @@ Useful endpoints during development:
 - `POST /v1/documents/upload`
 - `POST /v1/documents/{document_id}/retry?tenant_id=tenant_1`
 - `DELETE /v1/documents/{document_id}?tenant_id=tenant_1`
+- `GET /v1/data-sources?tenant_id=tenant_1`
+- `POST /v1/data-sources`
+- `GET /v1/data-sources/{source_id}?tenant_id=tenant_1`
+- `PATCH /v1/data-sources/{source_id}`
+- `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1`
 - `GET /v1/jobs?tenant_id=tenant_1`
 - `GET /v1/audit-events?tenant_id=tenant_1`
 - `POST /v1/search`

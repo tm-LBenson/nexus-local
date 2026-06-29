@@ -78,6 +78,8 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 `DELETE /v1/documents/<document_id>?tenant_id=<tenant_id>` soft-deletes a document, removes its stored object when object storage is configured, and removes vectors when a vector index is configured. Normal document lists omit deleted documents.
 
+`GET /v1/data-sources?tenant_id=<tenant_id>` lists managed knowledge sources for a tenant. `POST /v1/data-sources` creates a source record with type, name, root path, owner, status, and timestamps. `PATCH /v1/data-sources/<source_id>` updates source metadata. `DELETE /v1/data-sources/<source_id>?tenant_id=<tenant_id>` archives the source record without deleting documents yet. This is the contract future folder, synced drive, network share, export, and connector scan jobs attach to.
+
 `GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100. Failed jobs include `error_message` with the ingestion or worker failure reason.
 
 `GET /v1/audit-events?tenant_id=<tenant_id>` lists recent tenant audit events for administrative review. Results are newest first, default to 50 events, and cap at 200. Events include actor, action, resource type, resource ID, outcome, metadata, and creation time.
@@ -85,6 +87,9 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 Current audited actions:
 
 - `document.uploaded`
+- `data_source.created`
+- `data_source.updated`
+- `data_source.archived`
 - `search.completed`
 - `conversation.ask`
 

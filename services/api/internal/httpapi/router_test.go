@@ -574,6 +574,149 @@ func TestDeleteDocumentEndpoint(t *testing.T) {
 	}
 }
 
+func TestDataSourceEndpoints(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "synced_folder",
+		"name": "OneDrive Support Docs",
+		"root_path": "C:\\Users\\team\\OneDrive\\Support"
+	}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", create.Code, http.StatusCreated, create.Body.String())
+	}
+	var createBody struct {
+		Source dataSourcePayload `json:"source"`
+	}
+	if err := json.NewDecoder(create.Body).Decode(&createBody); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if createBody.Source.ID != "src_http" || createBody.Source.OwnerID != "user_1" {
+		t.Fatalf("source = %#v", createBody.Source)
+	}
+	if createBody.Source.Status != "active" {
+		t.Fatalf("status = %q, want active", createBody.Source.Status)
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources?tenant_id=tenant_1", nil)
+	server.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", list.Code, http.StatusOK, list.Body.String())
+	}
+	var listBody struct {
+		Sources []dataSourcePayload `json:"sources"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listBody.Sources) != 1 || listBody.Sources[0].Name != "OneDrive Support Docs" {
+		t.Fatalf("sources = %#v", listBody.Sources)
+	}
+
+	update := httptest.NewRecorder()
+	updateReq := httptest.NewRequest(http.MethodPatch, "/v1/data-sources/src_http", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "network_share",
+		"name": "NAS Runbooks",
+		"root_path": "\\\\nas\\runbooks"
+	}`))
+	server.ServeHTTP(update, updateReq)
+	if update.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body = %s", update.Code, http.StatusOK, update.Body.String())
+	}
+	var updateBody struct {
+		Source dataSourcePayload `json:"source"`
+	}
+	if err := json.NewDecoder(update.Body).Decode(&updateBody); err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+	if updateBody.Source.Type != "network_share" || updateBody.Source.Name != "NAS Runbooks" {
+		t.Fatalf("updated source = %#v", updateBody.Source)
+	}
+
+	get := httptest.NewRecorder()
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(get, getReq)
+	if get.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
+	}
+
+	remove := httptest.NewRecorder()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(remove, removeReq)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, want %d, body = %s", remove.Code, http.StatusOK, remove.Body.String())
+	}
+	var removeBody struct {
+		Source dataSourcePayload `json:"source"`
+	}
+	if err := json.NewDecoder(remove.Body).Decode(&removeBody); err != nil {
+		t.Fatalf("decode archive: %v", err)
+	}
+	if removeBody.Source.Status != "archived" {
+		t.Fatalf("status = %q, want archived", removeBody.Source.Status)
+	}
+
+	listActive := httptest.NewRecorder()
+	listActiveReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources?tenant_id=tenant_1", nil)
+	server.ServeHTTP(listActive, listActiveReq)
+	var listActiveBody struct {
+		Sources []dataSourcePayload `json:"sources"`
+	}
+	if err := json.NewDecoder(listActive.Body).Decode(&listActiveBody); err != nil {
+		t.Fatalf("decode list active: %v", err)
+	}
+	if len(listActiveBody.Sources) != 0 {
+		t.Fatalf("active sources len = %d, want 0", len(listActiveBody.Sources))
+	}
+
+	audit := httptest.NewRecorder()
+	auditReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1", nil)
+	server.ServeHTTP(audit, auditReq)
+	if audit.Code != http.StatusOK {
+		t.Fatalf("audit status = %d, want %d, body = %s", audit.Code, http.StatusOK, audit.Body.String())
+	}
+	var auditBody struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
+		t.Fatalf("decode audit: %v", err)
+	}
+	if len(auditBody.Events) != 3 {
+		t.Fatalf("audit events len = %d, want 3", len(auditBody.Events))
+	}
+	hasArchivedAudit := false
+	for _, event := range auditBody.Events {
+		if event.Action == "data_source.archived" && event.ResourceID == "src_http" {
+			hasArchivedAudit = true
+		}
+	}
+	if !hasArchivedAudit {
+		t.Fatalf("audit events = %#v, want archived source event", auditBody.Events)
+	}
+}
+
+func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "folder",
+		"name": "",
+		"root_path": ""
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
 func TestListJobsEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -1375,6 +1518,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 	documents := app.NewDocumentService(repos, ids, httpClock{}).
 		WithObjectStore(objectmemory.New()).
 		WithVectorIndex(vectorIndex)
+	dataSources := app.NewDataSourceService(repos, ids, httpClock{})
 	jobs := app.NewJobService(repos)
 	audit := app.NewAuditService(repos, ids, httpClock{})
 	seedEmbedding, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
@@ -1418,6 +1562,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		ModelGateway:  httpModelGateway{},
 		Tenants:       tenants,
 		Documents:     documents,
+		DataSources:   dataSources,
 		Jobs:          jobs,
 		Audit:         audit,
 		Search:        search,
@@ -1435,6 +1580,10 @@ type httpIDs struct {
 
 func (httpIDs) NewDocumentID() domain.DocumentID {
 	return domain.DocumentID("doc_http")
+}
+
+func (httpIDs) NewDataSourceID() domain.DataSourceID {
+	return domain.DataSourceID("src_http")
 }
 
 func (httpIDs) NewTenantID() domain.TenantID {

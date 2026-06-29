@@ -110,6 +110,19 @@ export type RegisteredDocument = {
   updated_at: string;
 };
 
+export type DataSource = {
+  id: string;
+  tenant_id: string;
+  owner_id: string;
+  type: string;
+  name: string;
+  root_path: string;
+  status: string;
+  last_scan_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RegisteredJob = {
   id: string;
   tenant_id: string;
@@ -130,6 +143,14 @@ export type RegisterDocumentResponse = {
 
 export type ListDocumentsResponse = {
   documents: RegisteredDocument[];
+};
+
+export type ListDataSourcesResponse = {
+  sources: DataSource[];
+};
+
+export type DataSourceResponse = {
+  source: DataSource;
 };
 
 export type DocumentDetailResponse = {
@@ -297,6 +318,41 @@ export async function deleteTenantMember(tenantId: string, userId: string) {
 export async function listDocuments(tenantId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListDocumentsResponse>(`/v1/documents?${params.toString()}`);
+}
+
+export async function listDataSources(tenantId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<ListDataSourcesResponse>(`/v1/data-sources?${params.toString()}`);
+}
+
+export async function createDataSource(input: {
+  tenant_id: string;
+  type: string;
+  name: string;
+  root_path: string;
+}) {
+  return request<DataSourceResponse>('/v1/data-sources', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateDataSource(
+  sourceId: string,
+  input: { tenant_id: string; type: string; name: string; root_path: string },
+) {
+  return request<DataSourceResponse>(`/v1/data-sources/${encodeURIComponent(sourceId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function archiveDataSource(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}?${params.toString()}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function getDocument(tenantId: string, documentId: string) {

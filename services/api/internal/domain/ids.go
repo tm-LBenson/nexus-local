@@ -7,6 +7,7 @@ type UserID string
 type ConversationID string
 type MessageID string
 type DocumentID string
+type DataSourceID string
 type JobID string
 type AuditEventID string
 

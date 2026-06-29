@@ -448,6 +448,10 @@ func (fixedIDs) NewDocumentID() domain.DocumentID {
 	return domain.DocumentID("doc_fixed")
 }
 
+func (fixedIDs) NewDataSourceID() domain.DataSourceID {
+	return domain.DataSourceID("src_fixed")
+}
+
 func (fixedIDs) NewJobID() domain.JobID {
 	return domain.JobID("job_fixed")
 }

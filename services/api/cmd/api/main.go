@@ -55,6 +55,7 @@ func main() {
 	documentService := app.NewDocumentService(repos, ids, clock).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
+	dataSourceService := app.NewDataSourceService(repos, ids, clock)
 	jobService := app.NewJobService(repos)
 	auditService := app.NewAuditService(repos, ids, clock)
 	searchService := app.NewSearchService(embedder, vectorIndex)
@@ -67,6 +68,7 @@ func main() {
 			ModelGateway:  modelGateway,
 			Tenants:       tenantService,
 			Documents:     documentService,
+			DataSources:   dataSourceService,
 			Jobs:          jobService,
 			Audit:         auditService,
 			Search:        searchService,

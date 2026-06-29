@@ -30,6 +30,7 @@ type Dependencies struct {
 	ModelGateway  providers.ModelGateway
 	Tenants       app.TenantService
 	Documents     app.DocumentService
+	DataSources   app.DataSourceService
 	Jobs          app.JobService
 	Audit         app.AuditService
 	Search        app.SearchService
@@ -58,6 +59,11 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/documents/{document_id}/retry", retryDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("GET /v1/data-sources", listDataSourcesHandler(deps.DataSources, deps.Authorizer))
+	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("GET /v1/data-sources/{source_id}", getDataSourceHandler(deps.DataSources, deps.Authorizer))
+	mux.HandleFunc("PATCH /v1/data-sources/{source_id}", updateDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("DELETE /v1/data-sources/{source_id}", archiveDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("GET /v1/audit-events", listAuditEventsHandler(deps.Audit, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer, deps.Audit))
@@ -238,6 +244,13 @@ type registerDocumentRequest struct {
 	SizeBytes  int64  `json:"size_bytes"`
 }
 
+type dataSourceRequest struct {
+	TenantID string `json:"tenant_id"`
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	RootPath string `json:"root_path"`
+}
+
 type createTenantRequest struct {
 	Name string `json:"name"`
 }
@@ -285,6 +298,19 @@ type documentPayload struct {
 	StorageKey string `json:"storage_key"`
 	SizeBytes  int64  `json:"size_bytes"`
 	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type dataSourcePayload struct {
+	ID         string `json:"id"`
+	TenantID   string `json:"tenant_id"`
+	OwnerID    string `json:"owner_id"`
+	Type       string `json:"type"`
+	Name       string `json:"name"`
+	RootPath   string `json:"root_path"`
+	Status     string `json:"status"`
+	LastScanAt string `json:"last_scan_at,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 }
@@ -799,6 +825,157 @@ func deleteDocumentHandler(service app.DocumentService, authorizer internalauth.
 	}
 }
 
+func listDataSourcesHandler(service app.DataSourceService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		includeArchived := strings.EqualFold(r.URL.Query().Get("include_archived"), "true")
+		result, err := service.List(r.Context(), app.ListDataSourcesInput{
+			TenantID:        tenantID,
+			IncludeArchived: includeArchived,
+		})
+		if err != nil {
+			writeDataSourceError(w, "list data sources", err)
+			return
+		}
+
+		sources := make([]dataSourcePayload, 0, len(result.Sources))
+		for _, source := range result.Sources {
+			sources = append(sources, encodeDataSource(source))
+		}
+		writeJSON(w, http.StatusOK, envelope{"sources": sources})
+	}
+}
+
+func createDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req dataSourceRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+
+		result, err := service.Create(r.Context(), app.CreateDataSourceInput{
+			TenantID: tenantID,
+			OwnerID:  principal.UserID,
+			Type:     domain.DataSourceType(req.Type),
+			Name:     req.Name,
+			RootPath: req.RootPath,
+		})
+		if err != nil {
+			writeDataSourceError(w, "create data source", err)
+			return
+		}
+		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.created", result.Source, domain.AuditOutcomeSucceeded)
+		writeJSON(w, http.StatusCreated, envelope{"source": encodeDataSource(result.Source)})
+	}
+}
+
+func getDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		result, err := service.Get(r.Context(), app.DataSourceDetailInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "get data source", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, envelope{"source": encodeDataSource(result.Source)})
+	}
+}
+
+func updateDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req dataSourceRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+
+		result, err := service.Update(r.Context(), app.UpdateDataSourceInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+			Type:         domain.DataSourceType(req.Type),
+			Name:         req.Name,
+			RootPath:     req.RootPath,
+		})
+		if err != nil {
+			writeDataSourceError(w, "update data source", err)
+			return
+		}
+		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.updated", result.Source, domain.AuditOutcomeSucceeded)
+		writeJSON(w, http.StatusOK, envelope{"source": encodeDataSource(result.Source)})
+	}
+}
+
+func archiveDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.Archive(r.Context(), app.ArchiveDataSourceInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "archive data source", err)
+			return
+		}
+		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.archived", result.Source, domain.AuditOutcomeSucceeded)
+		writeJSON(w, http.StatusOK, envelope{"source": encodeDataSource(result.Source)})
+	}
+}
+
+func writeDataSourceError(w http.ResponseWriter, action string, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, domain.ErrInvalidEntity) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, domain.ErrInvalidStateTransition) {
+		status = http.StatusConflict
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	writeError(w, status, fmt.Sprintf("%s: %v", action, err))
+}
+
+func recordDataSourceAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, action string, source domain.DataSource, outcome domain.AuditOutcome) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       action,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Outcome:      outcome,
+		Metadata: map[string]string{
+			"name":      source.Name,
+			"type":      string(source.Type),
+			"root_path": source.RootPath,
+			"status":    string(source.Status),
+		},
+	})
+}
+
 func listJobsHandler(service app.JobService, authorizer internalauth.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
@@ -1193,6 +1370,25 @@ func encodeDocument(document domain.Document) documentPayload {
 		Status:     string(document.Status),
 		CreatedAt:  document.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:  document.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeDataSource(source domain.DataSource) dataSourcePayload {
+	lastScanAt := ""
+	if source.LastScanAt != nil {
+		lastScanAt = source.LastScanAt.Format(time.RFC3339)
+	}
+	return dataSourcePayload{
+		ID:         string(source.ID),
+		TenantID:   string(source.TenantID),
+		OwnerID:    string(source.OwnerID),
+		Type:       string(source.Type),
+		Name:       source.Name,
+		RootPath:   source.RootPath,
+		Status:     string(source.Status),
+		LastScanAt: lastScanAt,
+		CreatedAt:  source.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:  source.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

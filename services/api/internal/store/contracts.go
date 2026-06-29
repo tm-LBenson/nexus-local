@@ -33,6 +33,12 @@ type DocumentRepository interface {
 	ListDocuments(ctx context.Context, tenantID domain.TenantID) ([]domain.Document, error)
 }
 
+type DataSourceRepository interface {
+	SaveDataSource(ctx context.Context, source domain.DataSource) error
+	GetDataSource(ctx context.Context, tenantID domain.TenantID, id domain.DataSourceID) (domain.DataSource, error)
+	ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error)
+}
+
 type JobRepository interface {
 	SaveJob(ctx context.Context, job domain.Job) error
 	GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error)
@@ -59,6 +65,7 @@ type RepositorySet interface {
 	UserRepository
 	MembershipRepository
 	DocumentRepository
+	DataSourceRepository
 	JobRepository
 	ConversationRepository
 	AuditRepository
