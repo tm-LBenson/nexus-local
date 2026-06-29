@@ -41,6 +41,7 @@ import {
   listDocuments,
   listJobs,
   listTenantMembers,
+  planDataSource,
   preflightDataSource,
   reindexDataSource,
   retryFailedDataSourceDocuments,
@@ -62,6 +63,25 @@ type ScanMetric = {
   label: string;
   count: number;
   filter: ScanEntryFilter;
+};
+
+type SourcePlanSummary = {
+  total_entries: number;
+  files_seen: number;
+  would_import: number;
+  skipped: number;
+  failed: number;
+  estimated_bytes: number;
+  reasons: Record<string, number>;
+  samples?: SourcePlanSample[];
+};
+
+type SourcePlanSample = {
+  path: string;
+  outcome: string;
+  reason?: string;
+  size_bytes?: number;
+  message?: string;
 };
 
 type TargetCheckState = {
@@ -298,6 +318,7 @@ export function App() {
   const [archivingSourceID, setArchivingSourceID] = useState('');
   const [deletingSourceDocumentsID, setDeletingSourceDocumentsID] = useState('');
   const [preflightingSourceID, setPreflightingSourceID] = useState('');
+  const [planningSourceID, setPlanningSourceID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
   const [reindexingSourceID, setReindexingSourceID] = useState('');
   const [retryingSourceFailuresID, setRetryingSourceFailuresID] = useState('');
@@ -363,6 +384,28 @@ export function App() {
       ),
     [activeJobs],
   );
+  const activeSourcePlanJobs = useMemo(
+    () =>
+      new Map(
+        activeJobs
+          .filter((job) => job.type === 'source_plan' && job.resource_type === 'data_source')
+          .map((job) => [job.resource_id, job]),
+      ),
+    [activeJobs],
+  );
+  const latestSourcePlanJobs = useMemo(() => {
+    const latest = new Map<string, ListJobsResponse['jobs'][number]>();
+    for (const job of jobs?.jobs ?? []) {
+      if (job.type !== 'source_plan' || job.resource_type !== 'data_source') {
+        continue;
+      }
+      const current = latest.get(job.resource_id);
+      if (!current || Date.parse(job.updated_at) > Date.parse(current.updated_at)) {
+        latest.set(job.resource_id, job);
+      }
+    }
+    return latest;
+  }, [jobs]);
   const latestSourcePreflightJobs = useMemo(() => {
     const latest = new Map<string, ListJobsResponse['jobs'][number]>();
     for (const job of jobs?.jobs ?? []) {
@@ -398,6 +441,7 @@ export function App() {
   const activeJobCount = activeJobs.length;
   const activeSourceScanCount = activeSourceScanJobs.size;
   const activeSourcePreflightCount = activeSourcePreflightJobs.size;
+  const activeSourcePlanCount = activeSourcePlanJobs.size;
   const trackedSourceID = sourceDetail?.source.id ?? '';
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
@@ -405,6 +449,7 @@ export function App() {
       activeIngestionJobs.length > 0 ||
       activeSourceScanCount > 0 ||
       activeSourcePreflightCount > 0 ||
+      activeSourcePlanCount > 0 ||
       Boolean(documentDetail && isActiveDocumentStatus(documentDetail.document.status)) ||
       Boolean(documentDetail && hasActiveIngestionJob(documentDetail)) ||
       Boolean(
@@ -414,6 +459,7 @@ export function App() {
       ),
     [
       activeIngestionJobs.length,
+      activeSourcePlanCount,
       activeSourcePreflightCount,
       activeSourceScanCount,
       documentDetail,
@@ -429,6 +475,8 @@ export function App() {
           ? `${activeSourceScanCount} scan`
           : activeSourcePreflightCount > 0
             ? `${activeSourcePreflightCount} check`
+            : activeSourcePlanCount > 0
+              ? `${activeSourcePlanCount} plan`
         : 'Tracking'
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
@@ -1122,6 +1170,36 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setPreflightingSourceID('');
+    }
+  }
+
+  async function requestDataSourcePlan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setPlanningSourceID(source.id);
+    setError(null);
+    try {
+      const result = await planDataSource(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id
+          ? {
+              ...current,
+              source: result.source,
+              jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+            }
+          : current,
+      );
+      await Promise.all([
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        sourceDetail?.source.id === source.id ? refreshSourceDetail(source.id) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setPlanningSourceID('');
     }
   }
 
@@ -2201,6 +2279,8 @@ export function App() {
                 {dataSources?.sources.map((source) => {
                   const scanJob = activeSourceScanJobs.get(source.id);
                   const preflightJob = activeSourcePreflightJobs.get(source.id);
+                  const planJob = activeSourcePlanJobs.get(source.id);
+                  const latestPlanJob = latestSourcePlanJobs.get(source.id);
                   const latestPreflightJob = latestSourcePreflightJobs.get(source.id);
                   const preflightBlocksScan = sourcePreflightBlocksScan(
                     source,
@@ -2208,6 +2288,8 @@ export function App() {
                   );
                   const visiblePreflightJob =
                     preflightJob ?? (preflightBlocksScan ? latestPreflightJob : undefined);
+                  const visiblePlanJob =
+                    planJob ?? (latestPlanJob?.state === 'failed' ? latestPlanJob : undefined);
                   return (
                     <div
                       className={
@@ -2218,9 +2300,18 @@ export function App() {
                       <button onClick={() => void openSource(source)} type="button">
                         <strong>{source.name}</strong>
                       </button>
-                      <span className={stateClass(visiblePreflightJob?.state ?? scanJob?.state ?? source.status)}>
+                      <span
+                        className={stateClass(
+                          visiblePreflightJob?.state ??
+                            visiblePlanJob?.state ??
+                            scanJob?.state ??
+                            source.status,
+                        )}
+                      >
                         {visiblePreflightJob
                           ? `check ${visiblePreflightJob.state}`
+                          : visiblePlanJob
+                            ? `plan ${visiblePlanJob.state}`
                           : scanJob
                             ? `scan ${scanJob.state}`
                             : source.status}
@@ -2255,6 +2346,26 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              Boolean(planJob) ||
+                              Boolean(preflightJob) ||
+                              preflightBlocksScan ||
+                              Boolean(scanJob) ||
+                              planningSourceID === source.id ||
+                              source.status === 'archived' ||
+                              archivingSourceID === source.id
+                            }
+                            onClick={() => void requestDataSourcePlan(source)}
+                            type="button"
+                          >
+                            {planningSourceID === source.id
+                              ? 'Queuing'
+                              : planJob
+                                ? titleCase(planJob.state)
+                                : 'Plan'}
+                          </button>
+                          <button
+                            disabled={
+                              Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               preflightBlocksScan ||
                               Boolean(scanJob) ||
@@ -2274,6 +2385,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               Boolean(scanJob) ||
                               reindexingSourceID === source.id ||
@@ -2316,15 +2428,18 @@ export function App() {
                       <span
                         className={stateClass(
                           activeSourcePreflightJobs.get(sourceDetail.source.id)?.state ??
-                          activeSourceScanJobs.get(sourceDetail.source.id)?.state ??
+                            activeSourcePlanJobs.get(sourceDetail.source.id)?.state ??
+                            activeSourceScanJobs.get(sourceDetail.source.id)?.state ??
                             sourceDetail.source.status,
                         )}
                       >
                         {activeSourcePreflightJobs.get(sourceDetail.source.id)
                           ? `check ${activeSourcePreflightJobs.get(sourceDetail.source.id)?.state}`
+                          : activeSourcePlanJobs.get(sourceDetail.source.id)
+                            ? `plan ${activeSourcePlanJobs.get(sourceDetail.source.id)?.state}`
                           : activeSourceScanJobs.get(sourceDetail.source.id)
-                          ? `scan ${activeSourceScanJobs.get(sourceDetail.source.id)?.state}`
-                          : sourceDetail.source.status}
+                            ? `scan ${activeSourceScanJobs.get(sourceDetail.source.id)?.state}`
+                            : sourceDetail.source.status}
                       </span>
                       <button
                         disabled={refreshingSourceID === sourceDetail.source.id}
@@ -2347,10 +2462,33 @@ export function App() {
                           ? 'Queuing'
                           : sourceHasActivePreflightJob(sourceDetail)
                             ? 'Queued'
-                            : 'Check path'}
+                          : 'Check path'}
                       </button>
                       <button
                         disabled={
+                          Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActivePlanJob(sourceDetail) ||
+                          Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActivePreflightJob(sourceDetail) ||
+                          sourceScanBlockedByPreflight(sourceDetail) ||
+                          Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActiveScanJob(sourceDetail) ||
+                          sourceDetail.source.status === 'archived' ||
+                          planningSourceID === sourceDetail.source.id
+                        }
+                        onClick={() => void requestDataSourcePlan(sourceDetail.source)}
+                        type="button"
+                      >
+                        {planningSourceID === sourceDetail.source.id
+                          ? 'Queuing'
+                          : sourceHasActivePlanJob(sourceDetail)
+                            ? 'Queued'
+                            : 'Plan'}
+                      </button>
+                      <button
+                        disabled={
+                          Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActivePlanJob(sourceDetail) ||
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePreflightJob(sourceDetail) ||
                           sourceScanBlockedByPreflight(sourceDetail) ||
@@ -2379,6 +2517,8 @@ export function App() {
                             disabled={
                               reindexingSourceID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePlanJob(sourceDetail) ||
                               Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                               sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
@@ -2395,6 +2535,8 @@ export function App() {
                             disabled={
                               retryingSourceFailuresID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePlanJob(sourceDetail) ||
                               Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                               sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
@@ -2426,6 +2568,8 @@ export function App() {
                             className="dangerButton"
                             disabled={
                               deletingSourceDocumentsID === sourceDetail.source.id ||
+                              Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePlanJob(sourceDetail) ||
                               Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                               sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
@@ -2460,6 +2604,12 @@ export function App() {
                     checkDisabled={sourceDetail.source.status === 'archived'}
                     detail={sourceDetail}
                     onCheck={() => void requestDataSourcePreflight(sourceDetail.source)}
+                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                    refreshing={refreshingSourceID === sourceDetail.source.id}
+                  />
+                  <SourcePlanStatus
+                    activeJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
+                    detail={sourceDetail}
                     onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
                     refreshing={refreshingSourceID === sourceDetail.source.id}
                   />
@@ -2615,6 +2765,8 @@ export function App() {
                         </button>
                         <button
                           disabled={
+                            Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActivePlanJob(sourceDetail) ||
                             Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePreflightJob(sourceDetail) ||
                             sourceScanBlockedByPreflight(sourceDetail) ||
@@ -2648,6 +2800,8 @@ export function App() {
                           disabled={
                             retryingSourceFailuresID === sourceDetail.source.id ||
                             sourceDetail.source.status === 'archived' ||
+                            Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActivePlanJob(sourceDetail) ||
                             Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePreflightJob(sourceDetail) ||
                             Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
@@ -4740,6 +4894,148 @@ function sourceCurrentScanProgress(
   return parts.join(' / ');
 }
 
+function SourcePlanStatus({
+  activeJob,
+  detail,
+  onRefresh,
+  refreshing,
+}: {
+  activeJob?: ListJobsResponse['jobs'][number];
+  detail: DataSourceDetailResponse;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const job = activeJob ?? sourceLatestRelevantPlanJob(detail);
+  if (!job) {
+    return null;
+  }
+  const active = isActiveJobState(job.state);
+  const failed = job.state === 'failed';
+  const summary = sourcePlanSummaryFromJob(job);
+  return (
+    <section
+      aria-label="Source import plan"
+      className={
+        failed
+          ? 'sourceProgressPanel sourcePlanPanel sourcePreflightFailed'
+          : 'sourceProgressPanel sourcePlanPanel'
+      }
+    >
+      {active ? (
+        <span className="spinner" aria-hidden="true" />
+      ) : (
+        <span className={stateClass(job.state)}>{titleCase(job.state)}</span>
+      )}
+      <div className="sourceProgressText">
+        <strong>{sourcePlanTitle(job)}</strong>
+        <span>{sourcePlanMessage(job, summary)}</span>
+        {summary && (
+          <>
+            <div className="sourcePlanMetrics" aria-label="Import plan totals">
+              <span>
+                <strong>{summary.would_import}</strong>
+                <em>Would import</em>
+              </span>
+              <span>
+                <strong>{summary.skipped}</strong>
+                <em>Skipped</em>
+              </span>
+              <span>
+                <strong>{summary.failed}</strong>
+                <em>Failed</em>
+              </span>
+              <span>
+                <strong>{formatBytes(summary.estimated_bytes)}</strong>
+                <em>Estimate</em>
+              </span>
+            </div>
+            {summary.samples && summary.samples.length > 0 && (
+              <div className="sourcePlanSamples">
+                {summary.samples.slice(0, 5).map((sample) => (
+                  <span key={`${sample.outcome}:${sample.path}`} title={sample.message || sample.path}>
+                    <strong>{sourcePlanSampleLabel(sample)}</strong>
+                    <em>{sample.path}</em>
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      <button disabled={refreshing} onClick={onRefresh} type="button">
+        {refreshing ? 'Refreshing' : 'Refresh'}
+      </button>
+    </section>
+  );
+}
+
+function sourceLatestRelevantPlanJob(detail: DataSourceDetailResponse) {
+  return detail.jobs
+    .filter(
+      (job) =>
+        job.type === 'source_plan' &&
+        job.resource_type === 'data_source' &&
+        job.resource_id === detail.source.id &&
+        sourceJobAppliesToSource(detail.source, job),
+    )
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
+}
+
+function sourceHasActivePlanJob(detail: DataSourceDetailResponse) {
+  const job = sourceLatestRelevantPlanJob(detail);
+  return Boolean(job && isActiveJobState(job.state));
+}
+
+function sourcePlanSummaryFromJob(job: ListJobsResponse['jobs'][number]) {
+  if (!job.result_json) {
+    return null;
+  }
+  try {
+    return JSON.parse(job.result_json) as SourcePlanSummary;
+  } catch {
+    return null;
+  }
+}
+
+function sourcePlanTitle(job: ListJobsResponse['jobs'][number]) {
+  if (isActiveJobState(job.state)) {
+    return 'Planning import';
+  }
+  if (job.state === 'succeeded') {
+    return 'Import plan ready';
+  }
+  if (job.state === 'failed') {
+    return 'Plan failed';
+  }
+  return titleCase(job.state);
+}
+
+function sourcePlanMessage(
+  job: ListJobsResponse['jobs'][number],
+  summary: SourcePlanSummary | null,
+) {
+  if (job.state === 'failed' && job.error_message.trim() !== '') {
+    return job.error_message;
+  }
+  if (isActiveJobState(job.state)) {
+    return 'Worker is previewing matched files.';
+  }
+  if (summary) {
+    return `${summary.files_seen} files seen / ${summary.total_entries} entries checked`;
+  }
+  return jobDetail(job);
+}
+
+function sourcePlanSampleLabel(sample: SourcePlanSample) {
+  if (sample.outcome === 'would_import') {
+    return 'Import';
+  }
+  if (sample.reason) {
+    return titleCase(sample.reason.replace(/_/g, ' '));
+  }
+  return titleCase(sample.outcome);
+}
+
 function SourcePreflightStatus({
   activeJob,
   checking,
@@ -4794,15 +5090,15 @@ function SourcePreflightStatus({
 }
 
 function sourceLatestRelevantPreflightJob(detail: DataSourceDetailResponse) {
-  return detail.jobs
-    .filter(
-      (job) =>
-        job.type === 'source_preflight' &&
-        job.resource_type === 'data_source' &&
-        job.resource_id === detail.source.id &&
-        sourcePreflightAppliesToSource(detail.source, job),
-    )
-    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
+	return detail.jobs
+		.filter(
+			(job) =>
+				job.type === 'source_preflight' &&
+				job.resource_type === 'data_source' &&
+				job.resource_id === detail.source.id &&
+				sourceJobAppliesToSource(detail.source, job),
+		)
+		.sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
 }
 
 function sourceHasActivePreflightJob(detail: DataSourceDetailResponse) {
@@ -4818,10 +5114,10 @@ function sourcePreflightBlocksScan(
   source: { updated_at: string },
   job?: ListJobsResponse['jobs'][number],
 ) {
-  return Boolean(job && job.state === 'failed' && sourcePreflightAppliesToSource(source, job));
+  return Boolean(job && job.state === 'failed' && sourceJobAppliesToSource(source, job));
 }
 
-function sourcePreflightAppliesToSource(
+function sourceJobAppliesToSource(
   source: { updated_at: string },
   job: ListJobsResponse['jobs'][number],
 ) {
@@ -4924,6 +5220,14 @@ function scanEntryMessage(entry: DataSourceDetailResponse['scan_entries'][number
 }
 
 function jobDetail(job: ListJobsResponse['jobs'][number]) {
+  if (job.type === 'source_plan') {
+    const summary = sourcePlanSummaryFromJob(job);
+    if (summary) {
+      return `${summary.would_import} would import / ${summary.skipped} skipped / ${formatBytes(
+        summary.estimated_bytes,
+      )}`;
+    }
+  }
   return job.error_message || job.resource_id || job.id;
 }
 

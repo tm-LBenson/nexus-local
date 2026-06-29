@@ -2095,6 +2095,44 @@ h3 {
   color: #5d3a36;
 }
 
+.sourcePlanPanel {
+  align-items: start;
+}
+
+.sourcePlanMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sourcePlanMetrics span,
+.sourcePlanSamples span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  border: 1px solid #dbe5e5;
+  border-radius: 6px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.sourcePlanMetrics em,
+.sourcePlanSamples em {
+  min-width: 0;
+  overflow: hidden;
+  color: #69777d;
+  font-size: 0.74rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourcePlanSamples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
 .sourceProgressText {
   display: grid;
   gap: 3px;

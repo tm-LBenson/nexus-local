@@ -554,9 +554,9 @@ func (s *Store) ListDataSourceScanEntryPage(ctx context.Context, tenantID domain
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO jobs (
-			tenant_id, id, type, resource_type, resource_id, state, attempts, error_message, created_at, updated_at
+			tenant_id, id, type, resource_type, resource_id, state, attempts, error_message, result_json, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (tenant_id, id) DO UPDATE
 		SET type = EXCLUDED.type,
 		    resource_type = EXCLUDED.resource_type,
@@ -564,15 +564,16 @@ func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
 		    state = EXCLUDED.state,
 		    attempts = EXCLUDED.attempts,
 		    error_message = EXCLUDED.error_message,
+		    result_json = EXCLUDED.result_json,
 		    updated_at = EXCLUDED.updated_at
-	`, job.TenantID, job.ID, job.Type, job.ResourceType, job.ResourceID, job.State, job.Attempts, job.ErrorMessage, job.CreatedAt, job.UpdatedAt)
+	`, job.TenantID, job.ID, job.Type, job.ResourceType, job.ResourceID, job.State, job.Attempts, job.ErrorMessage, job.ResultJSON, job.CreatedAt, job.UpdatedAt)
 	return err
 }
 
 func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error) {
 	var job domain.Job
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, error_message, created_at, updated_at
+		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, error_message, result_json, created_at, updated_at
 		FROM jobs
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id).Scan(
@@ -584,6 +585,7 @@ func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.
 		&job.State,
 		&job.Attempts,
 		&job.ErrorMessage,
+		&job.ResultJSON,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 	)
@@ -595,7 +597,7 @@ func (s *Store) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.
 
 func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.Job, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, error_message, created_at, updated_at
+		SELECT id, tenant_id, type, resource_type, resource_id, state, attempts, error_message, result_json, created_at, updated_at
 		FROM jobs
 		WHERE tenant_id = $1
 		ORDER BY updated_at DESC, id
@@ -618,6 +620,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit in
 			&job.State,
 			&job.Attempts,
 			&job.ErrorMessage,
+			&job.ResultJSON,
 			&job.CreatedAt,
 			&job.UpdatedAt,
 		); err != nil {
@@ -664,11 +667,12 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time, types ...
 		SET state = $%d,
 		    attempts = jobs.attempts + 1,
 		    error_message = '',
+		    result_json = '',
 		    updated_at = $%d
 		FROM picked
 		WHERE jobs.tenant_id = picked.tenant_id
 		  AND jobs.id = picked.id
-		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.resource_type, jobs.resource_id, jobs.state, jobs.attempts, jobs.error_message, jobs.created_at, jobs.updated_at
+		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.resource_type, jobs.resource_id, jobs.state, jobs.attempts, jobs.error_message, jobs.result_json, jobs.created_at, jobs.updated_at
 	`, where, runningArg, nowArg), args...).Scan(
 		&job.ID,
 		&job.TenantID,
@@ -678,6 +682,7 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time, types ...
 		&job.State,
 		&job.Attempts,
 		&job.ErrorMessage,
+		&job.ResultJSON,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 	)

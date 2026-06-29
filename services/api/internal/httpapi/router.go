@@ -63,6 +63,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/data-sources", listDataSourcesHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/preflight", preflightDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("POST /v1/data-sources/{source_id}/plan", planDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/scan", scanDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/reindex", reindexDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/retry-failed-documents", retryFailedDataSourceDocumentsHandler(deps.DataSources, deps.Authorizer, deps.Audit))
@@ -373,6 +374,7 @@ type jobPayload struct {
 	State        string `json:"state"`
 	Attempts     int    `json:"attempts"`
 	ErrorMessage string `json:"error_message"`
+	ResultJSON   string `json:"result_json,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 }
@@ -1105,6 +1107,29 @@ func preflightDataSourceHandler(service app.DataSourceService, authorizer intern
 	}
 }
 
+func planDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.RequestPlan(r.Context(), app.PlanDataSourceInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "plan data source", err)
+			return
+		}
+		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.plan_requested", result.Source, domain.AuditOutcomeSucceeded)
+		writeJSON(w, http.StatusAccepted, envelope{
+			"source": encodeDataSource(result.Source),
+			"job":    encodeJob(result.Job),
+		})
+	}
+}
+
 func reindexDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
@@ -1813,6 +1838,7 @@ func encodeJob(job domain.Job) jobPayload {
 		State:        string(job.State),
 		Attempts:     job.Attempts,
 		ErrorMessage: job.ErrorMessage,
+		ResultJSON:   job.ResultJSON,
 		CreatedAt:    job.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:    job.UpdatedAt.Format(time.RFC3339),
 	}

@@ -1,0 +1,2 @@
+ALTER TABLE jobs
+    ADD COLUMN IF NOT EXISTS result_json text NOT NULL DEFAULT '';

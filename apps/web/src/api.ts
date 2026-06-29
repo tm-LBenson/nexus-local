@@ -139,6 +139,7 @@ export type RegisteredJob = {
   state: string;
   attempts: number;
   error_message: string;
+  result_json?: string;
   created_at: string;
   updated_at: string;
 };
@@ -483,6 +484,14 @@ export async function preflightDataSource(tenantId: string, sourceId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<DataSourceScanResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}/preflight?${params.toString()}`,
+    { method: 'POST' },
+  );
+}
+
+export async function planDataSource(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceScanResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}/plan?${params.toString()}`,
     { method: 'POST' },
   );
 }

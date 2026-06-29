@@ -756,6 +756,98 @@ func TestRequestDataSourcePreflightRejectsArchivedSource(t *testing.T) {
 	}
 }
 
+func TestRequestDataSourcePlanQueuesJob(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	result, err := service.RequestPlan(ctx, PlanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("request plan: %v", err)
+	}
+	if result.Source.ID != source.ID {
+		t.Fatalf("source id = %q, want %q", result.Source.ID, source.ID)
+	}
+	if result.Job.ID != domain.JobID("job_fixed") ||
+		result.Job.Type != domain.JobTypeSourcePlan ||
+		result.Job.ResourceType != "data_source" ||
+		result.Job.ResourceID != string(source.ID) ||
+		result.Job.State != domain.JobStateQueued {
+		t.Fatalf("job = %#v", result.Job)
+	}
+}
+
+func TestRequestDataSourcePlanRejectsDuplicateActivePlan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_plan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourcePlan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err = service.RequestPlan(ctx, PlanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
+func TestRequestDataSourcePlanRejectsActiveScan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_scan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourceScan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err = service.RequestPlan(ctx, PlanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
 func TestRequestDataSourceReindexQueuesDocumentJobs(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

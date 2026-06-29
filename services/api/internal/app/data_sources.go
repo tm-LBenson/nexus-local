@@ -76,6 +76,11 @@ type PreflightDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type PlanDataSourceInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+}
+
 type ReindexDataSourceInput struct {
 	TenantID     domain.TenantID
 	DataSourceID domain.DataSourceID
@@ -130,6 +135,11 @@ type ScanDataSourceResult struct {
 }
 
 type PreflightDataSourceResult struct {
+	Source domain.DataSource
+	Job    domain.Job
+}
+
+type PlanDataSourceResult struct {
 	Source domain.DataSource
 	Job    domain.Job
 }
@@ -560,6 +570,58 @@ func (s DataSourceService) RequestPreflight(ctx context.Context, input Preflight
 	}
 
 	return PreflightDataSourceResult{
+		Source: source,
+		Job:    job,
+	}, nil
+}
+
+func (s DataSourceService) RequestPlan(ctx context.Context, input PlanDataSourceInput) (PlanDataSourceResult, error) {
+	if err := ctx.Err(); err != nil {
+		return PlanDataSourceResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return PlanDataSourceResult{}, fmt.Errorf("plan data source: %w", domain.ErrInvalidEntity)
+	}
+
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return PlanDataSourceResult{}, err
+	}
+	if source.Status == domain.DataSourceStatusArchived {
+		return PlanDataSourceResult{}, fmt.Errorf("archived data source %s cannot be planned: %w", source.ID, domain.ErrInvalidStateTransition)
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return PlanDataSourceResult{}, err
+	}
+	for _, job := range jobs {
+		switch {
+		case isActiveDataSourceJob(job, source.ID, domain.JobTypeSourcePlan):
+			return PlanDataSourceResult{}, fmt.Errorf("plan is already queued or running for data source %s with job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		case isActiveDataSourceJob(job, source.ID, domain.JobTypeSourceScan):
+			return PlanDataSourceResult{}, fmt.Errorf("source %s has an active scan job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		case isActiveDataSourceJob(job, source.ID, domain.JobTypeSourcePreflight):
+			return PlanDataSourceResult{}, fmt.Errorf("source %s has an active path check job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+	}
+
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           s.ids.NewJobID(),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourcePlan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          s.clock.Now(),
+	})
+	if err != nil {
+		return PlanDataSourceResult{}, err
+	}
+	if err := s.repos.SaveJob(ctx, job); err != nil {
+		return PlanDataSourceResult{}, err
+	}
+
+	return PlanDataSourceResult{
 		Source: source,
 		Job:    job,
 	}, nil

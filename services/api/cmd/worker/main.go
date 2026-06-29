@@ -42,6 +42,7 @@ func main() {
 	ids := app.NewRandomIDs()
 	sourceScheduler := worker.NewSourceScheduler(repos, ids, systemClock{})
 	sourcePreflightWorker := worker.NewSourcePreflightWorker(repos, systemClock{})
+	sourcePlanWorker := worker.NewSourcePlanWorker(repos, systemClock{})
 	sourceScanWorker := worker.NewSourceScanWorker(repos, ids, systemClock{}).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
@@ -84,6 +85,23 @@ func main() {
 		}
 		if !errors.Is(err, store.ErrNotFound) {
 			log.Printf("source preflight worker error: %v", err)
+			continue
+		}
+
+		planResult, err := sourcePlanWorker.ProcessNext(ctx)
+		if err == nil {
+			log.Printf(
+				"processed source plan job=%s source=%s would_import=%d skipped=%d failed=%d",
+				planResult.JobID,
+				planResult.SourceID,
+				planResult.Summary.WouldImport,
+				planResult.Summary.Skipped,
+				planResult.Summary.Failed,
+			)
+			continue
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Printf("source plan worker error: %v", err)
 			continue
 		}
 

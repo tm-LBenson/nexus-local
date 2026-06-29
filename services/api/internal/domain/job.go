@@ -12,6 +12,7 @@ const (
 	JobTypeDocumentIngestion JobType = "document_ingestion"
 	JobTypeSourceScan        JobType = "source_scan"
 	JobTypeSourcePreflight   JobType = "source_preflight"
+	JobTypeSourcePlan        JobType = "source_plan"
 	JobTypeEmbeddingBackfill JobType = "embedding_backfill"
 	JobTypeAITurn            JobType = "ai_turn"
 	JobTypeEvaluation        JobType = "evaluation"
@@ -37,6 +38,7 @@ type Job struct {
 	State        JobState
 	Attempts     int
 	ErrorMessage string
+	ResultJSON   string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -84,6 +86,9 @@ func (j *Job) Transition(next JobState, now time.Time) error {
 	if next == JobStateQueued || next == JobStateRunning || next == JobStateSucceeded {
 		j.ErrorMessage = ""
 	}
+	if next == JobStateQueued || next == JobStateRunning {
+		j.ResultJSON = ""
+	}
 	j.State = next
 	j.UpdatedAt = now
 	return nil
@@ -106,7 +111,7 @@ func (j *Job) Fail(cause error, now time.Time) error {
 
 func (t JobType) Valid() bool {
 	switch t {
-	case JobTypeDocumentIngestion, JobTypeSourceScan, JobTypeSourcePreflight, JobTypeEmbeddingBackfill, JobTypeAITurn, JobTypeEvaluation:
+	case JobTypeDocumentIngestion, JobTypeSourceScan, JobTypeSourcePreflight, JobTypeSourcePlan, JobTypeEmbeddingBackfill, JobTypeAITurn, JobTypeEvaluation:
 		return true
 	default:
 		return false

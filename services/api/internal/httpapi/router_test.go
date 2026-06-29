@@ -846,6 +846,46 @@ func TestDataSourcePreflightEndpointQueuesJob(t *testing.T) {
 	}
 }
 
+func TestDataSourcePlanEndpointQueuesJob(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "folder",
+		"name": "Support Docs",
+		"root_path": "/sources/support",
+		"include_patterns": ["**/*.md"],
+		"exclude_patterns": [],
+		"scan_interval_minutes": 0
+	}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", create.Code, http.StatusCreated, create.Body.String())
+	}
+
+	plan := httptest.NewRecorder()
+	planReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/plan?tenant_id=tenant_1", nil)
+	server.ServeHTTP(plan, planReq)
+	if plan.Code != http.StatusAccepted {
+		t.Fatalf("plan status = %d, want %d, body = %s", plan.Code, http.StatusAccepted, plan.Body.String())
+	}
+	var planBody struct {
+		Source dataSourcePayload `json:"source"`
+		Job    jobPayload        `json:"job"`
+	}
+	if err := json.NewDecoder(plan.Body).Decode(&planBody); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if planBody.Source.ID != "src_http" ||
+		planBody.Job.Type != "source_plan" ||
+		planBody.Job.ResourceType != "data_source" ||
+		planBody.Job.ResourceID != "src_http" ||
+		planBody.Job.State != "queued" {
+		t.Fatalf("plan body = %#v", planBody)
+	}
+}
+
 func TestGetDataSourceReturnsScanSummary(t *testing.T) {
 	server := newTestServerWithSeed(t, func(repos *memory.Store) {
 		source, err := domain.NewDataSource(domain.DataSourceCreate{
