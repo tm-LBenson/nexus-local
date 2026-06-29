@@ -1893,6 +1893,37 @@ h3 {
   justify-content: flex-end;
 }
 
+.sourceProgressPanel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #c8d4d5;
+  border-left: 4px solid #1d5262;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f4faf8;
+}
+
+.sourceProgressText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sourceProgressText strong {
+  color: #172026;
+  font-size: 0.92rem;
+}
+
+.sourceProgressText span {
+  min-width: 0;
+  color: #52646c;
+  font-size: 0.82rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
 .scanEntryToolbar {
   display: flex;
   align-items: center;
@@ -2397,6 +2428,14 @@ h3 {
 
   .sourceRecoveryActions button {
     flex: 1 1 112px;
+  }
+
+  .sourceProgressPanel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sourceProgressPanel button {
+    grid-column: 1 / -1;
   }
 
   .scanEntryToolbar {

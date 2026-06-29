@@ -2232,6 +2232,31 @@ export function App() {
                       <span>{sourceFailureMessage(sourceDetail)}</span>
                     </div>
                   )}
+                  {activeSourceScanJobs.get(sourceDetail.source.id) && (
+                    <section className="sourceProgressPanel" aria-label="Source scan progress">
+                      <span className="spinner" aria-hidden="true" />
+                      <div className="sourceProgressText">
+                        <strong>
+                          {titleCase(
+                            activeSourceScanJobs.get(sourceDetail.source.id)?.state ?? 'running',
+                          )}
+                        </strong>
+                        <span>
+                          {sourceCurrentScanProgress(
+                            sourceDetail,
+                            activeSourceScanJobs.get(sourceDetail.source.id),
+                          )}
+                        </span>
+                      </div>
+                      <button
+                        disabled={refreshingSourceID === sourceDetail.source.id}
+                        onClick={() => void refreshSourceDetail(sourceDetail.source.id)}
+                        type="button"
+                      >
+                        {refreshingSourceID === sourceDetail.source.id ? 'Refreshing' : 'Refresh'}
+                      </button>
+                    </section>
+                  )}
                   <dl className="runtimeList detailList">
                     <div>
                       <dt>ID</dt>
@@ -4232,6 +4257,33 @@ function sourceRecoveryMessage(detail: DataSourceDetailResponse) {
     return 'Fix the source path, mount, or permissions, then retry the scan.';
   }
   return 'Review failed files, fix the source, then retry the scan.';
+}
+
+function sourceCurrentScanProgress(
+  detail: DataSourceDetailResponse,
+  job?: ListJobsResponse['jobs'][number],
+) {
+  if (!job) {
+    return 'Waiting for scan activity';
+  }
+  if (detail.scan_summary.latest_job_id !== job.id) {
+    return 'Waiting for first file result';
+  }
+  const total = detail.scan_summary.total;
+  if (total === 0) {
+    return 'Waiting for first file result';
+  }
+  const parts = [`${total} seen`];
+  if (detail.scan_summary.imported > 0) {
+    parts.push(`${detail.scan_summary.imported} imported`);
+  }
+  if (detail.scan_summary.skipped > 0) {
+    parts.push(`${detail.scan_summary.skipped} skipped`);
+  }
+  if (detail.scan_summary.failed > 0) {
+    parts.push(`${detail.scan_summary.failed} failed`);
+  }
+  return parts.join(' / ');
 }
 
 function sourceHasActiveScanJob(detail: DataSourceDetailResponse) {
