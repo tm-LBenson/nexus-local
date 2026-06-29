@@ -852,6 +852,26 @@ h3 {
   width: 100%;
 }
 
+.sourceFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.sourceFilterBar > input {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+
+.sourceFilterMenu {
+  flex: 0 0 auto;
+}
+
+.sourceFilterMenu .menuFields {
+  width: min(300px, calc(100vw - 44px));
+}
+
 .sourceTemplatePicker {
   grid-column: 1 / -1;
   position: relative;
@@ -2944,6 +2964,11 @@ h3 {
 
   .sourceHeader em {
     justify-self: start;
+  }
+
+  .sourceFilterBar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .sourceScanReportHeader,

@@ -170,6 +170,13 @@ const initialAuditFilters = {
   query: '',
 };
 
+const initialSourceFilters = {
+  health: '',
+  query: '',
+  schedule: '',
+  type: '',
+};
+
 const initialSourceForm: SourceFormValues = {
   type: 'synced_folder',
   name: '',
@@ -334,6 +341,7 @@ export function App() {
   const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
+  const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -452,6 +460,28 @@ export function App() {
     }
     return latest;
   }, [jobs]);
+  const filteredSources = useMemo(
+    () =>
+      filterDataSources(
+        dataSources?.sources ?? [],
+        sourceFilters,
+        activeSourcePreflightJobs,
+        activeSourcePlanJobs,
+        activeSourceScanJobs,
+        latestSourcePreflightJobs,
+        latestSourcePlanJobs,
+      ),
+    [
+      activeSourcePlanJobs,
+      activeSourcePreflightJobs,
+      activeSourceScanJobs,
+      dataSources,
+      latestSourcePlanJobs,
+      latestSourcePreflightJobs,
+      sourceFilters,
+    ],
+  );
+  const sourceFiltersActive = sourceFilterSetIsActive(sourceFilters);
   const visibleSourceScanEntries = useMemo(
     () => sourceDetail?.scan_entries ?? [],
     [sourceDetail],
@@ -2221,7 +2251,9 @@ export function App() {
               <div className="surfaceHeader">
                 <h2>Sources</h2>
                 <div className="headerActions">
-                  <span className="syncStatus">{dataSources?.sources.length ?? 0} active</span>
+                  <span className="syncStatus">
+                    {sourceListCountLabel(dataSources?.sources.length ?? 0, filteredSources.length)}
+                  </span>
                   <button
                     onClick={() => void Promise.all([refreshDataSources(), refreshJobs()])}
                     type="button"
@@ -2351,8 +2383,89 @@ export function App() {
                 </form>
               </details>
 
+              <div className="sourceFilterBar">
+                <input
+                  aria-label="Filter sources"
+                  onChange={(event) =>
+                    setSourceFilters((current) => ({ ...current, query: event.target.value }))
+                  }
+                  placeholder="Filter sources"
+                  value={sourceFilters.query}
+                />
+                <details className="menuPanel compactMenu sourceFilterMenu">
+                  <summary>{sourceFiltersActive ? 'Filters on' : 'Filters'}</summary>
+                  <div className="menuFields">
+                    <label>
+                      Health
+                      <select
+                        aria-label="Source health filter"
+                        onChange={(event) =>
+                          setSourceFilters((current) => ({
+                            ...current,
+                            health: event.target.value,
+                          }))
+                        }
+                        value={sourceFilters.health}
+                      >
+                        <option value="">Any health</option>
+                        <option value="active">Active</option>
+                        <option value="blocked">Blocked</option>
+                        <option value="review">Review</option>
+                        <option value="healthy">Healthy</option>
+                        <option value="archived">Archived</option>
+                      </select>
+                    </label>
+                    <label>
+                      Type
+                      <select
+                        aria-label="Source type filter"
+                        onChange={(event) =>
+                          setSourceFilters((current) => ({
+                            ...current,
+                            type: event.target.value,
+                          }))
+                        }
+                        value={sourceFilters.type}
+                      >
+                        <option value="">Any type</option>
+                        <option value="synced_folder">Synced folder</option>
+                        <option value="folder">Local folder</option>
+                        <option value="network_share">Network share</option>
+                        <option value="export">Export</option>
+                        <option value="connector">Connector</option>
+                      </select>
+                    </label>
+                    <label>
+                      Schedule
+                      <select
+                        aria-label="Source schedule filter"
+                        onChange={(event) =>
+                          setSourceFilters((current) => ({
+                            ...current,
+                            schedule: event.target.value,
+                          }))
+                        }
+                        value={sourceFilters.schedule}
+                      >
+                        <option value="">Any schedule</option>
+                        <option value="manual">Manual</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="overdue">Overdue</option>
+                      </select>
+                    </label>
+                    <button
+                      disabled={!sourceFiltersActive}
+                      onClick={() => setSourceFilters(initialSourceFilters)}
+                      type="button"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </details>
+              </div>
+
               <div className="tableList sourceList">
-                {dataSources?.sources.map((source) => {
+                {filteredSources.map((source) => {
                   const scanJob = activeSourceScanJobs.get(source.id);
                   const preflightJob = activeSourcePreflightJobs.get(source.id);
                   const planJob = activeSourcePlanJobs.get(source.id);
@@ -2504,6 +2617,9 @@ export function App() {
                 })}
                 {dataSources && dataSources.sources.length === 0 && (
                   <p className="muted">No sources</p>
+                )}
+                {dataSources && dataSources.sources.length > 0 && filteredSources.length === 0 && (
+                  <p className="muted">No sources match these filters</p>
                 )}
                 {!dataSources && <p className="muted">Loading sources</p>}
               </div>
@@ -5420,6 +5536,105 @@ function sourceListHealthLabel(
     return 'Not scanned';
   }
   return `Last scan ${formatDateTime(source.last_scan_at)}`;
+}
+
+function sourceListCountLabel(total: number, filtered: number) {
+  if (total === 0 || total === filtered) {
+    return `${total} active`;
+  }
+  return `${filtered}/${total} shown`;
+}
+
+function sourceFilterSetIsActive(filters: typeof initialSourceFilters) {
+  return Boolean(
+    filters.health || filters.query.trim() || filters.schedule || filters.type,
+  );
+}
+
+function filterDataSources(
+  sources: ListDataSourcesResponse['sources'],
+  filters: typeof initialSourceFilters,
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+) {
+  const query = filters.query.trim().toLowerCase();
+  return sources.filter((source) => {
+    const preflightJob = activePreflightJobs.get(source.id) ?? latestPreflightJobs.get(source.id);
+    const planJob = activePlanJobs.get(source.id) ?? latestPlanJobs.get(source.id);
+    const scanJob = activeScanJobs.get(source.id);
+    if (filters.type && source.type !== filters.type) {
+      return false;
+    }
+    if (filters.schedule && sourceScheduleFilterValue(source) !== filters.schedule) {
+      return false;
+    }
+    if (
+      filters.health &&
+      sourceHealthFilterValue(source, preflightJob, planJob, scanJob) !== filters.health
+    ) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const haystack = [
+      source.name,
+      source.root_path,
+      source.type,
+      sourceTypeLabel(source.type),
+      sourceScheduleLabel(source.scan_interval_minutes ?? 0),
+      sourceScanSummary(source),
+      sourceListHealthLabel(source, preflightJob, planJob, scanJob),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function sourceHealthFilterValue(
+  source: ListDataSourcesResponse['sources'][number],
+  preflightJob?: ListJobsResponse['jobs'][number],
+  planJob?: ListJobsResponse['jobs'][number],
+  scanJob?: ListJobsResponse['jobs'][number],
+) {
+  if (source.status === 'archived') {
+    return 'archived';
+  }
+  if (
+    [preflightJob, planJob, scanJob].some((job) => job && isActiveJobState(job.state))
+  ) {
+    return 'active';
+  }
+  if (
+    source.status === 'failed' ||
+    scanJob?.state === 'failed' ||
+    (preflightJob && sourcePreflightBlocksScan(source, preflightJob)) ||
+    (planJob && sourcePlanBlocksScan(source, planJob))
+  ) {
+    return 'blocked';
+  }
+  if (
+    !sourceImportHasStarted(source) ||
+    (source.last_scan_failed ?? 0) > 0 ||
+    sourceScheduleIsOverdue(source)
+  ) {
+    return 'review';
+  }
+  return 'healthy';
+}
+
+function sourceScheduleFilterValue(source: ListDataSourcesResponse['sources'][number]) {
+  if (sourceScheduleIsOverdue(source)) {
+    return 'overdue';
+  }
+  if (!source.scan_interval_minutes) {
+    return 'manual';
+  }
+  return 'scheduled';
 }
 
 function SourceScanRunStatus({
