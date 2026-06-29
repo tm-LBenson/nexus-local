@@ -136,7 +136,7 @@ Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint
 
 The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
-The app Library can also create managed sources and queue scans from the source menu. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
+The app Library can also create managed sources, edit source paths, refresh source detail, queue rescans, and archive sources from the source menu/detail panel. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default.
 
 Stop the stack:
 

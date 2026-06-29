@@ -1434,14 +1434,14 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.documentRow span,
-.conversationRow span,
-.jobRow span,
-.auditRow span,
-.sourceRow span,
-.scanEntryRow span,
-.tenantRow span,
-.memberRow span {
+.documentRow span:not(.stateBadge),
+.conversationRow span:not(.stateBadge),
+.jobRow span:not(.stateBadge),
+.auditRow span:not(.stateBadge),
+.sourceRow span:not(.stateBadge),
+.scanEntryRow span:not(.stateBadge),
+.tenantRow span:not(.stateBadge),
+.memberRow span:not(.stateBadge) {
   color: #0a684c;
   font-size: 0.8rem;
   font-weight: 800;
@@ -1587,6 +1587,26 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.infoNotice {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #cfdadb;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #3d4b52;
+  background: #f8fbfa;
+}
+
+.infoNotice strong {
+  font-size: 0.9rem;
+}
+
+.infoNotice span {
+  color: #69777d;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .detailHeader {
   display: flex;
   align-items: center;
@@ -1606,7 +1626,7 @@ h3 {
   gap: 8px;
 }
 
-.detailActions span {
+.detailActions span:not(.stateBadge) {
   flex: 0 0 auto;
   color: #0a684c;
   font-size: 0.8rem;
@@ -1617,6 +1637,10 @@ h3 {
 .detailActions button {
   min-height: 34px;
   padding: 0 10px;
+}
+
+.detailMenu {
+  justify-self: auto;
 }
 
 .detailActions .stateBadge {

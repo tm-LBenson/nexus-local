@@ -43,6 +43,7 @@ import {
   retryDocument,
   scanDataSource,
   searchDocuments,
+  updateDataSource,
   uploadDocument,
 } from './api';
 
@@ -149,6 +150,7 @@ export function App() {
   const [selectedConversationID, setSelectedConversationID] = useState('');
   const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
+  const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -171,6 +173,8 @@ export function App() {
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [downloadingDocumentID, setDownloadingDocumentID] = useState('');
   const [loadingSourceID, setLoadingSourceID] = useState('');
+  const [refreshingSourceID, setRefreshingSourceID] = useState('');
+  const [savingSourceID, setSavingSourceID] = useState('');
   const [loadingDocumentID, setLoadingDocumentID] = useState('');
   const [retryingDocumentID, setRetryingDocumentID] = useState('');
   const [deletingConversationID, setDeletingConversationID] = useState('');
@@ -802,6 +806,42 @@ export function App() {
     }
   }
 
+  async function submitSourceUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!tenantID || !sourceDetail) {
+      setError('Open a source first');
+      return;
+    }
+    if (!sourceEditForm.name.trim() || !sourceEditForm.root_path.trim()) {
+      setError('Enter a source name and path');
+      return;
+    }
+    setSavingSourceID(sourceDetail.source.id);
+    setError(null);
+    try {
+      const result = await updateDataSource(sourceDetail.source.id, {
+        tenant_id: tenantID,
+        type: sourceEditForm.type,
+        name: sourceEditForm.name.trim(),
+        root_path: sourceEditForm.root_path.trim(),
+      });
+      setSourceDetail((current) =>
+        current && current.source.id === result.source.id
+          ? { ...current, source: result.source }
+          : current,
+      );
+      setSourceEditForm(sourceFormFromSource(result.source));
+      await Promise.all([
+        refreshDataSources(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setSavingSourceID('');
+    }
+  }
+
   async function removeDataSource(source: ListDataSourcesResponse['sources'][number]) {
     if (!window.confirm(`Archive ${source.name}?`)) {
       return;
@@ -809,14 +849,15 @@ export function App() {
     setArchivingSourceID(source.id);
     setError(null);
     try {
-      await archiveDataSource(tenantID, source.id);
+      const result = await archiveDataSource(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id ? { ...current, source: result.source } : current,
+      );
       await Promise.all([
         refreshDataSources(tenantID),
+        refreshJobs(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
       ]);
-      if (sourceDetail?.source.id === source.id) {
-        setSourceDetail(null);
-      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -859,11 +900,40 @@ export function App() {
     setLoadingSourceID(source.id);
     setError(null);
     try {
-      setSourceDetail(await getDataSource(tenantID, source.id));
+      const detail = await getDataSource(tenantID, source.id);
+      setSourceDetail(detail);
+      setSourceEditForm(sourceFormFromSource(detail.source));
     } catch (err) {
       setError(messageFromError(err));
     } finally {
       setLoadingSourceID('');
+    }
+  }
+
+  async function refreshSourceDetail(sourceID = sourceDetail?.source.id ?? '') {
+    if (!tenantID || !sourceID) {
+      return;
+    }
+    setRefreshingSourceID(sourceID);
+    setError(null);
+    try {
+      const [detail, dataSourcesResult, jobsResult, auditResult] = await Promise.all([
+        getDataSource(tenantID, sourceID),
+        listDataSources(tenantID),
+        listJobs(tenantID),
+        canManageTenant ? listAuditEvents(tenantID).catch(() => null) : Promise.resolve(null),
+      ]);
+      setSourceDetail(detail);
+      setSourceEditForm(sourceFormFromSource(detail.source));
+      setDataSources(dataSourcesResult);
+      setJobs(jobsResult);
+      if (auditResult) {
+        setAuditEvents(auditResult);
+      }
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setRefreshingSourceID('');
     }
   }
 
@@ -1679,7 +1749,12 @@ export function App() {
                 {dataSources?.sources.map((source) => {
                   const scanJob = activeSourceScanJobs.get(source.id);
                   return (
-                    <div className="sourceRow" key={source.id}>
+                    <div
+                      className={
+                        sourceDetail?.source.id === source.id ? 'sourceRow selectedRow' : 'sourceRow'
+                      }
+                      key={source.id}
+                    >
                       <button onClick={() => void openSource(source)} type="button">
                         <strong>{source.name}</strong>
                       </button>
@@ -1711,7 +1786,7 @@ export function App() {
                               ? 'Queuing'
                               : scanJob
                                 ? titleCase(scanJob.state)
-                                : 'Scan'}
+                                : 'Rescan'}
                           </button>
                           <button
                             className="dangerButton"
@@ -1737,9 +1812,23 @@ export function App() {
                   <div className="detailHeader">
                     <h3>{sourceDetail.source.name}</h3>
                     <div className="detailActions">
-                      <span className={stateClass(sourceDetail.source.status)}>
-                        {sourceDetail.source.status}
+                      <span
+                        className={stateClass(
+                          activeSourceScanJobs.get(sourceDetail.source.id)?.state ??
+                            sourceDetail.source.status,
+                        )}
+                      >
+                        {activeSourceScanJobs.get(sourceDetail.source.id)
+                          ? `scan ${activeSourceScanJobs.get(sourceDetail.source.id)?.state}`
+                          : sourceDetail.source.status}
                       </span>
+                      <button
+                        disabled={refreshingSourceID === sourceDetail.source.id}
+                        onClick={() => void refreshSourceDetail(sourceDetail.source.id)}
+                        type="button"
+                      >
+                        {refreshingSourceID === sourceDetail.source.id ? 'Refreshing' : 'Refresh'}
+                      </button>
                       <button
                         disabled={
                           Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
@@ -1756,10 +1845,32 @@ export function App() {
                             ? 'Queued'
                             : sourceDetail.source.status === 'failed'
                               ? 'Retry'
-                              : 'Scan'}
+                              : 'Rescan'}
                       </button>
+                      <details className="rowMenu detailMenu">
+                        <summary>More</summary>
+                        <div className="rowMenuActions">
+                          <button
+                            className="dangerButton"
+                            disabled={
+                              sourceDetail.source.status === 'archived' ||
+                              archivingSourceID === sourceDetail.source.id
+                            }
+                            onClick={() => void removeDataSource(sourceDetail.source)}
+                            type="button"
+                          >
+                            {archivingSourceID === sourceDetail.source.id ? 'Archiving' : 'Archive'}
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </div>
+                  {sourceDetail.source.status === 'archived' && (
+                    <div className="infoNotice">
+                      <strong>Archived source</strong>
+                      <span>Existing documents remain available.</span>
+                    </div>
+                  )}
                   {sourceDetail.source.status === 'failed' && sourceFailureMessage(sourceDetail) && (
                     <div className="failureNotice">
                       <strong>Scan failed</strong>
@@ -1800,6 +1911,68 @@ export function App() {
                       <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
                     </div>
                   </dl>
+                  <details className="inlineDetails">
+                    <summary>Edit</summary>
+                    <form className="sourceForm sourceEditForm" onSubmit={submitSourceUpdate}>
+                      <input
+                        aria-label="Edit source name"
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        onChange={(event) =>
+                          setSourceEditForm((current) => ({
+                            ...current,
+                            name: event.target.value,
+                          }))
+                        }
+                        value={sourceEditForm.name}
+                      />
+                      <select
+                        aria-label="Edit source type"
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        onChange={(event) =>
+                          setSourceEditForm((current) => ({
+                            ...current,
+                            type: event.target.value,
+                          }))
+                        }
+                        value={sourceEditForm.type}
+                      >
+                        <option value="synced_folder">Synced folder</option>
+                        <option value="folder">Local folder</option>
+                        <option value="network_share">Network share</option>
+                        <option value="export">Export</option>
+                        <option value="connector">Connector</option>
+                      </select>
+                      <input
+                        aria-label="Edit source path"
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        onChange={(event) =>
+                          setSourceEditForm((current) => ({
+                            ...current,
+                            root_path: event.target.value,
+                          }))
+                        }
+                        value={sourceEditForm.root_path}
+                      />
+                      <button
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        type="submit"
+                      >
+                        {savingSourceID === sourceDetail.source.id ? 'Saving' : 'Save'}
+                      </button>
+                    </form>
+                  </details>
                   <details className="inlineDetails" open={sourceDetail.scan_entries.length > 0}>
                     <summary>Files</summary>
                     <div className="tableList scanEntryList">
@@ -3214,6 +3387,14 @@ function sourceTypeLabel(value: string) {
     default:
       return titleCase(value.replace(/_/g, ' '));
   }
+}
+
+function sourceFormFromSource(source: ListDataSourcesResponse['sources'][number]) {
+  return {
+    type: source.type,
+    name: source.name,
+    root_path: source.root_path,
+  };
 }
 
 function sourceScanSummary(source: ListDataSourcesResponse['sources'][number]) {

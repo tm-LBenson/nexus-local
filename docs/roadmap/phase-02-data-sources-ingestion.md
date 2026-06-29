@@ -28,6 +28,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.4 | Default include/exclude safety for supported extensions, hidden/cache paths, symlinks, and max size. | Test folder shows expected accepted/rejected counts and the UI shows scan totals. |
 | 2.5 | Hash-based incremental scan with unchanged skips, changed-file replacement, and missing-file cleanup. | Re-scan skips unchanged files, replaces changed files, and deletes documents for missing source paths. |
 | 2.6 | Source detail panel with failures, retries, scan totals, recent jobs, and per-file scan outcomes. | User can answer "what happened to this import?" from the UI. |
+| 2.7 | Source management controls for edit, refresh, rescan, and archive. | User can correct source paths and manage scans from Library without scripts. |
 
 ## Dependencies
 
@@ -44,4 +45,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.6 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, and missing-file cleanup. Next, harden it with source-level document controls and delete/reindex controls.
+Slices 2.1 through 2.7 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, and app-owned source management. Next, harden it with source-level document controls and explicit delete/reindex controls.
