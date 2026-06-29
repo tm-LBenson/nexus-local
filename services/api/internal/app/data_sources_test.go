@@ -652,6 +652,88 @@ func TestRequestDataSourceScanIgnoresStaleFailedPreflight(t *testing.T) {
 	}
 }
 
+func TestRequestDataSourceScanRejectsActivePlan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_plan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourcePlan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err = service.RequestScan(ctx, ScanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
+func TestRequestDataSourceScanRejectsFailedPlan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job := failedSourcePlanJob(t, source, fixedClock{}.Now(), "source plan cannot access mount")
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err := service.RequestScan(ctx, ScanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) ||
+		!strings.Contains(err.Error(), "source plan cannot access mount") {
+		t.Fatalf("err = %v, want failed plan invalid state", err)
+	}
+}
+
+func TestRequestDataSourceScanIgnoresStaleFailedPlan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	staleFailureAt := fixedClock{}.Now()
+	source.UpdatedAt = staleFailureAt.Add(time.Minute)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job := failedSourcePlanJob(t, source, staleFailureAt, "old plan failed")
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	result, err := service.RequestScan(ctx, ScanDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("request scan: %v", err)
+	}
+	if result.Job.Type != domain.JobTypeSourceScan {
+		t.Fatalf("job type = %q, want source_scan", result.Job.Type)
+	}
+}
+
 func TestRequestDataSourceScanRejectsArchivedSource(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -1145,6 +1227,28 @@ func failedSourcePreflightJob(t *testing.T, source domain.DataSource, now time.T
 		ID:           domain.JobID("job_preflight"),
 		TenantID:     source.TenantID,
 		Type:         domain.JobTypeSourcePreflight,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          now,
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := job.Transition(domain.JobStateRunning, now); err != nil {
+		t.Fatalf("run job: %v", err)
+	}
+	if err := job.Fail(errors.New(message), now); err != nil {
+		t.Fatalf("fail job: %v", err)
+	}
+	return job
+}
+
+func failedSourcePlanJob(t *testing.T, source domain.DataSource, now time.Time, message string) domain.Job {
+	t.Helper()
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_plan"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourcePlan,
 		ResourceType: "data_source",
 		ResourceID:   string(source.ID),
 		Now:          now,

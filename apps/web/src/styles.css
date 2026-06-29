@@ -2133,6 +2133,24 @@ h3 {
   gap: 8px;
 }
 
+.sourcePlanReview {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid #d4a72c;
+  padding-left: 10px;
+}
+
+.sourcePlanReview strong {
+  color: #7a4a08;
+  font-size: 0.82rem;
+}
+
+.sourcePlanReview em {
+  color: #604714;
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
 .sourceProgressText {
   display: grid;
   gap: 3px;

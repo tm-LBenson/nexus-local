@@ -506,6 +506,14 @@ func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSource
 			return ScanDataSourceResult{}, fmt.Errorf("path check failed for data source %s: %s: %w", source.ID, job.ErrorMessage, domain.ErrInvalidStateTransition)
 		}
 	}
+	if job, ok := latestRelevantDataSourceJob(jobs, source, domain.JobTypeSourcePlan); ok {
+		if isActiveJobState(job.State) {
+			return ScanDataSourceResult{}, fmt.Errorf("import plan is still queued or running for data source %s with job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+		if job.State == domain.JobStateFailed {
+			return ScanDataSourceResult{}, fmt.Errorf("import plan failed for data source %s: %s: %w", source.ID, job.ErrorMessage, domain.ErrInvalidStateTransition)
+		}
+	}
 
 	job, err := domain.NewJob(domain.JobCreate{
 		ID:           s.ids.NewJobID(),

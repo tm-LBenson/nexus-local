@@ -116,6 +116,10 @@ type SourceTemplate = SourceFormValues & {
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
 const scanEntryPageSize = 100;
+const sourcePlanLargeImportFileThreshold = 500;
+const sourcePlanLargeImportBytesThreshold = 500 * 1024 * 1024;
+const sourcePlanSkippedFileThreshold = 100;
+const sourcePlanSkippedRatioThreshold = 0.5;
 
 const initialAsk = {
   conversation_id: '',
@@ -1208,6 +1212,18 @@ export function App() {
       setError('Create a workspace first');
       return;
     }
+    const planJob =
+      sourceDetail?.source.id === source.id
+        ? sourceLatestRelevantPlanJob(sourceDetail)
+        : latestSourcePlanJobs.get(source.id);
+    if (sourcePlanBlocksScan(source, planJob)) {
+      setError('Import plan failed. Run Plan again after fixing the source.');
+      return;
+    }
+    const reviewPrompt = sourceFirstScanReviewPrompt(source, planJob);
+    if (reviewPrompt && !window.confirm(reviewPrompt)) {
+      return;
+    }
     setScanningSourceID(source.id);
     setError(null);
     try {
@@ -2281,6 +2297,7 @@ export function App() {
                   const preflightJob = activeSourcePreflightJobs.get(source.id);
                   const planJob = activeSourcePlanJobs.get(source.id);
                   const latestPlanJob = latestSourcePlanJobs.get(source.id);
+                  const planBlocksScan = sourcePlanBlocksScan(source, latestPlanJob);
                   const latestPreflightJob = latestSourcePreflightJobs.get(source.id);
                   const preflightBlocksScan = sourcePreflightBlocksScan(
                     source,
@@ -2349,6 +2366,7 @@ export function App() {
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               preflightBlocksScan ||
+                              planBlocksScan ||
                               Boolean(scanJob) ||
                               planningSourceID === source.id ||
                               source.status === 'archived' ||
@@ -2379,6 +2397,8 @@ export function App() {
                               ? 'Queuing'
                               : preflightBlocksScan
                                 ? 'Path blocked'
+                              : planBlocksScan
+                                ? 'Plan failed'
                               : scanJob
                                 ? titleCase(scanJob.state)
                                 : 'Rescan'}
@@ -2468,6 +2488,7 @@ export function App() {
                         disabled={
                           Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePlanJob(sourceDetail) ||
+                          sourceScanBlockedByPlan(sourceDetail) ||
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePreflightJob(sourceDetail) ||
                           sourceScanBlockedByPreflight(sourceDetail) ||
@@ -2502,6 +2523,8 @@ export function App() {
                       >
                         {scanningSourceID === sourceDetail.source.id
                           ? 'Queuing'
+                          : sourceScanBlockedByPlan(sourceDetail)
+                            ? 'Plan failed'
                           : sourceScanBlockedByPreflight(sourceDetail)
                             ? 'Path blocked'
                           : sourceHasActiveScanJob(sourceDetail)
@@ -2767,6 +2790,7 @@ export function App() {
                           disabled={
                             Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePlanJob(sourceDetail) ||
+                            sourceScanBlockedByPlan(sourceDetail) ||
                             Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePreflightJob(sourceDetail) ||
                             sourceScanBlockedByPreflight(sourceDetail) ||
@@ -2780,6 +2804,8 @@ export function App() {
                         >
                           {scanningSourceID === sourceDetail.source.id
                             ? 'Queuing'
+                            : sourceScanBlockedByPlan(sourceDetail)
+                              ? 'Plan failed'
                             : sourceScanBlockedByPreflight(sourceDetail)
                               ? 'Path blocked'
                             : sourceHasActiveScanJob(sourceDetail)
@@ -4912,6 +4938,8 @@ function SourcePlanStatus({
   const active = isActiveJobState(job.state);
   const failed = job.state === 'failed';
   const summary = sourcePlanSummaryFromJob(job);
+  const reviewReasons =
+    summary && !sourceImportHasStarted(detail.source) ? sourcePlanReviewReasons(summary) : [];
   return (
     <section
       aria-label="Source import plan"
@@ -4959,6 +4987,12 @@ function SourcePlanStatus({
                 ))}
               </div>
             )}
+            {reviewReasons.length > 0 && (
+              <div className="sourcePlanReview">
+                <strong>Review before scan</strong>
+                <em>{reviewReasons.slice(0, 2).join(' / ')}</em>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -4984,6 +5018,17 @@ function sourceLatestRelevantPlanJob(detail: DataSourceDetailResponse) {
 function sourceHasActivePlanJob(detail: DataSourceDetailResponse) {
   const job = sourceLatestRelevantPlanJob(detail);
   return Boolean(job && isActiveJobState(job.state));
+}
+
+function sourceScanBlockedByPlan(detail: DataSourceDetailResponse) {
+  return sourcePlanBlocksScan(detail.source, sourceLatestRelevantPlanJob(detail));
+}
+
+function sourcePlanBlocksScan(
+  source: { updated_at: string },
+  job?: ListJobsResponse['jobs'][number],
+) {
+  return Boolean(job && job.state === 'failed' && sourceJobAppliesToSource(source, job));
 }
 
 function sourcePlanSummaryFromJob(job: ListJobsResponse['jobs'][number]) {
@@ -5034,6 +5079,63 @@ function sourcePlanSampleLabel(sample: SourcePlanSample) {
     return titleCase(sample.reason.replace(/_/g, ' '));
   }
   return titleCase(sample.outcome);
+}
+
+function sourceFirstScanReviewPrompt(
+  source: ListDataSourcesResponse['sources'][number],
+  job?: ListJobsResponse['jobs'][number],
+) {
+  if (sourceImportHasStarted(source)) {
+    return '';
+  }
+  if (!job || !sourceJobAppliesToSource(source, job) || job.state !== 'succeeded') {
+    return 'This source has not been previewed with Plan yet. Continue the first scan anyway?';
+  }
+  const summary = sourcePlanSummaryFromJob(job);
+  if (!summary) {
+    return 'The latest import plan has no readable summary. Continue the first scan anyway?';
+  }
+  const reasons = sourcePlanReviewReasons(summary);
+  if (reasons.length === 0) {
+    return '';
+  }
+  return `Review this import plan before the first scan?\n\n${reasons.join('\n')}\n\nContinue scan?`;
+}
+
+function sourcePlanReviewReasons(summary: SourcePlanSummary) {
+  const reasons: string[] = [];
+  if (summary.failed > 0) {
+    reasons.push(`${summary.failed} files or folders had planning errors`);
+  }
+  if (summary.would_import >= sourcePlanLargeImportFileThreshold) {
+    reasons.push(`${summary.would_import} files would import`);
+  }
+  if (summary.estimated_bytes >= sourcePlanLargeImportBytesThreshold) {
+    reasons.push(`${formatBytes(summary.estimated_bytes)} estimated ingest size`);
+  }
+  const considered = summary.would_import + summary.skipped + summary.failed;
+  const skippedRatio = considered > 0 ? summary.skipped / considered : 0;
+  if (
+    summary.skipped >= sourcePlanSkippedFileThreshold ||
+    (summary.skipped > 0 && skippedRatio >= sourcePlanSkippedRatioThreshold)
+  ) {
+    reasons.push(`${summary.skipped} files or folders would be skipped`);
+  }
+  return reasons;
+}
+
+function sourceImportHasStarted(source: {
+  last_scan_at?: string;
+  last_scan_imported: number;
+  last_scan_skipped: number;
+  last_scan_failed: number;
+}) {
+  return Boolean(
+    source.last_scan_at ||
+      (source.last_scan_imported ?? 0) > 0 ||
+      (source.last_scan_skipped ?? 0) > 0 ||
+      (source.last_scan_failed ?? 0) > 0,
+  );
 }
 
 function SourcePreflightStatus({
