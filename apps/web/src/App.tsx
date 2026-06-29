@@ -56,6 +56,13 @@ type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming
 
 type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
 
+type ScanMetric = {
+  key: ScanEntryFilter;
+  label: string;
+  count: number;
+  filter: ScanEntryFilter;
+};
+
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
@@ -2368,31 +2375,62 @@ export function App() {
                     </div>
                   </dl>
                   {sourceDetail.scan_summary.total > 0 && (
-                    <section className="sourceScanSummary" aria-label="Latest scan summary">
-                      <div>
-                        <strong>{sourceDetail.scan_summary.total}</strong>
-                        <span>Files</span>
+                    <section className="sourceScanReport" aria-label="Latest scan report">
+                      <div className="sourceScanReportHeader">
+                        <div className="sourceScanReportTitle">
+                          <strong>{sourceScanHeadline(sourceDetail)}</strong>
+                          <span>{sourceScanSubline(sourceDetail)}</span>
+                        </div>
+                        <button onClick={() => exportSourceScanEntries()} type="button">
+                          CSV
+                        </button>
                       </div>
-                      <div>
-                        <strong>{sourceDetail.scan_summary.imported}</strong>
-                        <span>Imported</span>
+                      <div
+                        className="sourceScanMix"
+                        aria-label={sourceScanMixLabel(sourceDetail.scan_summary)}
+                      >
+                        {sourceScanMixSegments(sourceDetail.scan_summary).map((segment) => (
+                          <span
+                            className={`scanMixSegment scanMix-${segment.key}`}
+                            key={segment.key}
+                            style={{ flexGrow: segment.count }}
+                            title={`${segment.label}: ${segment.count}`}
+                          />
+                        ))}
                       </div>
-                      <div>
-                        <strong>{sourceDetail.scan_summary.skipped}</strong>
-                        <span>Skipped</span>
+                      <div className="sourceScanMetrics">
+                        {sourceScanMetrics(sourceDetail.scan_summary).map((metric) => (
+                          <button
+                            className={
+                              scanEntryFilter === metric.filter
+                                ? `scanMetric scanMetric-${metric.key} scanMetricSelected`
+                                : `scanMetric scanMetric-${metric.key}`
+                            }
+                            key={metric.key}
+                            onClick={() => void loadSourceScanEntries(metric.filter, 0)}
+                            type="button"
+                          >
+                            <strong>{metric.count}</strong>
+                            <span>{metric.label}</span>
+                          </button>
+                        ))}
                       </div>
-                      <div>
-                        <strong>{sourceDetail.scan_summary.failed}</strong>
-                        <span>Failed</span>
-                      </div>
-                      <div>
-                        <strong>{sourceDetail.scan_summary.deleted}</strong>
-                        <span>Deleted</span>
-                      </div>
-                      <div className="scanReasonSummary">
-                        <strong>{scanSummaryReasons(sourceDetail.scan_summary) || 'Clean'}</strong>
-                        <span>Reasons</span>
-                      </div>
+                      {sourceScanReasonRows(sourceDetail.scan_summary).length > 0 && (
+                        <div className="scanReasonBreakdown">
+                          {sourceScanReasonRows(sourceDetail.scan_summary).map((row) => (
+                            <button
+                              className="scanReasonRow"
+                              key={row.reason}
+                              onClick={() => void loadSourceScanEntries(row.filter, 0)}
+                              type="button"
+                            >
+                              <strong>{row.label}</strong>
+                              <span>{row.count}</span>
+                              <em>{titleCase(row.filter)}</em>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </section>
                   )}
                   {sourceNeedsRecovery(sourceDetail) && (
@@ -2587,22 +2625,26 @@ export function App() {
                         )}{' '}
                         of {sourceDetail.scan_entries_page.total}
                       </span>
+                      <div className="scanEntryFilters" role="group" aria-label="File outcome filters">
+                        {sourceScanMetrics(sourceDetail.scan_summary).map((metric) => (
+                          <button
+                            className={
+                              scanEntryFilter === metric.filter
+                                ? 'scanEntryFilter scanEntryFilterActive'
+                                : 'scanEntryFilter'
+                            }
+                            key={metric.key}
+                            onClick={() => void loadSourceScanEntries(metric.filter, 0)}
+                            type="button"
+                          >
+                            {metric.label}
+                            <span>{metric.count}</span>
+                          </button>
+                        ))}
+                      </div>
                       <div className="scanEntryPager">
-                        <select
-                          aria-label="Filter file outcomes"
-                          onChange={(event) =>
-                            void loadSourceScanEntries(event.target.value as ScanEntryFilter, 0)
-                          }
-                          value={scanEntryFilter}
-                        >
-                          <option value="all">All outcomes</option>
-                          <option value="failed">Failed</option>
-                          <option value="skipped">Skipped</option>
-                          <option value="imported">Imported</option>
-                          <option value="deleted">Deleted</option>
-                        </select>
                         <button onClick={() => exportSourceScanEntries()} type="button">
-                          CSV
+                          Export
                         </button>
                         <button
                           disabled={sourceDetail.scan_entries_page.offset === 0}
@@ -4322,12 +4364,163 @@ function scanEntryPageEnd(
   return Math.min(page.offset + visibleCount, page.total);
 }
 
+function sourceScanMetrics(summary: DataSourceDetailResponse['scan_summary']): ScanMetric[] {
+  const metrics: ScanMetric[] = [
+    {
+      key: 'all',
+      label: 'Files',
+      count: summary.total,
+      filter: 'all',
+    },
+    {
+      key: 'imported',
+      label: 'Imported',
+      count: summary.imported,
+      filter: 'imported',
+    },
+    {
+      key: 'skipped',
+      label: 'Skipped',
+      count: summary.skipped,
+      filter: 'skipped',
+    },
+    {
+      key: 'failed',
+      label: 'Failed',
+      count: summary.failed,
+      filter: 'failed',
+    },
+  ];
+  if (summary.deleted > 0) {
+    metrics.push({
+      key: 'deleted',
+      label: 'Deleted',
+      count: summary.deleted,
+      filter: 'deleted',
+    });
+  }
+  return metrics;
+}
+
+function sourceScanMixSegments(summary: DataSourceDetailResponse['scan_summary']) {
+  return [
+    {
+      key: 'imported',
+      label: 'Imported',
+      count: summary.imported,
+    },
+    {
+      key: 'skipped',
+      label: 'Skipped',
+      count: summary.skipped,
+    },
+    {
+      key: 'failed',
+      label: 'Failed',
+      count: summary.failed,
+    },
+    {
+      key: 'deleted',
+      label: 'Deleted',
+      count: summary.deleted,
+    },
+  ].filter((segment) => segment.count > 0);
+}
+
+function sourceScanMixLabel(summary: DataSourceDetailResponse['scan_summary']) {
+  return sourceScanMixSegments(summary)
+    .map((segment) => `${segment.label} ${segment.count}`)
+    .join(', ');
+}
+
+function sourceScanHeadline(detail: DataSourceDetailResponse) {
+  const summary = detail.scan_summary;
+  if (summary.failed > 0 || detail.source.status === 'failed') {
+    return `${summary.failed} failed in latest scan`;
+  }
+  if (summary.imported > 0 && summary.skipped === 0 && summary.deleted === 0) {
+    return `${summary.imported} imported`;
+  }
+  if (summary.imported === 0 && summary.skipped > 0 && summary.deleted === 0) {
+    return `${summary.skipped} skipped`;
+  }
+  const parts = [`${summary.imported} imported`];
+  if (summary.skipped > 0) {
+    parts.push(`${summary.skipped} skipped`);
+  }
+  if (summary.deleted > 0) {
+    parts.push(`${summary.deleted} deleted`);
+  }
+  return parts.join(', ');
+}
+
+function sourceScanSubline(detail: DataSourceDetailResponse) {
+  const summary = detail.scan_summary;
+  const parts = [];
+  if (summary.latest_at) {
+    parts.push(formatDateTime(summary.latest_at));
+  } else if (detail.source.last_scan_at) {
+    parts.push(formatDateTime(detail.source.last_scan_at));
+  }
+  if (summary.latest_job_id) {
+    parts.push(summary.latest_job_id);
+  }
+  if (detail.failed_documents > 0) {
+    parts.push(`${detail.failed_documents} failed docs`);
+  }
+  return parts.join(' / ') || 'Latest scan';
+}
+
+function sourceScanReasonRows(summary: DataSourceDetailResponse['scan_summary']) {
+  return Object.entries(summary.reasons)
+    .sort(([, a], [, b]) => b - a)
+    .map(([reason, count]) => ({
+      reason,
+      label: scanReasonLabel(reason),
+      count,
+      filter: scanReasonFilter(reason),
+    }));
+}
+
 function scanSummaryReasons(summary: DataSourceDetailResponse['scan_summary']) {
   return Object.entries(summary.reasons)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 2)
-    .map(([reason, count]) => `${titleCase(reason.replace(/_/g, ' '))} ${count}`)
+    .map(([reason, count]) => `${scanReasonLabel(reason)} ${count}`)
     .join(', ');
+}
+
+function scanReasonLabel(reason: string) {
+  if (reason.trim() === '') {
+    return 'Other';
+  }
+  return titleCase(reason.replace(/_/g, ' '));
+}
+
+function scanReasonFilter(reason: string): ScanEntryFilter {
+  if (reason === 'changed') {
+    return 'imported';
+  }
+  if (reason === 'missing') {
+    return 'deleted';
+  }
+  if (
+    [
+      'cannot_access',
+      'not_directory',
+      'walk_error',
+      'stat_failed',
+      'hash_failed',
+      'open_failed',
+      'upload_failed',
+      'close_failed',
+      'replace_failed',
+      'delete_missing_failed',
+    ].includes(reason)
+  ) {
+    return 'failed';
+  }
+  return 'skipped';
 }
 
 function sourceFailureTotal(detail: DataSourceDetailResponse) {
