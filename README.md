@@ -116,6 +116,15 @@ Run an end-to-end smoke test:
 
 The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, and deletes the temporary document. The workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
+Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint, notes, or technical docs folder:
+
+```powershell
+.\scripts\import-document-folder.ps1 -SourcePath "C:\Path\To\Docs" -DryRun
+.\scripts\import-document-folder.ps1 -SourcePath "C:\Path\To\Docs"
+```
+
+The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
+
 Stop the stack:
 
 ```powershell

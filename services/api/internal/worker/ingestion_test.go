@@ -101,6 +101,47 @@ func TestDocumentIngestionWorkerReturnsNoQueuedJobs(t *testing.T) {
 	}
 }
 
+func TestDocumentIngestionWorkerCancelsJobForDeletedDocument(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	doc := newTestDocument(t)
+	if err := doc.Transition(domain.DocumentStatusDeleted, fixedTime().Add(time.Second)); err != nil {
+		t.Fatalf("delete document: %v", err)
+	}
+	job := newDocumentJob(t, doc)
+	if err := repos.SaveDocument(ctx, doc); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	worker := NewDocumentIngestionWorker(repos, fixedClock{})
+	result, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("process next: %v", err)
+	}
+	if result.DocumentID != doc.ID {
+		t.Fatalf("document id = %q, want %q", result.DocumentID, doc.ID)
+	}
+
+	updatedDoc, err := repos.GetDocument(ctx, doc.TenantID, doc.ID)
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if updatedDoc.Status != domain.DocumentStatusDeleted {
+		t.Fatalf("document status = %q, want deleted", updatedDoc.Status)
+	}
+
+	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if updatedJob.State != domain.JobStateCanceled {
+		t.Fatalf("job state = %q, want canceled", updatedJob.State)
+	}
+}
+
 func TestDocumentIngestionWorkerFailsUnsupportedJob(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

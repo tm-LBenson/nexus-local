@@ -633,6 +633,51 @@ func TestUploadDocumentEndpoint(t *testing.T) {
 	}
 }
 
+func TestUploadDocumentEndpointPreservesProvidedName(t *testing.T) {
+	server := newTestServer(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
+		t.Fatalf("tenant field: %v", err)
+	}
+	if err := writer.WriteField("name", "Engineering/Runbooks/Handbook.md"); err != nil {
+		t.Fatalf("name field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "Handbook.md")
+	if err != nil {
+		t.Fatalf("file field: %v", err)
+	}
+	if _, err := part.Write([]byte("hello world")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+
+	var response struct {
+		Document documentPayload `json:"document"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if response.Document.Name != "Engineering/Runbooks/Handbook.md" {
+		t.Fatalf("document name = %q", response.Document.Name)
+	}
+	if response.Document.StorageKey != "tenants/tenant_1/documents/doc_http/Handbook.md" {
+		t.Fatalf("storage key = %q", response.Document.StorageKey)
+	}
+}
+
 func TestUploadDocumentEndpointRejectsUnsupportedType(t *testing.T) {
 	server := newTestServer(t)
 

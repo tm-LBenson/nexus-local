@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -31,6 +32,8 @@ type ProcessResult struct {
 	DocumentID domain.DocumentID
 	ChunkCount int
 }
+
+var ErrDocumentDeleted = errors.New("document was deleted before ingestion")
 
 func NewDocumentIngestionWorker(repos store.RepositorySet, clock Clock) DocumentIngestionWorker {
 	return DocumentIngestionWorker{
@@ -62,6 +65,15 @@ func (w DocumentIngestionWorker) ProcessNext(ctx context.Context) (ProcessResult
 
 	result, err := w.processClaimedJob(ctx, job)
 	if err != nil {
+		if errors.Is(err, ErrDocumentDeleted) {
+			if transitionErr := job.Transition(domain.JobStateCanceled, w.clock.Now()); transitionErr != nil {
+				return ProcessResult{}, transitionErr
+			}
+			if saveErr := w.repos.SaveJob(ctx, job); saveErr != nil {
+				return ProcessResult{}, saveErr
+			}
+			return result, nil
+		}
 		if transitionErr := job.Fail(err, w.clock.Now()); transitionErr == nil {
 			_ = w.repos.SaveJob(ctx, job)
 		}
@@ -87,6 +99,12 @@ func (w DocumentIngestionWorker) processClaimedJob(ctx context.Context, job doma
 	document, err := w.repos.GetDocument(ctx, job.TenantID, documentID)
 	if err != nil {
 		return ProcessResult{}, err
+	}
+	if document.Status == domain.DocumentStatusDeleted {
+		return ProcessResult{
+			JobID:      job.ID,
+			DocumentID: document.ID,
+		}, ErrDocumentDeleted
 	}
 
 	if err := document.Transition(domain.DocumentStatusProcessing, w.clock.Now()); err != nil {

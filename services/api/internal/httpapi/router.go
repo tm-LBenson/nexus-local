@@ -675,10 +675,15 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 			return
 		}
 
+		documentName := strings.TrimSpace(r.FormValue("name"))
+		if documentName == "" {
+			documentName = header.Filename
+		}
+
 		result, err := service.UploadDocument(r.Context(), app.UploadDocumentInput{
 			TenantID:    tenantID,
 			OwnerID:     principal.UserID,
-			Name:        header.Filename,
+			Name:        documentName,
 			ContentType: contentType,
 			SizeBytes:   header.Size,
 			Body:        file,

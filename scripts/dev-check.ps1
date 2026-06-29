@@ -166,6 +166,19 @@ if ($hasDocker) {
   } catch {
     Warn "compose ps" $_.Exception.Message
   }
+
+  if ($Smoke) {
+    try {
+      $serviceArgs = $composeConfig.Args
+      $serviceArgs += @("ps", "--services", "--status", "running")
+      $runningServices = @(& docker @serviceArgs)
+      if ($runningServices -notcontains "worker") {
+        Fail "worker" "not running; document ingestion will not progress"
+      }
+    } catch {
+      Warn "worker status" $_.Exception.Message
+    }
+  }
 }
 
 Write-Host ""

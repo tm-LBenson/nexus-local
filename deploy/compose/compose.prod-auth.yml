@@ -102,7 +102,7 @@ services:
       APP_ENV: production
       DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-prod-auth}
       PERSISTENCE_BACKEND: postgres
-      RUN_MIGRATIONS: "true"
+      RUN_MIGRATIONS: "false"
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
       OBJECT_STORAGE_BACKEND: minio
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
@@ -120,6 +120,8 @@ services:
       VECTOR_API_KEY: ${VECTOR_API_KEY:-}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
     depends_on:
+      api:
+        condition: service_started
       postgres:
         condition: service_healthy
       minio:
