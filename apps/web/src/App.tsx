@@ -168,6 +168,15 @@ export function App() {
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)) ?? [],
     [jobs],
   );
+  const activeIngestionDocumentIDs = useMemo(
+    () =>
+      new Set(
+        activeJobs
+          .filter((job) => job.type === 'document_ingestion' && job.resource_type === 'document')
+          .map((job) => job.resource_id),
+      ),
+    [activeJobs],
+  );
   const failedJobs = useMemo(
     () => jobs?.jobs.filter((job) => job.state === 'failed') ?? [],
     [jobs],
@@ -1488,6 +1497,29 @@ export function App() {
                       >
                         {loadingDocumentID === document.id ? 'Loading' : 'Details'}
                       </button>
+                      <button
+                        disabled={downloadingDocumentID === document.id}
+                        onClick={() => void downloadDocumentSource(document)}
+                        type="button"
+                      >
+                        {downloadingDocumentID === document.id ? 'Downloading' : 'Download'}
+                      </button>
+                      {document.status === 'failed' && (
+                        <button
+                          disabled={
+                            retryingDocumentID === document.id ||
+                            activeIngestionDocumentIDs.has(document.id)
+                          }
+                          onClick={() => void retryDocumentIngestion(document.id)}
+                          type="button"
+                        >
+                          {retryingDocumentID === document.id
+                            ? 'Retrying'
+                            : activeIngestionDocumentIDs.has(document.id)
+                              ? 'Queued'
+                              : 'Retry'}
+                        </button>
+                      )}
                       <button
                         className="dangerButton"
                         disabled={deletingDocumentID === document.id}
