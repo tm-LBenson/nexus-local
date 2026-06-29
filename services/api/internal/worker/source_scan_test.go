@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -65,6 +66,19 @@ func TestSourceScanWorkerImportsSupportedFiles(t *testing.T) {
 	}
 	if updatedJob.State != domain.JobStateSucceeded || updatedJob.Attempts != 1 {
 		t.Fatalf("scan job = %#v, want succeeded with one attempt", updatedJob)
+	}
+	var run SourceScanResult
+	if err := json.Unmarshal([]byte(updatedJob.ResultJSON), &run); err != nil {
+		t.Fatalf("decode scan result: %v", err)
+	}
+	if run.JobID != job.ID ||
+		run.SourceID != source.ID ||
+		run.ImportedCount != 2 ||
+		run.SkippedCount != 1 ||
+		run.FailedCount != 0 ||
+		run.StartedAt.IsZero() ||
+		run.FinishedAt.IsZero() {
+		t.Fatalf("scan run = %#v", run)
 	}
 
 	documents, err := repos.ListDocuments(ctx, source.TenantID)
@@ -338,6 +352,9 @@ func TestSourceScanWorkerDeletesMissingSourceFileDocumentOnRescan(t *testing.T) 
 	if secondResult.ImportedCount != 0 || secondResult.SkippedCount != 2 || secondResult.FailedCount != 0 {
 		t.Fatalf("second result = %#v, want unchanged keep plus deleted missing file", secondResult)
 	}
+	if secondResult.DeletedCount != 1 {
+		t.Fatalf("deleted count = %d, want 1", secondResult.DeletedCount)
+	}
 
 	documents, err := repos.ListDocuments(ctx, source.TenantID)
 	if err != nil {
@@ -546,6 +563,13 @@ func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
 	if updatedJob.State != domain.JobStateFailed || updatedJob.ErrorMessage == "" {
 		t.Fatalf("job = %#v, want failed with message", updatedJob)
 	}
+	var run SourceScanResult
+	if err := json.Unmarshal([]byte(updatedJob.ResultJSON), &run); err != nil {
+		t.Fatalf("decode failed scan result: %v", err)
+	}
+	if run.JobID != job.ID || run.SourceID != source.ID || run.FailedCount != 1 {
+		t.Fatalf("failed scan run = %#v", run)
+	}
 	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
 	if err != nil {
 		t.Fatalf("list scan entries: %v", err)
@@ -583,6 +607,13 @@ func TestSourceScanWorkerCancelsArchivedSource(t *testing.T) {
 	}
 	if updatedJob.State != domain.JobStateCanceled {
 		t.Fatalf("job state = %q, want canceled", updatedJob.State)
+	}
+	var run SourceScanResult
+	if err := json.Unmarshal([]byte(updatedJob.ResultJSON), &run); err != nil {
+		t.Fatalf("decode canceled scan result: %v", err)
+	}
+	if run.JobID != job.ID || run.SourceID != source.ID {
+		t.Fatalf("canceled scan run = %#v", run)
 	}
 }
 

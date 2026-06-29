@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/app"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
@@ -34,14 +36,18 @@ type SourceScanWorker struct {
 }
 
 type SourceScanResult struct {
-	JobID                   domain.JobID
-	SourceID                domain.DataSourceID
-	ImportedCount           int
-	SkippedCount            int
-	SkippedUnsupportedCount int
-	SkippedPolicyCount      int
-	SkippedTooLargeCount    int
-	FailedCount             int
+	JobID                   domain.JobID        `json:"job_id"`
+	SourceID                domain.DataSourceID `json:"source_id"`
+	StartedAt               time.Time           `json:"started_at"`
+	FinishedAt              time.Time           `json:"finished_at"`
+	DurationMS              int64               `json:"duration_ms"`
+	ImportedCount           int                 `json:"imported"`
+	SkippedCount            int                 `json:"skipped"`
+	DeletedCount            int                 `json:"deleted"`
+	SkippedUnsupportedCount int                 `json:"skipped_unsupported"`
+	SkippedPolicyCount      int                 `json:"skipped_policy"`
+	SkippedTooLargeCount    int                 `json:"skipped_too_large"`
+	FailedCount             int                 `json:"failed"`
 }
 
 type SourceScanPolicy struct {
@@ -112,7 +118,10 @@ func (w SourceScanWorker) ProcessNext(ctx context.Context) (SourceScanResult, er
 	result, err := w.processClaimedJob(ctx, job)
 	if err != nil {
 		if errors.Is(err, ErrSourceArchived) {
-			if transitionErr := job.Transition(domain.JobStateCanceled, w.clock.Now()); transitionErr != nil {
+			if err := w.finishSourceScanJob(&job, &result); err != nil {
+				return SourceScanResult{}, err
+			}
+			if transitionErr := job.Transition(domain.JobStateCanceled, result.FinishedAt); transitionErr != nil {
 				return SourceScanResult{}, transitionErr
 			}
 			if saveErr := w.repos.SaveJob(ctx, job); saveErr != nil {
@@ -120,13 +129,19 @@ func (w SourceScanWorker) ProcessNext(ctx context.Context) (SourceScanResult, er
 			}
 			return result, nil
 		}
-		if transitionErr := job.Fail(err, w.clock.Now()); transitionErr == nil {
+		if err := w.finishSourceScanJob(&job, &result); err != nil {
+			return SourceScanResult{}, err
+		}
+		if transitionErr := job.Fail(err, result.FinishedAt); transitionErr == nil {
 			_ = w.repos.SaveJob(ctx, job)
 		}
-		return SourceScanResult{}, err
+		return result, err
 	}
 
-	if err := job.Transition(domain.JobStateSucceeded, w.clock.Now()); err != nil {
+	if err := w.finishSourceScanJob(&job, &result); err != nil {
+		return SourceScanResult{}, err
+	}
+	if err := job.Transition(domain.JobStateSucceeded, result.FinishedAt); err != nil {
 		return SourceScanResult{}, err
 	}
 	if err := w.repos.SaveJob(ctx, job); err != nil {
@@ -148,8 +163,9 @@ func (w SourceScanWorker) processClaimedJob(ctx context.Context, job domain.Job)
 		return SourceScanResult{}, err
 	}
 	result := SourceScanResult{
-		JobID:    job.ID,
-		SourceID: source.ID,
+		JobID:     job.ID,
+		SourceID:  source.ID,
+		StartedAt: job.UpdatedAt,
 	}
 
 	if source.Status == domain.DataSourceStatusArchived {
@@ -466,6 +482,7 @@ func (w SourceScanWorker) reconcileDeletedSourceFiles(ctx context.Context, sourc
 			return result, fmt.Errorf("%s: delete missing source document %s: %w", path, entry.DocumentID, err)
 		}
 		result.SkippedCount++
+		result.DeletedCount++
 		if saveErr := w.recordScanEntry(ctx, source, result.JobID, path, domain.DataSourceScanOutcomeDeleted, "missing", message, entry.DocumentID, entry.SizeBytes, entry.ContentHash); saveErr != nil {
 			return result, saveErr
 		}
@@ -538,6 +555,29 @@ func (w SourceScanWorker) markSourceFailed(ctx context.Context, source domain.Da
 		return err
 	}
 	return w.repos.SaveDataSource(ctx, latest)
+}
+
+func (w SourceScanWorker) finishSourceScanJob(job *domain.Job, result *SourceScanResult) error {
+	if result.JobID == "" {
+		result.JobID = job.ID
+	}
+	if result.SourceID == "" && job.ResourceID != "" {
+		result.SourceID = domain.DataSourceID(job.ResourceID)
+	}
+	if result.StartedAt.IsZero() {
+		result.StartedAt = job.UpdatedAt
+	}
+	result.FinishedAt = w.clock.Now()
+	result.DurationMS = result.FinishedAt.Sub(result.StartedAt).Milliseconds()
+	if result.DurationMS < 0 {
+		result.DurationMS = 0
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	job.ResultJSON = string(encoded)
+	return nil
 }
 
 func sourceRelativePath(root string, path string) string {

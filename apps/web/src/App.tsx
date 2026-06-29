@@ -85,6 +85,21 @@ type SourcePlanSample = {
   message?: string;
 };
 
+type SourceScanRunSummary = {
+  job_id: string;
+  source_id: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  imported: number;
+  skipped: number;
+  deleted: number;
+  skipped_unsupported: number;
+  skipped_policy: number;
+  skipped_too_large: number;
+  failed: number;
+};
+
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
@@ -2638,31 +2653,12 @@ export function App() {
                     onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
                     refreshing={refreshingSourceID === sourceDetail.source.id}
                   />
-                  {activeSourceScanJobs.get(sourceDetail.source.id) && (
-                    <section className="sourceProgressPanel" aria-label="Source scan progress">
-                      <span className="spinner" aria-hidden="true" />
-                      <div className="sourceProgressText">
-                        <strong>
-                          {titleCase(
-                            activeSourceScanJobs.get(sourceDetail.source.id)?.state ?? 'running',
-                          )}
-                        </strong>
-                        <span>
-                          {sourceCurrentScanProgress(
-                            sourceDetail,
-                            activeSourceScanJobs.get(sourceDetail.source.id),
-                          )}
-                        </span>
-                      </div>
-                      <button
-                        disabled={refreshingSourceID === sourceDetail.source.id}
-                        onClick={() => void refreshSourceDetail(sourceDetail.source.id)}
-                        type="button"
-                      >
-                        {refreshingSourceID === sourceDetail.source.id ? 'Refreshing' : 'Refresh'}
-                      </button>
-                    </section>
-                  )}
+                  <SourceScanRunStatus
+                    activeJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                    detail={sourceDetail}
+                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                    refreshing={refreshingSourceID === sourceDetail.source.id}
+                  />
                   <dl className="runtimeList detailList">
                     <div>
                       <dt>ID</dt>
@@ -4922,6 +4918,57 @@ function sourceCurrentScanProgress(
   return parts.join(' / ');
 }
 
+function SourceScanRunStatus({
+  activeJob,
+  detail,
+  onRefresh,
+  refreshing,
+}: {
+  activeJob?: ListJobsResponse['jobs'][number];
+  detail: DataSourceDetailResponse;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const job = activeJob ?? sourceLatestScanJob(detail);
+  if (!job) {
+    return null;
+  }
+  const active = isActiveJobState(job.state);
+  const failed = job.state === 'failed';
+  const run = sourceScanRunSummaryFromJob(job);
+  return (
+    <section
+      aria-label="Source scan run"
+      className={
+        failed
+          ? 'sourceProgressPanel sourceScanRunPanel sourcePreflightFailed'
+          : 'sourceProgressPanel sourceScanRunPanel'
+      }
+    >
+      {active ? (
+        <span className="spinner" aria-hidden="true" />
+      ) : (
+        <span className={stateClass(job.state)}>{titleCase(job.state)}</span>
+      )}
+      <div className="sourceProgressText">
+        <strong>{sourceScanRunTitle(job)}</strong>
+        <span>{sourceScanRunMessage(detail, job, run)}</span>
+        <div className="sourceScanRunMetrics">
+          {sourceScanRunMetrics(detail, job, run).map((metric) => (
+            <span key={metric.label}>
+              <strong>{metric.value}</strong>
+              <em>{metric.label}</em>
+            </span>
+          ))}
+        </div>
+      </div>
+      <button disabled={refreshing} onClick={onRefresh} type="button">
+        {refreshing ? 'Refreshing' : 'Refresh'}
+      </button>
+    </section>
+  );
+}
+
 function SourcePlanStatus({
   activeJob,
   detail,
@@ -4994,6 +5041,125 @@ function SourcePlanStatus({
       </button>
     </section>
   );
+}
+
+function sourceLatestScanJob(detail: DataSourceDetailResponse) {
+  return detail.jobs
+    .filter(
+      (job) =>
+        job.type === 'source_scan' &&
+        job.resource_type === 'data_source' &&
+        job.resource_id === detail.source.id,
+    )
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
+}
+
+function sourceScanRunSummaryFromJob(job: ListJobsResponse['jobs'][number]) {
+  if (!job.result_json) {
+    return null;
+  }
+  try {
+    const summary = JSON.parse(job.result_json) as SourceScanRunSummary;
+    if (!summary.job_id || !summary.started_at) {
+      return null;
+    }
+    return summary;
+  } catch {
+    return null;
+  }
+}
+
+function sourceScanRunTitle(job: ListJobsResponse['jobs'][number]) {
+  if (isActiveJobState(job.state)) {
+    return 'Scan running';
+  }
+  if (job.state === 'succeeded') {
+    return 'Scan complete';
+  }
+  if (job.state === 'failed') {
+    return 'Scan failed';
+  }
+  if (job.state === 'canceled') {
+    return 'Scan canceled';
+  }
+  return titleCase(job.state);
+}
+
+function sourceScanRunMessage(
+  detail: DataSourceDetailResponse,
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  if (isActiveJobState(job.state)) {
+    return `${sourceCurrentScanProgress(detail, job)} / started ${formatDateTime(
+      sourceScanRunStartedAt(job, run),
+    )}`;
+  }
+  if (job.state === 'failed' && job.error_message.trim() !== '') {
+    return job.error_message;
+  }
+  const startedAt = sourceScanRunStartedAt(job, run);
+  const finishedAt = sourceScanRunFinishedAt(job, run);
+  const parts = [`started ${formatDateTime(startedAt)}`];
+  if (finishedAt) {
+    parts.push(`finished ${formatDateTime(finishedAt)}`);
+  }
+  const duration = sourceScanRunDurationMS(job, run);
+  if (duration !== null) {
+    parts.push(formatDurationMS(duration));
+  }
+  return parts.join(' / ');
+}
+
+function sourceScanRunMetrics(
+  detail: DataSourceDetailResponse,
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  const current = detail.scan_summary.latest_job_id === job.id ? detail.scan_summary : null;
+  return [
+    { label: 'Imported', value: run?.imported ?? current?.imported ?? 0 },
+    { label: 'Skipped', value: run?.skipped ?? current?.skipped ?? 0 },
+    { label: 'Deleted', value: run?.deleted ?? current?.deleted ?? 0 },
+    { label: 'Failed', value: run?.failed ?? current?.failed ?? 0 },
+  ];
+}
+
+function sourceScanRunStartedAt(
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  if (run?.started_at) {
+    return run.started_at;
+  }
+  return job.state === 'queued' ? job.created_at : job.updated_at;
+}
+
+function sourceScanRunFinishedAt(
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  if (run?.finished_at) {
+    return run.finished_at;
+  }
+  if (isActiveJobState(job.state)) {
+    return '';
+  }
+  return job.updated_at;
+}
+
+function sourceScanRunDurationMS(
+  job: ListJobsResponse['jobs'][number],
+  run: SourceScanRunSummary | null,
+) {
+  if (typeof run?.duration_ms === 'number') {
+    return Math.max(0, run.duration_ms);
+  }
+  const finishedAt = sourceScanRunFinishedAt(job, run);
+  if (!finishedAt) {
+    return null;
+  }
+  return Math.max(0, Date.parse(finishedAt) - Date.parse(sourceScanRunStartedAt(job, run)));
 }
 
 function SourcePlanReviewTable({ summary }: { summary: SourcePlanSummary }) {
@@ -5435,6 +5601,12 @@ function scanEntryMessage(entry: DataSourceDetailResponse['scan_entries'][number
 }
 
 function jobDetail(job: ListJobsResponse['jobs'][number]) {
+  if (job.type === 'source_scan') {
+    const run = sourceScanRunSummaryFromJob(job);
+    if (run) {
+      return `${run.imported} imported / ${run.skipped} skipped / ${run.failed} failed`;
+    }
+  }
   if (job.type === 'source_plan') {
     const summary = sourcePlanSummaryFromJob(job);
     if (summary) {
@@ -5572,6 +5744,10 @@ function formatElapsed(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return `${minutes}m ${remainder.toString().padStart(2, '0')}s`;
+}
+
+function formatDurationMS(ms: number) {
+  return formatElapsed(Math.max(0, Math.round(ms / 1000)));
 }
 
 function formatTimeOnly(value: string) {
