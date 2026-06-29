@@ -1,19 +1,27 @@
 param(
   [switch]$Smoke,
   [switch]$BackupSmoke,
+  [switch]$SourceStress,
   [switch]$SkipAsk,
   [switch]$IncludeAsk,
   [string]$ApiUrl = "http://localhost:8080",
   [string]$TenantId = "",
   [string]$WorkspaceName = "",
   [string]$FixturePath = "",
+  [string]$SourcePath = "",
+  [string]$HostFixturePath = "",
   [string]$ModelTarget = "general",
   [string]$UserId = "",
   [string]$UserEmail = "",
   [int]$SmokeTimeoutSeconds = 90,
+  [int]$SourceStressFileCount = 40,
+  [int]$SourceStressTimeoutSeconds = 180,
   [string]$Profile = "",
   [string]$BackupOutputDir = "",
-  [switch]$KeepBackup
+  [switch]$KeepBackup,
+  [switch]$KeepSourceStressFixture,
+  [switch]$KeepSourceStressSource,
+  [switch]$SkipSourceStressDocumentReady
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +30,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root ".env"
 $smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
 $backupSmokeScript = Join-Path $PSScriptRoot "backup-smoke.ps1"
+$sourceStressScript = Join-Path $PSScriptRoot "source-stress.ps1"
 $composeHelper = Join-Path (Join-Path $PSScriptRoot "lib") "compose.ps1"
 . $composeHelper
 $failures = 0
@@ -171,7 +180,7 @@ if ($hasDocker) {
     Warn "compose ps" $_.Exception.Message
   }
 
-  if ($Smoke) {
+  if ($Smoke -or $SourceStress) {
     try {
       $serviceArgs = $composeConfig.Args
       $serviceArgs += @("ps", "--services", "--status", "running")
@@ -251,6 +260,47 @@ if ($BackupSmoke) {
     & $backupSmokeScript @backupParams
   } catch {
     Fail "backup smoke" $_.Exception.Message
+  }
+}
+
+if ($SourceStress) {
+  Write-Host ""
+  try {
+    $sourceStressParams = @{
+      ApiUrl = $ApiUrl
+      TimeoutSeconds = $SourceStressTimeoutSeconds
+      FileCount = $SourceStressFileCount
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TenantId)) {
+      $sourceStressParams.TenantId = $TenantId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceName)) {
+      $sourceStressParams.WorkspaceName = $WorkspaceName
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath)) {
+      $sourceStressParams.SourcePath = $SourcePath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HostFixturePath)) {
+      $sourceStressParams.HostFixturePath = $HostFixturePath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserId)) {
+      $sourceStressParams.UserId = $UserId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserEmail)) {
+      $sourceStressParams.UserEmail = $UserEmail
+    }
+    if ($KeepSourceStressFixture) {
+      $sourceStressParams.KeepFixture = $true
+    }
+    if ($KeepSourceStressSource) {
+      $sourceStressParams.KeepSource = $true
+    }
+    if ($SkipSourceStressDocumentReady) {
+      $sourceStressParams.SkipDocumentReady = $true
+    }
+    & $sourceStressScript @sourceStressParams
+  } catch {
+    Fail "source stress" $_.Exception.Message
   }
 }
 

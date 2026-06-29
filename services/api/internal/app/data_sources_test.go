@@ -245,6 +245,55 @@ func TestGetDataSourceSummarizesLatestScanEntries(t *testing.T) {
 	}
 }
 
+func TestGetDataSourceSummarizesLatestScanBeyondDefaultPage(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_large_summary", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	latestJobID := domain.JobID("job_latest")
+	for index := 0; index < 125; index++ {
+		outcome := domain.DataSourceScanOutcomeImported
+		reason := ""
+		if index%5 == 0 {
+			outcome = domain.DataSourceScanOutcomeSkipped
+			reason = "unsupported_type"
+		}
+		entry := newSourceScanEntryAt(
+			t,
+			source,
+			latestJobID,
+			fmt.Sprintf("batch/doc-%03d.md", index),
+			outcome,
+			reason,
+			domain.DocumentID(fmt.Sprintf("doc_%03d", index)),
+			fixedClock{}.Now(),
+		)
+		if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry: %v", err)
+		}
+	}
+
+	result, err := service.Get(ctx, DataSourceDetailInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if result.ScanSummary.Total != 125 ||
+		result.ScanSummary.Imported != 100 ||
+		result.ScanSummary.Skipped != 25 ||
+		result.ScanSummary.Reasons["unsupported_type"] != 25 {
+		t.Fatalf("scan summary = %#v, want full latest scan counts", result.ScanSummary)
+	}
+	if len(result.ScanEntries) != defaultScanEntryListLimit {
+		t.Fatalf("scan entries len = %d, want paged default %d", len(result.ScanEntries), defaultScanEntryListLimit)
+	}
+}
+
 func TestGetDataSourcePaginatesScanEntries(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

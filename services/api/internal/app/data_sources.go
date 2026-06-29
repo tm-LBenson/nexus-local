@@ -252,7 +252,7 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 	if err != nil {
 		return DataSourceDetailResult{}, err
 	}
-	summaryEntries, err := s.repos.ListDataSourceScanEntries(ctx, input.TenantID, source.ID, defaultScanEntryListLimit)
+	summaryEntries, err := s.repos.ListDataSourceScanEntries(ctx, input.TenantID, source.ID, 0)
 	if err != nil {
 		return DataSourceDetailResult{}, err
 	}

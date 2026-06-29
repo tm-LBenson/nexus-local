@@ -119,6 +119,15 @@ Run an end-to-end smoke test:
 
 The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, and deletes the temporary document. The workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
+Run a managed-source stress check:
+
+```powershell
+.\scripts\dev-check.ps1 -SourceStress
+.\scripts\dev-check.ps1 -SourceStress -SourceStressFileCount 150 -SourceStressTimeoutSeconds 300
+```
+
+The source stress check creates a temporary mixed fixture folder, creates a managed source, queues a real source scan, verifies imported/skipped/failed counts and skip reasons, waits for imported documents to become searchable, then archives the temporary source and deletes its imported documents. If `.env` contains `NEXUS_SOURCE_HOST_PATH`, the script writes fixtures below that host path and uses `NEXUS_SOURCE_CONTAINER_PATH` as the worker-visible path. Otherwise, pass both `-HostFixturePath` and `-SourcePath` when the worker sees a different path than the shell running the script.
+
 Run a non-destructive backup/restore preflight:
 
 ```powershell
@@ -136,7 +145,7 @@ Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint
 
 The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
-The app Library can also create managed sources from templates for SharePoint/Teams sync, OneDrive sync, network shares, ticket exports, knowledge base exports, and runbooks. It can edit source paths, include/exclude patterns, and scan schedules, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source detail shows a latest-scan summary plus paged, filterable per-file outcomes for imports, skips, failures, and deletes, with CSV export for review. Active scans show live file-result counts as entries arrive. Failed scans surface direct recovery actions for failed-only review, failed-only CSV export, and retrying the scan after fixing a source path, mount, or permission issue. Imported documents that fail ingestion can also be retried from the source detail page without opening each document. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default. Include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes. Scheduled source scans run from the worker process while the stack is up.
+The app Library can also create managed sources from templates for SharePoint/Teams sync, OneDrive sync, network shares, ticket exports, knowledge base exports, and runbooks. It can edit source paths, include/exclude patterns, and scan schedules, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source detail shows a latest-scan summary plus paged, filterable per-file outcomes for imports, skips, failures, and deletes, with CSV export for review. Active scans show live file-result counts as entries arrive. Failed scans surface direct recovery actions for failed-only review, failed-only CSV export, and retrying the scan after fixing a source path, mount, or permission issue. Imported documents that fail ingestion can also be retried from the source detail page without opening each document. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default. Include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes. Scheduled source scans run from the worker process while the stack is up. Use `.\scripts\dev-check.ps1 -SourceStress` after changing source mounts, source scanning, ingestion, embeddings, or vector search.
 
 See [Source Mounts](docs/source-mounts.md) for OneDrive, Teams/SharePoint sync, local folder, NAS, and export path examples.
 
