@@ -139,6 +139,19 @@ export type RegisteredJob = {
   updated_at: string;
 };
 
+export type DataSourceScanEntry = {
+  tenant_id: string;
+  job_id: string;
+  source_id: string;
+  path: string;
+  outcome: string;
+  reason: string;
+  message: string;
+  document_id?: string;
+  size_bytes: number;
+  created_at: string;
+};
+
 export type RegisterDocumentResponse = {
   document: RegisteredDocument;
   job: RegisteredJob;
@@ -159,6 +172,7 @@ export type DataSourceResponse = {
 export type DataSourceDetailResponse = {
   source: DataSource;
   jobs: RegisteredJob[];
+  scan_entries: DataSourceScanEntry[];
 };
 
 export type DataSourceScanResponse = {

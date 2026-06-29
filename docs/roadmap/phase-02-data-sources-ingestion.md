@@ -27,7 +27,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.3 | Source scan worker that walks allowed files and creates document jobs. | Fixture folder imports without blocking the API. |
 | 2.4 | Default include/exclude safety for supported extensions, hidden/cache paths, symlinks, and max size. | Test folder shows expected accepted/rejected counts and the UI shows scan totals. |
 | 2.5 | Incremental scan with changed/new/deleted detection. | Re-scan updates only changed files and preserves stable records. |
-| 2.6 | Source detail panel with failures, retries, scan totals, and recent jobs. | User can answer "what happened to this import?" from the UI. |
+| 2.6 | Source detail panel with failures, retries, scan totals, recent jobs, and per-file scan outcomes. | User can answer "what happened to this import?" from the UI. |
 
 ## Dependencies
 
@@ -44,4 +44,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.3 establish the basic managed-source pipeline. Next, harden it with include/exclude rules, incremental scans, source detail, and clearer per-source failure review.
+Slices 2.1 through 2.6 establish the basic managed-source pipeline and source-level observability. Next, harden it with incremental scans, source-level document association, and delete/reindex controls.

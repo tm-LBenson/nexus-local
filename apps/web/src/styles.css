@@ -1231,6 +1231,7 @@ h3 {
 .jobRow,
 .auditRow,
 .sourceRow,
+.scanEntryRow,
 .searchHit {
   display: grid;
   align-items: center;
@@ -1248,6 +1249,11 @@ h3 {
 
 .sourceRow {
   grid-template-columns: minmax(0, 1fr) 98px 130px minmax(180px, 0.9fr) 78px;
+  gap: 10px;
+}
+
+.scanEntryRow {
+  grid-template-columns: minmax(0, 1fr) 92px minmax(120px, 0.6fr) 84px 116px;
   gap: 10px;
 }
 
@@ -1414,6 +1420,10 @@ h3 {
 .sourceRow strong,
 .sourceRow em,
 .sourceRow small,
+.scanEntryRow strong,
+.scanEntryRow em,
+.scanEntryRow small,
+.scanEntryRow time,
 .tenantRow strong,
 .memberRow strong,
 .targetRow span,
@@ -1429,6 +1439,7 @@ h3 {
 .jobRow span,
 .auditRow span,
 .sourceRow span,
+.scanEntryRow span,
 .tenantRow span,
 .memberRow span {
   color: #0a684c;
@@ -1449,6 +1460,9 @@ h3 {
 .auditRow p,
 .sourceRow em,
 .sourceRow small,
+.scanEntryRow em,
+.scanEntryRow small,
+.scanEntryRow time,
 .targetRow em,
 .searchHit em {
   color: #69777d;
@@ -1458,6 +1472,13 @@ h3 {
 }
 
 .sourceRow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scanEntryRow strong,
+.scanEntryRow em {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2065,6 +2086,7 @@ h3 {
   .auditRow,
   .sourceForm,
   .sourceRow,
+  .scanEntryRow,
   .dataHeader,
   .dataRow,
   .tenantRow,

@@ -334,6 +334,59 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 	return sources, rows.Err()
 }
 
+func (s *Store) SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO data_source_scan_entries (
+			tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (tenant_id, job_id, path) DO UPDATE
+		SET source_id = EXCLUDED.source_id,
+		    outcome = EXCLUDED.outcome,
+		    reason = EXCLUDED.reason,
+		    message = EXCLUDED.message,
+		    document_id = EXCLUDED.document_id,
+		    size_bytes = EXCLUDED.size_bytes,
+		    created_at = EXCLUDED.created_at
+	`, entry.TenantID, entry.JobID, entry.SourceID, entry.Path, entry.Outcome, entry.Reason, entry.Message, entry.DocumentID, entry.SizeBytes, entry.CreatedAt)
+	return err
+}
+
+func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, limit int) ([]domain.DataSourceScanEntry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, created_at
+		FROM data_source_scan_entries
+		WHERE tenant_id = $1 AND source_id = $2
+		ORDER BY created_at DESC, path
+		LIMIT $3
+	`, tenantID, sourceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := make([]domain.DataSourceScanEntry, 0)
+	for rows.Next() {
+		var entry domain.DataSourceScanEntry
+		if err := rows.Scan(
+			&entry.TenantID,
+			&entry.JobID,
+			&entry.SourceID,
+			&entry.Path,
+			&entry.Outcome,
+			&entry.Reason,
+			&entry.Message,
+			&entry.DocumentID,
+			&entry.SizeBytes,
+			&entry.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO jobs (

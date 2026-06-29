@@ -25,6 +25,14 @@ const (
 	DataSourceStatusArchived DataSourceStatus = "archived"
 )
 
+type DataSourceScanOutcome string
+
+const (
+	DataSourceScanOutcomeImported DataSourceScanOutcome = "imported"
+	DataSourceScanOutcomeSkipped  DataSourceScanOutcome = "skipped"
+	DataSourceScanOutcomeFailed   DataSourceScanOutcome = "failed"
+)
+
 type DataSource struct {
 	ID               DataSourceID
 	TenantID         TenantID
@@ -41,6 +49,19 @@ type DataSource struct {
 	UpdatedAt        time.Time
 }
 
+type DataSourceScanEntry struct {
+	TenantID   TenantID
+	JobID      JobID
+	SourceID   DataSourceID
+	Path       string
+	Outcome    DataSourceScanOutcome
+	Reason     string
+	Message    string
+	DocumentID DocumentID
+	SizeBytes  int64
+	CreatedAt  time.Time
+}
+
 type DataSourceCreate struct {
 	ID       DataSourceID
 	TenantID TenantID
@@ -49,6 +70,19 @@ type DataSourceCreate struct {
 	Name     string
 	RootPath string
 	Now      time.Time
+}
+
+type DataSourceScanEntryCreate struct {
+	TenantID   TenantID
+	JobID      JobID
+	SourceID   DataSourceID
+	Path       string
+	Outcome    DataSourceScanOutcome
+	Reason     string
+	Message    string
+	DocumentID DocumentID
+	SizeBytes  int64
+	Now        time.Time
 }
 
 func NewDataSource(input DataSourceCreate) (DataSource, error) {
@@ -79,6 +113,34 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 		Status:    DataSourceStatusActive,
 		CreatedAt: now,
 		UpdatedAt: now,
+	}, nil
+}
+
+func NewDataSourceScanEntry(input DataSourceScanEntryCreate) (DataSourceScanEntry, error) {
+	if emptyID(string(input.TenantID)) ||
+		emptyID(string(input.JobID)) ||
+		emptyID(string(input.SourceID)) ||
+		strings.TrimSpace(input.Path) == "" ||
+		!input.Outcome.Valid() ||
+		input.SizeBytes < 0 {
+		return DataSourceScanEntry{}, fmt.Errorf("data source scan entry: %w", ErrInvalidEntity)
+	}
+	now := input.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	return DataSourceScanEntry{
+		TenantID:   input.TenantID,
+		JobID:      input.JobID,
+		SourceID:   input.SourceID,
+		Path:       strings.TrimSpace(input.Path),
+		Outcome:    input.Outcome,
+		Reason:     strings.TrimSpace(input.Reason),
+		Message:    strings.TrimSpace(input.Message),
+		DocumentID: input.DocumentID,
+		SizeBytes:  input.SizeBytes,
+		CreatedAt:  now,
 	}, nil
 }
 
@@ -159,6 +221,17 @@ func (t DataSourceType) Valid() bool {
 		DataSourceTypeNetworkShare,
 		DataSourceTypeExport,
 		DataSourceTypeConnector:
+		return true
+	default:
+		return false
+	}
+}
+
+func (o DataSourceScanOutcome) Valid() bool {
+	switch o {
+	case DataSourceScanOutcomeImported,
+		DataSourceScanOutcomeSkipped,
+		DataSourceScanOutcomeFailed:
 		return true
 	default:
 		return false

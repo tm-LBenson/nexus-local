@@ -645,13 +645,14 @@ func TestDataSourceEndpoints(t *testing.T) {
 		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
 	}
 	var getBody struct {
-		Source dataSourcePayload `json:"source"`
-		Jobs   []jobPayload      `json:"jobs"`
+		Source      dataSourcePayload            `json:"source"`
+		Jobs        []jobPayload                 `json:"jobs"`
+		ScanEntries []dataSourceScanEntryPayload `json:"scan_entries"`
 	}
 	if err := json.NewDecoder(get.Body).Decode(&getBody); err != nil {
 		t.Fatalf("decode get: %v", err)
 	}
-	if getBody.Source.ID != "src_http" || len(getBody.Jobs) != 0 {
+	if getBody.Source.ID != "src_http" || len(getBody.Jobs) != 0 || len(getBody.ScanEntries) != 0 {
 		t.Fatalf("get body = %#v, want source with no jobs", getBody)
 	}
 
@@ -683,14 +684,18 @@ func TestDataSourceEndpoints(t *testing.T) {
 		t.Fatalf("get after scan status = %d, want %d, body = %s", getAfterScan.Code, http.StatusOK, getAfterScan.Body.String())
 	}
 	var getAfterScanBody struct {
-		Source dataSourcePayload `json:"source"`
-		Jobs   []jobPayload      `json:"jobs"`
+		Source      dataSourcePayload            `json:"source"`
+		Jobs        []jobPayload                 `json:"jobs"`
+		ScanEntries []dataSourceScanEntryPayload `json:"scan_entries"`
 	}
 	if err := json.NewDecoder(getAfterScan.Body).Decode(&getAfterScanBody); err != nil {
 		t.Fatalf("decode get after scan: %v", err)
 	}
 	if len(getAfterScanBody.Jobs) != 1 || getAfterScanBody.Jobs[0].Type != "source_scan" {
 		t.Fatalf("detail jobs = %#v, want source_scan job", getAfterScanBody.Jobs)
+	}
+	if len(getAfterScanBody.ScanEntries) != 0 {
+		t.Fatalf("scan entries = %#v, want none before worker runs", getAfterScanBody.ScanEntries)
 	}
 
 	remove := httptest.NewRecorder()

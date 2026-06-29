@@ -835,11 +835,12 @@ export function App() {
       const result = await scanDataSource(tenantID, source.id);
       setSourceDetail((current) => {
         if (!current || current.source.id !== source.id) {
-          return { source: result.source, jobs: [result.job] };
+          return { source: result.source, jobs: [result.job], scan_entries: [] };
         }
         return {
           source: result.source,
           jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+          scan_entries: current.scan_entries,
         };
       });
       await Promise.all([
@@ -1799,6 +1800,29 @@ export function App() {
                       <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
                     </div>
                   </dl>
+                  <details className="inlineDetails" open={sourceDetail.scan_entries.length > 0}>
+                    <summary>Files</summary>
+                    <div className="tableList scanEntryList">
+                      {sourceDetail.scan_entries.map((entry) => (
+                        <div className="scanEntryRow" key={`${entry.job_id}:${entry.path}`}>
+                          <strong title={entry.path}>{entry.path}</strong>
+                          <span className={scanOutcomeClass(entry.outcome)}>
+                            {titleCase(entry.outcome)}
+                          </span>
+                          <em title={scanEntryMessage(entry)}>{scanEntryReason(entry)}</em>
+                          <small>
+                            {entry.size_bytes > 0
+                              ? formatBytes(entry.size_bytes)
+                              : entry.document_id || ''}
+                          </small>
+                          <time dateTime={entry.created_at}>{formatDateTime(entry.created_at)}</time>
+                        </div>
+                      ))}
+                      {sourceDetail.scan_entries.length === 0 && (
+                        <p className="muted">No file results yet</p>
+                      )}
+                    </div>
+                  </details>
                   <details className="inlineDetails" open>
                     <summary>Activity</summary>
                     <div className="tableList">
@@ -3350,6 +3374,30 @@ function sourceFailureMessage(detail: DataSourceDetailResponse) {
     detail.jobs.find((job) => job.state === 'failed' && job.error_message.trim() !== '')
       ?.error_message ?? ''
   );
+}
+
+function scanOutcomeClass(outcome: string) {
+  switch (outcome) {
+    case 'imported':
+      return 'stateBadge stateReady';
+    case 'failed':
+      return 'stateBadge stateFailed';
+    case 'skipped':
+      return 'stateBadge stateActive';
+    default:
+      return 'stateBadge';
+  }
+}
+
+function scanEntryReason(entry: DataSourceDetailResponse['scan_entries'][number]) {
+  if (entry.reason.trim() === '') {
+    return entry.document_id ? entry.document_id : 'ok';
+  }
+  return titleCase(entry.reason.replace(/_/g, ' '));
+}
+
+function scanEntryMessage(entry: DataSourceDetailResponse['scan_entries'][number]) {
+  return entry.message || entry.reason || entry.document_id || entry.path;
 }
 
 function jobDetail(job: ListJobsResponse['jobs'][number]) {

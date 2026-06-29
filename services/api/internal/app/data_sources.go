@@ -61,8 +61,9 @@ type DataSourceResult struct {
 }
 
 type DataSourceDetailResult struct {
-	Source domain.DataSource
-	Jobs   []domain.Job
+	Source      domain.DataSource
+	Jobs        []domain.Job
+	ScanEntries []domain.DataSourceScanEntry
 }
 
 type ScanDataSourceResult struct {
@@ -77,6 +78,8 @@ type ListDataSourcesResult struct {
 func NewDataSourceService(repos store.RepositorySet, ids DataSourceIDs, clock Clock) DataSourceService {
 	return DataSourceService{repos: repos, ids: ids, clock: clock}
 }
+
+const maxScanEntryListLimit = 100
 
 func (s DataSourceService) Create(ctx context.Context, input CreateDataSourceInput) (DataSourceResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -138,9 +141,14 @@ func (s DataSourceService) Get(ctx context.Context, input DataSourceDetailInput)
 			relatedJobs = append(relatedJobs, job)
 		}
 	}
+	entries, err := s.repos.ListDataSourceScanEntries(ctx, input.TenantID, source.ID, maxScanEntryListLimit)
+	if err != nil {
+		return DataSourceDetailResult{}, err
+	}
 	return DataSourceDetailResult{
-		Source: source,
-		Jobs:   relatedJobs,
+		Source:      source,
+		Jobs:        relatedJobs,
+		ScanEntries: entries,
 	}, nil
 }
 

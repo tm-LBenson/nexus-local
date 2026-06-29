@@ -156,6 +156,32 @@ func TestListJobsReturnsRecentTenantJobs(t *testing.T) {
 	}
 }
 
+func TestListDataSourceScanEntriesScopesAndOrdersEntries(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+	first := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "first.md", fixedTime())
+	second := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "second.md", fixedTime().Add(time.Minute))
+	otherSource := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_2"), domain.JobID("job_2"), "other.md", fixedTime().Add(2*time.Minute))
+	otherTenant := newTestScanEntry(t, domain.TenantID("tenant_b"), domain.DataSourceID("src_1"), domain.JobID("job_3"), "tenant.md", fixedTime().Add(3*time.Minute))
+
+	for _, entry := range []domain.DataSourceScanEntry{first, second, otherSource, otherTenant} {
+		if err := repo.SaveDataSourceScanEntry(ctx, entry); err != nil {
+			t.Fatalf("save scan entry %s: %v", entry.Path, err)
+		}
+	}
+
+	entries, err := repo.ListDataSourceScanEntries(ctx, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), 1)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries len = %d, want 1", len(entries))
+	}
+	if entries[0].Path != "second.md" {
+		t.Fatalf("entry path = %s, want second.md", entries[0].Path)
+	}
+}
+
 func TestClaimNextQueuedJobIgnoresTerminalJobs(t *testing.T) {
 	ctx := context.Background()
 	repo := New()
@@ -363,6 +389,23 @@ func newTestJob(t *testing.T, tenantID domain.TenantID, jobID domain.JobID, now 
 		t.Fatalf("new job: %v", err)
 	}
 	return job
+}
+
+func newTestScanEntry(t *testing.T, tenantID domain.TenantID, sourceID domain.DataSourceID, jobID domain.JobID, path string, now time.Time) domain.DataSourceScanEntry {
+	t.Helper()
+
+	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+		TenantID: tenantID,
+		JobID:    jobID,
+		SourceID: sourceID,
+		Path:     path,
+		Outcome:  domain.DataSourceScanOutcomeImported,
+		Now:      now,
+	})
+	if err != nil {
+		t.Fatalf("new scan entry: %v", err)
+	}
+	return entry
 }
 
 func newTestAuditEvent(t *testing.T, tenantID domain.TenantID, eventID domain.AuditEventID, now time.Time) domain.AuditEvent {

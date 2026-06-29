@@ -18,6 +18,7 @@ type Store struct {
 	memberships   map[membershipKey]domain.Membership
 	documents     map[tenantDocumentKey]domain.Document
 	dataSources   map[tenantDataSourceKey]domain.DataSource
+	scanEntries   map[tenantScanEntryKey]domain.DataSourceScanEntry
 	jobs          map[tenantJobKey]domain.Job
 	conversations map[tenantConversationKey]domain.Conversation
 	messages      map[tenantMessageKey]domain.Message
@@ -37,6 +38,12 @@ type tenantDocumentKey struct {
 type tenantDataSourceKey struct {
 	tenantID     domain.TenantID
 	dataSourceID domain.DataSourceID
+}
+
+type tenantScanEntryKey struct {
+	tenantID domain.TenantID
+	jobID    domain.JobID
+	path     string
 }
 
 type tenantJobKey struct {
@@ -67,6 +74,7 @@ func New() *Store {
 		memberships:   map[membershipKey]domain.Membership{},
 		documents:     map[tenantDocumentKey]domain.Document{},
 		dataSources:   map[tenantDataSourceKey]domain.DataSource{},
+		scanEntries:   map[tenantScanEntryKey]domain.DataSourceScanEntry{},
 		jobs:          map[tenantJobKey]domain.Job{},
 		conversations: map[tenantConversationKey]domain.Conversation{},
 		messages:      map[tenantMessageKey]domain.Message{},
@@ -283,6 +291,45 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		return sources[i].UpdatedAt.After(sources[j].UpdatedAt)
 	})
 	return sources, nil
+}
+
+func (s *Store) SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scanEntries[tenantScanEntryKey{
+		tenantID: entry.TenantID,
+		jobID:    entry.JobID,
+		path:     entry.Path,
+	}] = entry
+	return nil
+}
+
+func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, limit int) ([]domain.DataSourceScanEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entries := make([]domain.DataSourceScanEntry, 0)
+	for _, entry := range s.scanEntries {
+		if entry.TenantID == tenantID && entry.SourceID == sourceID {
+			entries = append(entries, entry)
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].CreatedAt.Equal(entries[j].CreatedAt) {
+			return entries[i].Path < entries[j].Path
+		}
+		return entries[i].CreatedAt.After(entries[j].CreatedAt)
+	})
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
 }
 
 func (s *Store) SaveJob(ctx context.Context, job domain.Job) error {

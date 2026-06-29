@@ -319,6 +319,19 @@ type dataSourcePayload struct {
 	UpdatedAt        string `json:"updated_at"`
 }
 
+type dataSourceScanEntryPayload struct {
+	TenantID   string `json:"tenant_id"`
+	JobID      string `json:"job_id"`
+	SourceID   string `json:"source_id"`
+	Path       string `json:"path"`
+	Outcome    string `json:"outcome"`
+	Reason     string `json:"reason"`
+	Message    string `json:"message"`
+	DocumentID string `json:"document_id,omitempty"`
+	SizeBytes  int64  `json:"size_bytes"`
+	CreatedAt  string `json:"created_at"`
+}
+
 type jobPayload struct {
 	ID           string `json:"id"`
 	TenantID     string `json:"tenant_id"`
@@ -900,9 +913,14 @@ func getDataSourceHandler(service app.DataSourceService, authorizer internalauth
 		for _, job := range result.Jobs {
 			jobs = append(jobs, encodeJob(job))
 		}
+		entries := make([]dataSourceScanEntryPayload, 0, len(result.ScanEntries))
+		for _, entry := range result.ScanEntries {
+			entries = append(entries, encodeDataSourceScanEntry(entry))
+		}
 		writeJSON(w, http.StatusOK, envelope{
-			"source": encodeDataSource(result.Source),
-			"jobs":   jobs,
+			"source":       encodeDataSource(result.Source),
+			"jobs":         jobs,
+			"scan_entries": entries,
 		})
 	}
 }
@@ -1426,6 +1444,21 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 		LastScanFailed:   source.LastScanFailed,
 		CreatedAt:        source.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:        source.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeDataSourceScanEntry(entry domain.DataSourceScanEntry) dataSourceScanEntryPayload {
+	return dataSourceScanEntryPayload{
+		TenantID:   string(entry.TenantID),
+		JobID:      string(entry.JobID),
+		SourceID:   string(entry.SourceID),
+		Path:       entry.Path,
+		Outcome:    string(entry.Outcome),
+		Reason:     entry.Reason,
+		Message:    entry.Message,
+		DocumentID: string(entry.DocumentID),
+		SizeBytes:  entry.SizeBytes,
+		CreatedAt:  entry.CreatedAt.Format(time.RFC3339),
 	}
 }
 

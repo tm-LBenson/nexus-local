@@ -90,6 +90,20 @@ func TestSourceScanWorkerImportsSupportedFiles(t *testing.T) {
 	if keys := objects.Keys(); len(keys) != 2 {
 		t.Fatalf("object keys = %v, want 2 objects", keys)
 	}
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("scan entries len = %d, want 3", len(entries))
+	}
+	outcomes := scanEntriesByPath(entries)
+	if outcomes["overview.md"].Outcome != domain.DataSourceScanOutcomeImported ||
+		outcomes["nested/guide.txt"].Outcome != domain.DataSourceScanOutcomeImported ||
+		outcomes["image.png"].Outcome != domain.DataSourceScanOutcomeSkipped ||
+		outcomes["image.png"].Reason != "unsupported_type" {
+		t.Fatalf("scan entries = %#v", outcomes)
+	}
 }
 
 func TestSourceScanWorkerAppliesDefaultSafetyPolicy(t *testing.T) {
@@ -145,6 +159,17 @@ func TestSourceScanWorkerAppliesDefaultSafetyPolicy(t *testing.T) {
 	if updatedSource.LastScanImported != 1 || updatedSource.LastScanSkipped != 3 {
 		t.Fatalf("source counts = %d/%d, want 1/3", updatedSource.LastScanImported, updatedSource.LastScanSkipped)
 	}
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	outcomes := scanEntriesByPath(entries)
+	if outcomes["ok.md"].Outcome != domain.DataSourceScanOutcomeImported ||
+		outcomes[".hidden.md"].Reason != "policy" ||
+		outcomes["node_modules/"].Reason != "policy" ||
+		outcomes["large.md"].Reason != "too_large" {
+		t.Fatalf("scan entries = %#v", outcomes)
+	}
 }
 
 func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
@@ -183,6 +208,15 @@ func TestSourceScanWorkerFailsMissingRoot(t *testing.T) {
 	}
 	if updatedJob.State != domain.JobStateFailed || updatedJob.ErrorMessage == "" {
 		t.Fatalf("job = %#v, want failed with message", updatedJob)
+	}
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	if len(entries) != 1 ||
+		entries[0].Outcome != domain.DataSourceScanOutcomeFailed ||
+		entries[0].Reason != "cannot_access" {
+		t.Fatalf("scan entries = %#v", entries)
 	}
 }
 
@@ -270,6 +304,14 @@ func mustWriteFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func scanEntriesByPath(entries []domain.DataSourceScanEntry) map[string]domain.DataSourceScanEntry {
+	byPath := make(map[string]domain.DataSourceScanEntry, len(entries))
+	for _, entry := range entries {
+		byPath[entry.Path] = entry
+	}
+	return byPath
 }
 
 type scanIDs struct {

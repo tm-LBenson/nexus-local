@@ -135,6 +135,20 @@ func TestGetDataSourceIncludesRelatedJobs(t *testing.T) {
 	if err := repos.SaveJob(ctx, otherJob); err != nil {
 		t.Fatalf("save other job: %v", err)
 	}
+	entry, err := domain.NewDataSourceScanEntry(domain.DataSourceScanEntryCreate{
+		TenantID: source.TenantID,
+		JobID:    sourceJob.ID,
+		SourceID: source.ID,
+		Path:     "runbooks/setup.md",
+		Outcome:  domain.DataSourceScanOutcomeImported,
+		Now:      fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new scan entry: %v", err)
+	}
+	if err := repos.SaveDataSourceScanEntry(ctx, entry); err != nil {
+		t.Fatalf("save scan entry: %v", err)
+	}
 
 	result, err := service.Get(ctx, DataSourceDetailInput{
 		TenantID:     source.TenantID,
@@ -148,6 +162,9 @@ func TestGetDataSourceIncludesRelatedJobs(t *testing.T) {
 	}
 	if len(result.Jobs) != 1 || result.Jobs[0].ID != sourceJob.ID {
 		t.Fatalf("jobs = %#v, want only source job", result.Jobs)
+	}
+	if len(result.ScanEntries) != 1 || result.ScanEntries[0].Path != "runbooks/setup.md" {
+		t.Fatalf("scan entries = %#v, want imported setup entry", result.ScanEntries)
 	}
 }
 
