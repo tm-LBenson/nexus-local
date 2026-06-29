@@ -1156,12 +1156,12 @@ export function App() {
     }
   }
 
-  function exportSourceScanEntries() {
+  function exportSourceScanEntries(outcome: ScanEntryFilter = scanEntryFilter) {
     if (!tenantID || !sourceDetail) {
       return;
     }
     window.location.href = dataSourceScanEntriesExportUrl(tenantID, sourceDetail.source.id, {
-      outcome: scanEntryFilter === 'all' ? undefined : scanEntryFilter,
+      outcome: outcome === 'all' ? undefined : outcome,
     });
   }
 
@@ -2306,6 +2306,41 @@ export function App() {
                       </div>
                     </section>
                   )}
+                  {sourceNeedsRecovery(sourceDetail) && (
+                    <section className="sourceRecoveryPanel" aria-label="Source recovery">
+                      <div className="sourceRecoveryText">
+                        <strong>{sourceFailureTotal(sourceDetail)} failed</strong>
+                        <span>{sourceRecoveryMessage(sourceDetail)}</span>
+                      </div>
+                      <div className="sourceRecoveryActions">
+                        <button
+                          onClick={() => void loadSourceScanEntries('failed', 0)}
+                          type="button"
+                        >
+                          Show failed
+                        </button>
+                        <button onClick={() => exportSourceScanEntries('failed')} type="button">
+                          Failed CSV
+                        </button>
+                        <button
+                          disabled={
+                            Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActiveScanJob(sourceDetail) ||
+                            sourceDetail.source.status === 'archived' ||
+                            scanningSourceID === sourceDetail.source.id
+                          }
+                          onClick={() => void requestDataSourceScan(sourceDetail.source)}
+                          type="button"
+                        >
+                          {scanningSourceID === sourceDetail.source.id
+                            ? 'Queuing'
+                            : sourceHasActiveScanJob(sourceDetail)
+                              ? 'Queued'
+                              : 'Retry scan'}
+                        </button>
+                      </div>
+                    </section>
+                  )}
                   <details className="inlineDetails">
                     <summary>Edit</summary>
                     <form className="sourceForm sourceEditForm" onSubmit={submitSourceUpdate}>
@@ -2451,7 +2486,7 @@ export function App() {
                           <option value="imported">Imported</option>
                           <option value="deleted">Deleted</option>
                         </select>
-                        <button onClick={exportSourceScanEntries} type="button">
+                        <button onClick={() => exportSourceScanEntries()} type="button">
                           CSV
                         </button>
                         <button
@@ -4178,6 +4213,25 @@ function scanSummaryReasons(summary: DataSourceDetailResponse['scan_summary']) {
     .slice(0, 2)
     .map(([reason, count]) => `${titleCase(reason.replace(/_/g, ' '))} ${count}`)
     .join(', ');
+}
+
+function sourceFailureTotal(detail: DataSourceDetailResponse) {
+  return Math.max(detail.source.last_scan_failed ?? 0, detail.scan_summary.failed ?? 0);
+}
+
+function sourceNeedsRecovery(detail: DataSourceDetailResponse) {
+  return detail.source.status === 'failed' || sourceFailureTotal(detail) > 0;
+}
+
+function sourceRecoveryMessage(detail: DataSourceDetailResponse) {
+  const reason = scanSummaryReasons(detail.scan_summary);
+  if (reason) {
+    return `${reason}. Fix the source, then retry; unchanged files will be skipped.`;
+  }
+  if (detail.source.status === 'failed') {
+    return 'Fix the source path, mount, or permissions, then retry the scan.';
+  }
+  return 'Review failed files, fix the source, then retry the scan.';
 }
 
 function sourceHasActiveScanJob(detail: DataSourceDetailResponse) {

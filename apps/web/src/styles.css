@@ -1854,6 +1854,45 @@ h3 {
   grid-column: span 2;
 }
 
+.sourceRecoveryPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e4b9b4;
+  border-left: 4px solid #b84b42;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff6f4;
+}
+
+.sourceRecoveryText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sourceRecoveryText strong {
+  color: #8b2f29;
+  font-size: 0.92rem;
+}
+
+.sourceRecoveryText span {
+  min-width: 0;
+  color: #5d3a36;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.sourceRecoveryActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .scanEntryToolbar {
   display: flex;
   align-items: center;
@@ -2346,6 +2385,18 @@ h3 {
 
   .scanReasonSummary {
     grid-column: 1 / -1;
+  }
+
+  .sourceRecoveryPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .sourceRecoveryActions {
+    justify-content: stretch;
+  }
+
+  .sourceRecoveryActions button {
+    flex: 1 1 112px;
   }
 
   .scanEntryToolbar {

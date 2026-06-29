@@ -37,6 +37,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.13 | Paged scan review and CSV export. | Large imports can be reviewed by outcome without loading every scan entry into the browser. |
 | 2.14 | First-run source mounting guidance. | Operators can mount a document root into the worker and users see worker-path examples in Library. |
 | 2.15 | Connector-oriented source templates. | Users can start from common source shapes such as SharePoint sync, OneDrive sync, network shares, ticket exports, knowledge base exports, and runbooks. |
+| 2.16 | Source scan recovery actions. | Failed scans surface direct actions to show failed files, export a failed-only CSV, and retry the scan after fixing the source. |
 
 ## Dependencies
 
@@ -53,4 +54,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.15 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, and connector-oriented source templates. Next, harden it with bulk import usability and clearer source scan recovery for large customer folders.
+Slices 2.1 through 2.16 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, and source scan recovery actions. Next, harden it with bulk import usability, source scan progress, and better retry flows for failed document ingestion from large customer folders.
