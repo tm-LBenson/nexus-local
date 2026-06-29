@@ -101,6 +101,16 @@ type SourceScanRunSummary = {
   failed: number;
 };
 
+type SourceHealthState = 'ready' | 'active' | 'review' | 'blocked' | 'neutral';
+
+type SourceHealthItem = {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  state: SourceHealthState;
+};
+
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
@@ -2366,6 +2376,14 @@ export function App() {
                     >
                       <button onClick={() => void openSource(source)} type="button">
                         <strong>{source.name}</strong>
+                        <small>
+                          {sourceListHealthLabel(
+                            source,
+                            visiblePreflightJob,
+                            visiblePlanJob,
+                            scanJob,
+                          )}
+                        </small>
                       </button>
                       <span
                         className={stateClass(
@@ -2671,6 +2689,12 @@ export function App() {
                       <span>{sourceFailureMessage(sourceDetail)}</span>
                     </div>
                   )}
+                  <SourceHealthRollup
+                    activePlanJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
+                    activePreflightJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
+                    activeScanJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                    detail={sourceDetail}
+                  />
                   <SourcePreflightStatus
                     activeJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
                     checking={preflightingSourceID === sourceDetail.source.id}
@@ -4954,6 +4978,450 @@ function sourceCurrentScanProgress(
   return parts.join(' / ');
 }
 
+function SourceHealthRollup({
+  activePlanJob,
+  activePreflightJob,
+  activeScanJob,
+  detail,
+}: {
+  activePlanJob?: ListJobsResponse['jobs'][number];
+  activePreflightJob?: ListJobsResponse['jobs'][number];
+  activeScanJob?: ListJobsResponse['jobs'][number];
+  detail: DataSourceDetailResponse;
+}) {
+  const items = sourceHealthItems(detail, activePreflightJob, activePlanJob, activeScanJob);
+  return (
+    <section className="sourceHealthRollup" aria-label="Source health">
+      {items.map((item) => (
+        <div className="sourceHealthItem" key={item.key}>
+          <div className="sourceHealthItemHeader">
+            <small>{item.label}</small>
+            <span className={sourceHealthBadgeClass(item.state)}>
+              {sourceHealthBadgeLabel(item.state)}
+            </span>
+          </div>
+          <strong>{item.value}</strong>
+          <em title={item.detail}>{item.detail}</em>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function sourceHealthItems(
+  detail: DataSourceDetailResponse,
+  activePreflightJob?: ListJobsResponse['jobs'][number],
+  activePlanJob?: ListJobsResponse['jobs'][number],
+  activeScanJob?: ListJobsResponse['jobs'][number],
+): SourceHealthItem[] {
+  const latestPreflightJob = activePreflightJob ?? sourceLatestRelevantPreflightJob(detail);
+  const latestPlanJob = activePlanJob ?? sourceLatestRelevantPlanJob(detail);
+  const latestScanJob = activeScanJob ?? sourceLatestScanJob(detail);
+  return [
+    sourceReadinessHealth(detail, latestPreflightJob, latestPlanJob, latestScanJob),
+    sourceScheduleHealth(detail, activeScanJob),
+    sourceFailureHealth(detail),
+    sourceNextActionHealth(detail, latestPreflightJob, latestPlanJob, latestScanJob),
+  ];
+}
+
+function sourceReadinessHealth(
+  detail: DataSourceDetailResponse,
+  preflightJob?: ListJobsResponse['jobs'][number],
+  planJob?: ListJobsResponse['jobs'][number],
+  scanJob?: ListJobsResponse['jobs'][number],
+): SourceHealthItem {
+  if (preflightJob && isActiveJobState(preflightJob.state)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Checking path',
+      detail: 'Worker is validating the mounted source path.',
+      state: 'active',
+    };
+  }
+  if (planJob && isActiveJobState(planJob.state)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Planning import',
+      detail: 'Worker is previewing files before the next scan.',
+      state: 'active',
+    };
+  }
+  if (scanJob && isActiveJobState(scanJob.state)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Scanning',
+      detail: sourceCurrentScanProgress(detail, scanJob),
+      state: 'active',
+    };
+  }
+  if (preflightJob && sourcePreflightBlocksScan(detail.source, preflightJob)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Path blocked',
+      detail: sourcePreflightMessage(preflightJob),
+      state: 'blocked',
+    };
+  }
+  if (planJob && sourcePlanBlocksScan(detail.source, planJob)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Plan blocked',
+      detail: sourcePlanMessage(planJob, sourcePlanSummaryFromJob(planJob)),
+      state: 'blocked',
+    };
+  }
+  if (scanJob?.state === 'failed') {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Scan failed',
+      detail: sourceScanRunMessage(detail, scanJob, sourceScanRunSummaryFromJob(scanJob)),
+      state: 'blocked',
+    };
+  }
+  if (detail.source.status === 'archived') {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Archived',
+      detail: 'Source is no longer maintained automatically.',
+      state: 'neutral',
+    };
+  }
+  if (!sourceImportHasStarted(detail.source)) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Not scanned',
+      detail: 'Run Check path, Plan, then Scan when ready.',
+      state: 'review',
+    };
+  }
+  if (detail.failed_documents > 0) {
+    return {
+      key: 'state',
+      label: 'State',
+      value: 'Needs review',
+      detail: `${detail.failed_documents} imported documents have failed ingestion jobs.`,
+      state: 'review',
+    };
+  }
+  return {
+    key: 'state',
+    label: 'State',
+    value: 'Healthy',
+    detail: 'Latest source state is usable.',
+    state: 'ready',
+  };
+}
+
+function sourceScheduleHealth(
+  detail: DataSourceDetailResponse,
+  activeScanJob?: ListJobsResponse['jobs'][number],
+): SourceHealthItem {
+  const interval = detail.source.scan_interval_minutes ?? 0;
+  if (!interval) {
+    return {
+      key: 'schedule',
+      label: 'Schedule',
+      value: 'Manual',
+      detail: 'Scans run only when requested.',
+      state: 'neutral',
+    };
+  }
+  if (activeScanJob && isActiveJobState(activeScanJob.state)) {
+    return {
+      key: 'schedule',
+      label: 'Schedule',
+      value: 'Running now',
+      detail: `${sourceScheduleLabel(interval)} cadence resumes after this run.`,
+      state: 'active',
+    };
+  }
+  if (!detail.source.next_scan_at) {
+    return {
+      key: 'schedule',
+      label: 'Schedule',
+      value: sourceScheduleLabel(interval),
+      detail: 'No next run is currently scheduled.',
+      state: 'review',
+    };
+  }
+  const nextScanAt = Date.parse(detail.source.next_scan_at);
+  if (Number.isNaN(nextScanAt)) {
+    return {
+      key: 'schedule',
+      label: 'Schedule',
+      value: sourceScheduleLabel(interval),
+      detail: 'Next run timestamp is not readable.',
+      state: 'review',
+    };
+  }
+  const now = Date.now();
+  if (nextScanAt <= now) {
+    return {
+      key: 'schedule',
+      label: 'Schedule',
+      value: nextScanAt <= now - 5 * 60 * 1000 ? 'Overdue' : 'Due now',
+      detail: `Due ${formatRelativeDateTime(detail.source.next_scan_at)} / ${sourceScheduleLabel(
+        interval,
+      )} cadence`,
+      state: 'review',
+    };
+  }
+  return {
+    key: 'schedule',
+    label: 'Schedule',
+    value: `Next ${formatRelativeDateTime(detail.source.next_scan_at)}`,
+    detail: `${sourceScheduleLabel(interval)} cadence.`,
+    state: 'ready',
+  };
+}
+
+function sourceFailureHealth(detail: DataSourceDetailResponse): SourceHealthItem {
+  const consecutiveFailures = sourceConsecutiveFailedOperationCount(detail);
+  if (consecutiveFailures >= 2) {
+    const latestFailure = sourceRecentOperationalJobs(detail).find((job) => job.state === 'failed');
+    return {
+      key: 'failures',
+      label: 'Failures',
+      value: 'Repeated failures',
+      detail: `${consecutiveFailures} recent operations failed. ${
+        latestFailure?.error_message || 'Open the activity rows for details.'
+      }`,
+      state: 'blocked',
+    };
+  }
+  if (detail.failed_documents > 0) {
+    return {
+      key: 'failures',
+      label: 'Failures',
+      value: `${detail.failed_documents} failed docs`,
+      detail: 'Retry failed documents after fixing parser or runtime issues.',
+      state: 'review',
+    };
+  }
+  const lastScanFailed = detail.source.last_scan_failed ?? 0;
+  if (lastScanFailed > 0) {
+    return {
+      key: 'failures',
+      label: 'Failures',
+      value: `${lastScanFailed} scan failures`,
+      detail: 'Review failed files in the latest scan report.',
+      state: 'review',
+    };
+  }
+  return {
+    key: 'failures',
+    label: 'Failures',
+    value: 'None',
+    detail: 'No source or document failures are currently visible.',
+    state: 'ready',
+  };
+}
+
+function sourceNextActionHealth(
+  detail: DataSourceDetailResponse,
+  preflightJob?: ListJobsResponse['jobs'][number],
+  planJob?: ListJobsResponse['jobs'][number],
+  scanJob?: ListJobsResponse['jobs'][number],
+): SourceHealthItem {
+  if (
+    [preflightJob, planJob, scanJob].some((job) => job && isActiveJobState(job.state))
+  ) {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Monitor',
+      detail: 'Refresh the source detail while the worker finishes.',
+      state: 'active',
+    };
+  }
+  if (detail.source.status === 'archived') {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'No action',
+      detail: 'Archived sources are retained for document history.',
+      state: 'neutral',
+    };
+  }
+  if (preflightJob && sourcePreflightBlocksScan(detail.source, preflightJob)) {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Check path',
+      detail: 'Fix the mount or permissions, then run Check path again.',
+      state: 'blocked',
+    };
+  }
+  if (planJob && sourcePlanBlocksScan(detail.source, planJob)) {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Plan again',
+      detail: 'Fix plan errors, then preview the source again.',
+      state: 'blocked',
+    };
+  }
+  if (!sourceImportHasStarted(detail.source)) {
+    if (!preflightJob || preflightJob.state !== 'succeeded') {
+      return {
+        key: 'action',
+        label: 'Next action',
+        value: 'Check path',
+        detail: 'Validate the worker can read the mounted source.',
+        state: 'review',
+      };
+    }
+    if (!planJob || planJob.state !== 'succeeded') {
+      return {
+        key: 'action',
+        label: 'Next action',
+        value: 'Plan',
+        detail: 'Preview matched files before the first import.',
+        state: 'review',
+      };
+    }
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Scan',
+      detail: 'The source is ready for the first import.',
+      state: 'ready',
+    };
+  }
+  if (detail.failed_documents > 0) {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Retry failed docs',
+      detail: 'Requeue failed ingestion jobs from the source actions.',
+      state: 'review',
+    };
+  }
+  if (sourceScheduleIsOverdue(detail.source)) {
+    return {
+      key: 'action',
+      label: 'Next action',
+      value: 'Run scan',
+      detail: 'A scheduled source appears overdue; run a scan or check the worker.',
+      state: 'review',
+    };
+  }
+  return {
+    key: 'action',
+    label: 'Next action',
+    value: 'Monitor',
+    detail: 'No operator action is required right now.',
+    state: 'ready',
+  };
+}
+
+function sourceRecentOperationalJobs(detail: DataSourceDetailResponse) {
+  return detail.jobs
+    .filter(
+      (job) =>
+        ['source_preflight', 'source_plan', 'source_scan'].includes(job.type) &&
+        job.resource_type === 'data_source' &&
+        job.resource_id === detail.source.id &&
+        (job.type === 'source_scan' || sourceJobAppliesToSource(detail.source, job)),
+    )
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+}
+
+function sourceConsecutiveFailedOperationCount(detail: DataSourceDetailResponse) {
+  let count = 0;
+  for (const job of sourceRecentOperationalJobs(detail).slice(0, 6)) {
+    if (isActiveJobState(job.state)) {
+      break;
+    }
+    if (job.state !== 'failed') {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function sourceScheduleIsOverdue(source: ListDataSourcesResponse['sources'][number]) {
+  if (!source.scan_interval_minutes || !source.next_scan_at) {
+    return false;
+  }
+  const nextScanAt = Date.parse(source.next_scan_at);
+  return !Number.isNaN(nextScanAt) && nextScanAt <= Date.now() - 5 * 60 * 1000;
+}
+
+function sourceHealthBadgeClass(state: SourceHealthState) {
+  if (state === 'ready') {
+    return stateClass('ready');
+  }
+  if (state === 'active') {
+    return stateClass('running');
+  }
+  if (state === 'review') {
+    return 'stateBadge stateReview';
+  }
+  if (state === 'blocked') {
+    return stateClass('failed');
+  }
+  return 'stateBadge';
+}
+
+function sourceHealthBadgeLabel(state: SourceHealthState) {
+  switch (state) {
+    case 'ready':
+      return 'ok';
+    case 'active':
+      return 'active';
+    case 'review':
+      return 'review';
+    case 'blocked':
+      return 'blocked';
+    case 'neutral':
+      return 'info';
+  }
+}
+
+function sourceListHealthLabel(
+  source: ListDataSourcesResponse['sources'][number],
+  preflightJob?: ListJobsResponse['jobs'][number],
+  planJob?: ListJobsResponse['jobs'][number],
+  scanJob?: ListJobsResponse['jobs'][number],
+) {
+  if (preflightJob && isActiveJobState(preflightJob.state)) {
+    return 'Checking path';
+  }
+  if (planJob && isActiveJobState(planJob.state)) {
+    return 'Planning import';
+  }
+  if (scanJob && isActiveJobState(scanJob.state)) {
+    return 'Scanning source';
+  }
+  if (preflightJob && sourcePreflightBlocksScan(source, preflightJob)) {
+    return 'Path blocked';
+  }
+  if (planJob && sourcePlanBlocksScan(source, planJob)) {
+    return 'Plan blocked';
+  }
+  if ((source.last_scan_failed ?? 0) > 0) {
+    return `${source.last_scan_failed} failed last scan`;
+  }
+  if (sourceScheduleIsOverdue(source)) {
+    return 'Schedule overdue';
+  }
+  if (!source.last_scan_at) {
+    return 'Not scanned';
+  }
+  return `Last scan ${formatDateTime(source.last_scan_at)}`;
+}
+
 function SourceScanRunStatus({
   activeJob,
   canceling,
@@ -5875,6 +6343,30 @@ function formatElapsed(seconds: number) {
 
 function formatDurationMS(ms: number) {
   return formatElapsed(Math.max(0, Math.round(ms / 1000)));
+}
+
+function formatRelativeDateTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return 'unknown';
+  }
+  const deltaMS = timestamp - Date.now();
+  const absSeconds = Math.max(0, Math.round(Math.abs(deltaMS) / 1000));
+  if (absSeconds < 45) {
+    return 'now';
+  }
+  let amount = Math.round(absSeconds / 60);
+  let unit = 'min';
+  if (amount >= 60) {
+    amount = Math.round(amount / 60);
+    unit = amount === 1 ? 'hour' : 'hours';
+  }
+  if (unit !== 'min' && amount >= 24) {
+    amount = Math.round(amount / 24);
+    unit = amount === 1 ? 'day' : 'days';
+  }
+  const label = unit === 'min' ? `${amount} min` : `${amount} ${unit}`;
+  return deltaMS < 0 ? `${label} ago` : `in ${label}`;
 }
 
 function formatTimeOnly(value: string) {

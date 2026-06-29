@@ -1457,6 +1457,17 @@ h3 {
   background: transparent;
 }
 
+.sourceRow > button:first-child small {
+  display: block;
+  margin-top: 3px;
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .selectedRow {
   border-color: #9eb7be;
   background: #eef6f4;
@@ -1684,6 +1695,12 @@ h3 {
 }
 
 .stateActive {
+  border-color: #d8bf86;
+  color: #7a4a08;
+  background: #fff7e6;
+}
+
+.stateReview {
   border-color: #d8bf86;
   color: #7a4a08;
   background: #fff7e6;
@@ -2056,6 +2073,62 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.sourceHealthRollup {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sourceHealthItem {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  border: 1px solid #dbe5e5;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.sourceHealthItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sourceHealthItemHeader small {
+  min-width: 0;
+  overflow: hidden;
+  color: #69777d;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sourceHealthItem strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172026;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceHealthItem em {
+  display: -webkit-box;
+  min-height: 34px;
+  overflow: hidden;
+  color: #52646c;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 750;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .sourceProgressPanel {
@@ -2877,6 +2950,10 @@ h3 {
   .scanEntryToolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .sourceHealthRollup {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sourceScanMetrics {
