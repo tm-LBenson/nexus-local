@@ -11,6 +11,7 @@ type JobType string
 const (
 	JobTypeDocumentIngestion JobType = "document_ingestion"
 	JobTypeSourceScan        JobType = "source_scan"
+	JobTypeSourcePreflight   JobType = "source_preflight"
 	JobTypeEmbeddingBackfill JobType = "embedding_backfill"
 	JobTypeAITurn            JobType = "ai_turn"
 	JobTypeEvaluation        JobType = "evaluation"
@@ -105,7 +106,7 @@ func (j *Job) Fail(cause error, now time.Time) error {
 
 func (t JobType) Valid() bool {
 	switch t {
-	case JobTypeDocumentIngestion, JobTypeSourceScan, JobTypeEmbeddingBackfill, JobTypeAITurn, JobTypeEvaluation:
+	case JobTypeDocumentIngestion, JobTypeSourceScan, JobTypeSourcePreflight, JobTypeEmbeddingBackfill, JobTypeAITurn, JobTypeEvaluation:
 		return true
 	default:
 		return false

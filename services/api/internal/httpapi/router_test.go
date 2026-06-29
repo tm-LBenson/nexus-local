@@ -790,6 +790,62 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 }
 
+func TestDataSourcePreflightEndpointQueuesJob(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "folder",
+		"name": "Support Docs",
+		"root_path": "/sources/support",
+		"include_patterns": ["**/*.md"],
+		"exclude_patterns": [],
+		"scan_interval_minutes": 0
+	}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", create.Code, http.StatusCreated, create.Body.String())
+	}
+
+	preflight := httptest.NewRecorder()
+	preflightReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/preflight?tenant_id=tenant_1", nil)
+	server.ServeHTTP(preflight, preflightReq)
+	if preflight.Code != http.StatusAccepted {
+		t.Fatalf("preflight status = %d, want %d, body = %s", preflight.Code, http.StatusAccepted, preflight.Body.String())
+	}
+	var preflightBody struct {
+		Source dataSourcePayload `json:"source"`
+		Job    jobPayload        `json:"job"`
+	}
+	if err := json.NewDecoder(preflight.Body).Decode(&preflightBody); err != nil {
+		t.Fatalf("decode preflight: %v", err)
+	}
+	if preflightBody.Source.ID != "src_http" ||
+		preflightBody.Job.Type != "source_preflight" ||
+		preflightBody.Job.ResourceType != "data_source" ||
+		preflightBody.Job.ResourceID != "src_http" ||
+		preflightBody.Job.State != "queued" {
+		t.Fatalf("preflight body = %#v", preflightBody)
+	}
+
+	detail := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(detail, detailReq)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body = %s", detail.Code, http.StatusOK, detail.Body.String())
+	}
+	var detailBody struct {
+		Jobs []jobPayload `json:"jobs"`
+	}
+	if err := json.NewDecoder(detail.Body).Decode(&detailBody); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if len(detailBody.Jobs) != 1 || detailBody.Jobs[0].Type != "source_preflight" {
+		t.Fatalf("detail jobs = %#v, want source_preflight job", detailBody.Jobs)
+	}
+}
+
 func TestGetDataSourceReturnsScanSummary(t *testing.T) {
 	server := newTestServerWithSeed(t, func(repos *memory.Store) {
 		source, err := domain.NewDataSource(domain.DataSourceCreate{

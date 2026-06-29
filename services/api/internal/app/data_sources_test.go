@@ -588,6 +588,92 @@ func TestRequestDataSourceScanRejectsArchivedSource(t *testing.T) {
 	}
 }
 
+func TestRequestDataSourcePreflightQueuesJob(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	result, err := service.RequestPreflight(ctx, PreflightDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("request preflight: %v", err)
+	}
+	if result.Source.ID != source.ID {
+		t.Fatalf("source id = %q, want %q", result.Source.ID, source.ID)
+	}
+	if result.Job.ID != domain.JobID("job_fixed") ||
+		result.Job.Type != domain.JobTypeSourcePreflight ||
+		result.Job.ResourceType != "data_source" ||
+		result.Job.ResourceID != string(source.ID) ||
+		result.Job.State != domain.JobStateQueued {
+		t.Fatalf("job = %#v", result.Job)
+	}
+
+	savedJob, err := repos.GetJob(ctx, source.TenantID, result.Job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if savedJob.Type != domain.JobTypeSourcePreflight {
+		t.Fatalf("saved job type = %q, want source_preflight", savedJob.Type)
+	}
+}
+
+func TestRequestDataSourcePreflightRejectsDuplicateActiveCheck(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           domain.JobID("job_preflight"),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourcePreflight,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	_, err = service.RequestPreflight(ctx, PreflightDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
+func TestRequestDataSourcePreflightRejectsArchivedSource(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusArchived)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	_, err := service.RequestPreflight(ctx, PreflightDataSourceInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
 func TestRequestDataSourceReindexQueuesDocumentJobs(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

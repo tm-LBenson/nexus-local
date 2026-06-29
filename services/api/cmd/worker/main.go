@@ -41,6 +41,7 @@ func main() {
 
 	ids := app.NewRandomIDs()
 	sourceScheduler := worker.NewSourceScheduler(repos, ids, systemClock{})
+	sourcePreflightWorker := worker.NewSourcePreflightWorker(repos, systemClock{})
 	sourceScanWorker := worker.NewSourceScanWorker(repos, ids, systemClock{}).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
@@ -69,6 +70,21 @@ func main() {
 			log.Printf("source scheduler error: %v", err)
 		} else if scheduleResult.QueuedCount > 0 || scheduleResult.SkippedActiveCount > 0 {
 			log.Printf("source scheduler queued=%d skipped_active=%d", scheduleResult.QueuedCount, scheduleResult.SkippedActiveCount)
+		}
+
+		preflightResult, err := sourcePreflightWorker.ProcessNext(ctx)
+		if err == nil {
+			log.Printf(
+				"processed source preflight job=%s source=%s path=%s",
+				preflightResult.JobID,
+				preflightResult.SourceID,
+				preflightResult.Path,
+			)
+			continue
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Printf("source preflight worker error: %v", err)
+			continue
 		}
 
 		scanResult, err := sourceScanWorker.ProcessNext(ctx)

@@ -41,6 +41,7 @@ import {
   listDocuments,
   listJobs,
   listTenantMembers,
+  preflightDataSource,
   reindexDataSource,
   retryFailedDataSourceDocuments,
   retryDocument,
@@ -296,6 +297,7 @@ export function App() {
   const [creatingSource, setCreatingSource] = useState(false);
   const [archivingSourceID, setArchivingSourceID] = useState('');
   const [deletingSourceDocumentsID, setDeletingSourceDocumentsID] = useState('');
+  const [preflightingSourceID, setPreflightingSourceID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
   const [reindexingSourceID, setReindexingSourceID] = useState('');
   const [retryingSourceFailuresID, setRetryingSourceFailuresID] = useState('');
@@ -352,6 +354,15 @@ export function App() {
       ),
     [activeJobs],
   );
+  const activeSourcePreflightJobs = useMemo(
+    () =>
+      new Map(
+        activeJobs
+          .filter((job) => job.type === 'source_preflight' && job.resource_type === 'data_source')
+          .map((job) => [job.resource_id, job]),
+      ),
+    [activeJobs],
+  );
   const visibleSourceScanEntries = useMemo(
     () => sourceDetail?.scan_entries ?? [],
     [sourceDetail],
@@ -373,12 +384,14 @@ export function App() {
   const processingDocumentCount = activeDocuments.length;
   const activeJobCount = activeJobs.length;
   const activeSourceScanCount = activeSourceScanJobs.size;
+  const activeSourcePreflightCount = activeSourcePreflightJobs.size;
   const trackedSourceID = sourceDetail?.source.id ?? '';
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
     () =>
       activeIngestionJobs.length > 0 ||
       activeSourceScanCount > 0 ||
+      activeSourcePreflightCount > 0 ||
       Boolean(documentDetail && isActiveDocumentStatus(documentDetail.document.status)) ||
       Boolean(documentDetail && hasActiveIngestionJob(documentDetail)) ||
       Boolean(
@@ -386,7 +399,13 @@ export function App() {
           (isActiveDocumentStatus(registration.document.status) ||
             isActiveJobState(registration.job.state)),
       ),
-    [activeIngestionJobs.length, activeSourceScanCount, documentDetail, registration],
+    [
+      activeIngestionJobs.length,
+      activeSourcePreflightCount,
+      activeSourceScanCount,
+      documentDetail,
+      registration,
+    ],
   );
   const ingestionLabel = ingestionSyncing
     ? 'Updating'
@@ -395,6 +414,8 @@ export function App() {
         ? `${activeIngestionJobs.length} active`
         : activeSourceScanCount > 0
           ? `${activeSourceScanCount} scan`
+          : activeSourcePreflightCount > 0
+            ? `${activeSourcePreflightCount} check`
         : 'Tracking'
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
@@ -1030,6 +1051,36 @@ export function App() {
     } finally {
       setArchivingSourceID('');
       setDeletingSourceDocumentsID('');
+    }
+  }
+
+  async function requestDataSourcePreflight(source: ListDataSourcesResponse['sources'][number]) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setPreflightingSourceID(source.id);
+    setError(null);
+    try {
+      const result = await preflightDataSource(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id
+          ? {
+              ...current,
+              source: result.source,
+              jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+            }
+          : current,
+      );
+      await Promise.all([
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        sourceDetail?.source.id === source.id ? refreshSourceDetail(source.id) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setPreflightingSourceID('');
     }
   }
 
@@ -2108,6 +2159,7 @@ export function App() {
               <div className="tableList sourceList">
                 {dataSources?.sources.map((source) => {
                   const scanJob = activeSourceScanJobs.get(source.id);
+                  const preflightJob = activeSourcePreflightJobs.get(source.id);
                   return (
                     <div
                       className={
@@ -2118,8 +2170,12 @@ export function App() {
                       <button onClick={() => void openSource(source)} type="button">
                         <strong>{source.name}</strong>
                       </button>
-                      <span className={stateClass(scanJob?.state ?? source.status)}>
-                        {scanJob ? `scan ${scanJob.state}` : source.status}
+                      <span className={stateClass(preflightJob?.state ?? scanJob?.state ?? source.status)}>
+                        {preflightJob
+                          ? `check ${preflightJob.state}`
+                          : scanJob
+                            ? `scan ${scanJob.state}`
+                            : source.status}
                       </span>
                       <em>{sourceTypeLabel(source.type)}</em>
                       <small title={source.root_path}>{sourceScanSummary(source)}</small>
@@ -2135,6 +2191,23 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              Boolean(preflightJob) ||
+                              preflightingSourceID === source.id ||
+                              source.status === 'archived' ||
+                              archivingSourceID === source.id
+                            }
+                            onClick={() => void requestDataSourcePreflight(source)}
+                            type="button"
+                          >
+                            {preflightingSourceID === source.id
+                              ? 'Queuing'
+                              : preflightJob
+                                ? titleCase(preflightJob.state)
+                                : 'Check path'}
+                          </button>
+                          <button
+                            disabled={
+                              Boolean(preflightJob) ||
                               Boolean(scanJob) ||
                               scanningSourceID === source.id ||
                               archivingSourceID === source.id
@@ -2150,6 +2223,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              Boolean(preflightJob) ||
                               Boolean(scanJob) ||
                               reindexingSourceID === source.id ||
                               source.status === 'archived' ||
@@ -2190,11 +2264,14 @@ export function App() {
                     <div className="detailActions">
                       <span
                         className={stateClass(
+                          activeSourcePreflightJobs.get(sourceDetail.source.id)?.state ??
                           activeSourceScanJobs.get(sourceDetail.source.id)?.state ??
                             sourceDetail.source.status,
                         )}
                       >
-                        {activeSourceScanJobs.get(sourceDetail.source.id)
+                        {activeSourcePreflightJobs.get(sourceDetail.source.id)
+                          ? `check ${activeSourcePreflightJobs.get(sourceDetail.source.id)?.state}`
+                          : activeSourceScanJobs.get(sourceDetail.source.id)
                           ? `scan ${activeSourceScanJobs.get(sourceDetail.source.id)?.state}`
                           : sourceDetail.source.status}
                       </span>
@@ -2207,6 +2284,24 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActivePreflightJob(sourceDetail) ||
+                          sourceDetail.source.status === 'archived' ||
+                          preflightingSourceID === sourceDetail.source.id
+                        }
+                        onClick={() => void requestDataSourcePreflight(sourceDetail.source)}
+                        type="button"
+                      >
+                        {preflightingSourceID === sourceDetail.source.id
+                          ? 'Queuing'
+                          : sourceHasActivePreflightJob(sourceDetail)
+                            ? 'Queued'
+                            : 'Check path'}
+                      </button>
+                      <button
+                        disabled={
+                          Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                          sourceHasActivePreflightJob(sourceDetail) ||
                           Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActiveScanJob(sourceDetail) ||
                           sourceDetail.source.status === 'archived' ||
@@ -2230,6 +2325,8 @@ export function App() {
                             disabled={
                               reindexingSourceID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                               sourceHasActiveScanJob(sourceDetail)
                             }
@@ -2244,6 +2341,8 @@ export function App() {
                             disabled={
                               retryingSourceFailuresID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
+                              Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                               sourceHasActiveScanJob(sourceDetail) ||
                               sourceDetail.failed_documents === 0
@@ -2273,6 +2372,8 @@ export function App() {
                             className="dangerButton"
                             disabled={
                               deletingSourceDocumentsID === sourceDetail.source.id ||
+                              Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                              sourceHasActivePreflightJob(sourceDetail) ||
                               Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                               sourceHasActiveScanJob(sourceDetail)
                             }
@@ -2299,6 +2400,12 @@ export function App() {
                       <span>{sourceFailureMessage(sourceDetail)}</span>
                     </div>
                   )}
+                  <SourcePreflightStatus
+                    activeJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
+                    detail={sourceDetail}
+                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                    refreshing={refreshingSourceID === sourceDetail.source.id}
+                  />
                   {activeSourceScanJobs.get(sourceDetail.source.id) && (
                     <section className="sourceProgressPanel" aria-label="Source scan progress">
                       <span className="spinner" aria-hidden="true" />
@@ -2451,6 +2558,8 @@ export function App() {
                         </button>
                         <button
                           disabled={
+                            Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActivePreflightJob(sourceDetail) ||
                             Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                             sourceHasActiveScanJob(sourceDetail) ||
                             sourceDetail.source.status === 'archived' ||
@@ -2479,6 +2588,8 @@ export function App() {
                           disabled={
                             retryingSourceFailuresID === sourceDetail.source.id ||
                             sourceDetail.source.status === 'archived' ||
+                            Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
+                            sourceHasActivePreflightJob(sourceDetail) ||
                             Boolean(activeSourceScanJobs.get(sourceDetail.source.id)) ||
                             sourceHasActiveScanJob(sourceDetail)
                           }
@@ -4567,6 +4678,93 @@ function sourceCurrentScanProgress(
     parts.push(`${detail.scan_summary.failed} failed`);
   }
   return parts.join(' / ');
+}
+
+function SourcePreflightStatus({
+  activeJob,
+  detail,
+  onRefresh,
+  refreshing,
+}: {
+  activeJob?: ListJobsResponse['jobs'][number];
+  detail: DataSourceDetailResponse;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const job = activeJob ?? sourceLatestPreflightJob(detail);
+  if (!job) {
+    return null;
+  }
+  const active = isActiveJobState(job.state);
+  const failed = job.state === 'failed';
+  return (
+    <section
+      aria-label="Source path check"
+      className={
+        failed
+          ? 'sourceProgressPanel sourcePreflightPanel sourcePreflightFailed'
+          : 'sourceProgressPanel sourcePreflightPanel'
+      }
+    >
+      {active ? (
+        <span className="spinner" aria-hidden="true" />
+      ) : (
+        <span className={stateClass(job.state)}>{titleCase(job.state)}</span>
+      )}
+      <div className="sourceProgressText">
+        <strong>{sourcePreflightTitle(job)}</strong>
+        <span>{sourcePreflightMessage(job)}</span>
+      </div>
+      <button disabled={refreshing} onClick={onRefresh} type="button">
+        {refreshing ? 'Refreshing' : 'Refresh'}
+      </button>
+    </section>
+  );
+}
+
+function sourceLatestPreflightJob(detail: DataSourceDetailResponse) {
+  return detail.jobs
+    .filter(
+      (job) =>
+        job.type === 'source_preflight' &&
+        job.resource_type === 'data_source' &&
+        job.resource_id === detail.source.id,
+    )
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0];
+}
+
+function sourceHasActivePreflightJob(detail: DataSourceDetailResponse) {
+  const job = sourceLatestPreflightJob(detail);
+  return Boolean(job && isActiveJobState(job.state));
+}
+
+function sourcePreflightTitle(job: ListJobsResponse['jobs'][number]) {
+  if (isActiveJobState(job.state)) {
+    return 'Checking path';
+  }
+  if (job.state === 'succeeded') {
+    return 'Path reachable';
+  }
+  if (job.state === 'failed') {
+    return 'Path blocked';
+  }
+  return titleCase(job.state);
+}
+
+function sourcePreflightMessage(job: ListJobsResponse['jobs'][number]) {
+  if (job.state === 'failed' && job.error_message.trim() !== '') {
+    return job.error_message;
+  }
+  if (isActiveJobState(job.state)) {
+    return 'Worker is checking the mounted folder.';
+  }
+  if (job.state === 'succeeded') {
+    return 'Worker can open and read the configured folder.';
+  }
+  if (job.state === 'canceled') {
+    return 'The source was archived before the check ran.';
+  }
+  return jobDetail(job);
 }
 
 function sourceHasActiveScanJob(detail: DataSourceDetailResponse) {

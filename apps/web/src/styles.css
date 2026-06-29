@@ -2070,6 +2070,24 @@ h3 {
   background: #f4faf8;
 }
 
+.sourcePreflightPanel .stateBadge {
+  align-self: center;
+}
+
+.sourcePreflightFailed {
+  border-color: #efc4bf;
+  border-left-color: #b8473f;
+  background: #fff6f4;
+}
+
+.sourcePreflightFailed .sourceProgressText strong {
+  color: #8c2f27;
+}
+
+.sourcePreflightFailed .sourceProgressText span {
+  color: #5d3a36;
+}
+
 .sourceProgressText {
   display: grid;
   gap: 3px;

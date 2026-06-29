@@ -62,6 +62,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/data-sources", listDataSourcesHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("POST /v1/data-sources", createDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("POST /v1/data-sources/{source_id}/preflight", preflightDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/scan", scanDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/reindex", reindexDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/data-sources/{source_id}/retry-failed-documents", retryFailedDataSourceDocumentsHandler(deps.DataSources, deps.Authorizer, deps.Audit))
@@ -1074,6 +1075,29 @@ func scanDataSourceHandler(service app.DataSourceService, authorizer internalaut
 			return
 		}
 		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.scan_requested", result.Source, domain.AuditOutcomeSucceeded)
+		writeJSON(w, http.StatusAccepted, envelope{
+			"source": encodeDataSource(result.Source),
+			"job":    encodeJob(result.Job),
+		})
+	}
+}
+
+func preflightDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.RequestPreflight(r.Context(), app.PreflightDataSourceInput{
+			TenantID:     tenantID,
+			DataSourceID: domain.DataSourceID(r.PathValue("source_id")),
+		})
+		if err != nil {
+			writeDataSourceError(w, "preflight data source", err)
+			return
+		}
+		recordDataSourceAudit(r.Context(), audit, tenantID, principal.UserID, "data_source.preflight_requested", result.Source, domain.AuditOutcomeSucceeded)
 		writeJSON(w, http.StatusAccepted, envelope{
 			"source": encodeDataSource(result.Source),
 			"job":    encodeJob(result.Job),
