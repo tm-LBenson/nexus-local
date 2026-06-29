@@ -322,6 +322,9 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].CreatedAt.Equal(entries[j].CreatedAt) {
+			if entries[i].JobID != entries[j].JobID {
+				return entries[i].JobID > entries[j].JobID
+			}
 			return entries[i].Path < entries[j].Path
 		}
 		return entries[i].CreatedAt.After(entries[j].CreatedAt)

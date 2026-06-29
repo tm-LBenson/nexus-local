@@ -207,10 +207,12 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	}
 
 	policy := w.policy.normalized()
-	previousImported, err := w.latestImportedEntries(ctx, source)
+	previousImported, err := w.activeSourceFileEntries(ctx, source)
 	if err != nil {
 		return result, err
 	}
+	seenPaths := map[string]bool{}
+	skippedDirectoryPrefixes := make([]string, 0)
 	var firstFailure error
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -235,6 +237,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			if policy.shouldSkipName(entry.Name()) || policy.shouldSkipDirectory(entry.Name()) {
 				result.SkippedCount++
 				result.SkippedPolicyCount++
+				skippedDirectoryPrefixes = append(skippedDirectoryPrefixes, relativeName+"/")
 				if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName+"/", domain.DataSourceScanOutcomeSkipped, "policy", "directory excluded by scan policy", "", 0, ""); saveErr != nil {
 					return saveErr
 				}
@@ -242,6 +245,7 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			}
 			return nil
 		}
+		seenPaths[relativeName] = true
 		if entry.Type()&os.ModeSymlink != 0 {
 			result.SkippedCount++
 			result.SkippedPolicyCount++
@@ -385,27 +389,79 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	if err != nil {
 		return result, err
 	}
+	if result.FailedCount == 0 {
+		var reconcileErr error
+		result, reconcileErr = w.reconcileDeletedSourceFiles(ctx, source, result, previousImported, seenPaths, skippedDirectoryPrefixes)
+		if reconcileErr != nil {
+			return result, reconcileErr
+		}
+	}
 	if result.FailedCount > 0 {
 		return result, fmt.Errorf("source scan imported %d files, skipped %d files, failed %d files; first failure: %w", result.ImportedCount, result.SkippedCount, result.FailedCount, firstFailure)
 	}
 	return result, nil
 }
 
-func (w SourceScanWorker) latestImportedEntries(ctx context.Context, source domain.DataSource) (map[string]domain.DataSourceScanEntry, error) {
+func (w SourceScanWorker) activeSourceFileEntries(ctx context.Context, source domain.DataSource) (map[string]domain.DataSourceScanEntry, error) {
 	entries, err := w.repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 0)
 	if err != nil {
 		return nil, err
 	}
-	latest := make(map[string]domain.DataSourceScanEntry)
+	active := make(map[string]domain.DataSourceScanEntry)
+	latestSeen := map[string]bool{}
 	for _, entry := range entries {
-		if entry.Outcome != domain.DataSourceScanOutcomeImported || entry.ContentHash == "" {
+		if latestSeen[entry.Path] {
 			continue
 		}
-		if _, exists := latest[entry.Path]; !exists {
-			latest[entry.Path] = entry
+		latestSeen[entry.Path] = true
+		if isActiveSourceFileEntry(entry) {
+			active[entry.Path] = entry
 		}
 	}
-	return latest, nil
+	return active, nil
+}
+
+func (w SourceScanWorker) reconcileDeletedSourceFiles(ctx context.Context, source domain.DataSource, result SourceScanResult, previous map[string]domain.DataSourceScanEntry, seenPaths map[string]bool, skippedDirectoryPrefixes []string) (SourceScanResult, error) {
+	for path, entry := range previous {
+		if seenPaths[path] || pathUnderSkippedDirectory(path, skippedDirectoryPrefixes) {
+			continue
+		}
+		message := fmt.Sprintf("source file no longer exists; deleted document %s", entry.DocumentID)
+		if _, err := w.documents.DeleteDocument(ctx, app.DeleteDocumentInput{
+			TenantID:   source.TenantID,
+			DocumentID: entry.DocumentID,
+		}); err != nil && !errors.Is(err, store.ErrNotFound) {
+			result.FailedCount++
+			if saveErr := w.recordScanEntry(ctx, source, result.JobID, path, domain.DataSourceScanOutcomeFailed, "delete_missing_failed", err.Error(), entry.DocumentID, entry.SizeBytes, entry.ContentHash); saveErr != nil {
+				return result, saveErr
+			}
+			return result, fmt.Errorf("%s: delete missing source document %s: %w", path, entry.DocumentID, err)
+		}
+		result.SkippedCount++
+		if saveErr := w.recordScanEntry(ctx, source, result.JobID, path, domain.DataSourceScanOutcomeDeleted, "missing", message, entry.DocumentID, entry.SizeBytes, entry.ContentHash); saveErr != nil {
+			return result, saveErr
+		}
+	}
+	return result, nil
+}
+
+func isActiveSourceFileEntry(entry domain.DataSourceScanEntry) bool {
+	if entry.DocumentID == "" || entry.ContentHash == "" {
+		return false
+	}
+	if entry.Outcome == domain.DataSourceScanOutcomeImported {
+		return true
+	}
+	return entry.Outcome == domain.DataSourceScanOutcomeSkipped && entry.Reason == "unchanged"
+}
+
+func pathUnderSkippedDirectory(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (w SourceScanWorker) recordScanEntry(ctx context.Context, source domain.DataSource, jobID domain.JobID, path string, outcome domain.DataSourceScanOutcome, reason string, message string, documentID domain.DocumentID, sizeBytes int64, contentHash string) error {

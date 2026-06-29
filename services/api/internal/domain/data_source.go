@@ -31,6 +31,7 @@ const (
 	DataSourceScanOutcomeImported DataSourceScanOutcome = "imported"
 	DataSourceScanOutcomeSkipped  DataSourceScanOutcome = "skipped"
 	DataSourceScanOutcomeFailed   DataSourceScanOutcome = "failed"
+	DataSourceScanOutcomeDeleted  DataSourceScanOutcome = "deleted"
 )
 
 type DataSource struct {
@@ -234,7 +235,8 @@ func (o DataSourceScanOutcome) Valid() bool {
 	switch o {
 	case DataSourceScanOutcomeImported,
 		DataSourceScanOutcomeSkipped,
-		DataSourceScanOutcomeFailed:
+		DataSourceScanOutcomeFailed,
+		DataSourceScanOutcomeDeleted:
 		return true
 	default:
 		return false

@@ -358,7 +358,7 @@ func (s *Store) ListDataSourceScanEntries(ctx context.Context, tenantID domain.T
 		SELECT tenant_id, job_id, source_id, path, outcome, reason, message, document_id, size_bytes, content_hash, created_at
 		FROM data_source_scan_entries
 		WHERE tenant_id = $1 AND source_id = $2
-		ORDER BY created_at DESC, path
+		ORDER BY created_at DESC, job_id DESC, path
 	`
 	args := []any{tenantID, sourceID}
 	if limit > 0 {

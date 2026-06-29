@@ -278,6 +278,119 @@ func TestSourceScanWorkerReplacesChangedFileDocumentOnRescan(t *testing.T) {
 	}
 }
 
+func TestSourceScanWorkerDeletesMissingSourceFileDocumentOnRescan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	vectors := vectormemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "keep.md"), "keep docs")
+	mustWriteFile(t, filepath.Join(root, "remove.md"), "remove docs")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	firstJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_1"))
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, firstJob); err != nil {
+		t.Fatalf("save first job: %v", err)
+	}
+
+	worker := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).
+		WithObjectStore(objects).
+		WithVectorIndex(vectors)
+	firstResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	if firstResult.ImportedCount != 2 || firstResult.SkippedCount != 0 || firstResult.FailedCount != 0 {
+		t.Fatalf("first result = %#v, want two imports", firstResult)
+	}
+	firstEntries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list first scan entries: %v", err)
+	}
+	firstByPath := scanEntriesByPath(firstEntries)
+	removedDocumentID := firstByPath["remove.md"].DocumentID
+	if removedDocumentID == "" {
+		t.Fatalf("first entries = %#v, want removed document id", firstEntries)
+	}
+	if err := vectors.Upsert(ctx, []providers.Vector{{
+		TenantID:   source.TenantID,
+		DocumentID: removedDocumentID,
+		ChunkID:    "chunk_1",
+		Values:     []float32{1},
+		Text:       "remove docs",
+	}}); err != nil {
+		t.Fatalf("upsert removed vector: %v", err)
+	}
+
+	if err := os.Remove(filepath.Join(root, "remove.md")); err != nil {
+		t.Fatalf("remove source file: %v", err)
+	}
+	secondJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_2"))
+	if err := repos.SaveJob(ctx, secondJob); err != nil {
+		t.Fatalf("save second job: %v", err)
+	}
+	secondResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if secondResult.ImportedCount != 0 || secondResult.SkippedCount != 2 || secondResult.FailedCount != 0 {
+		t.Fatalf("second result = %#v, want unchanged keep plus deleted missing file", secondResult)
+	}
+
+	documents, err := repos.ListDocuments(ctx, source.TenantID)
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if activeDocumentCount(documents) != 1 {
+		t.Fatalf("documents = %#v, want one active document after missing file cleanup", documents)
+	}
+	removedDocument, err := repos.GetDocument(ctx, source.TenantID, removedDocumentID)
+	if err != nil {
+		t.Fatalf("get removed document: %v", err)
+	}
+	if removedDocument.Status != domain.DocumentStatusDeleted {
+		t.Fatalf("removed document status = %q, want deleted", removedDocument.Status)
+	}
+	if keys := objects.Keys(); len(keys) != 1 {
+		t.Fatalf("object keys = %v, want only retained source object", keys)
+	}
+	if vectors.Count() != 0 {
+		t.Fatalf("vector count = %d, want removed document vectors deleted", vectors.Count())
+	}
+
+	secondEntries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list second scan entries: %v", err)
+	}
+	var deleted domain.DataSourceScanEntry
+	for _, entry := range secondEntries {
+		if entry.JobID == secondJob.ID && entry.Path == "remove.md" {
+			deleted = entry
+			break
+		}
+	}
+	if deleted.Outcome != domain.DataSourceScanOutcomeDeleted ||
+		deleted.Reason != "missing" ||
+		deleted.DocumentID != removedDocumentID ||
+		!strings.Contains(deleted.Message, string(removedDocumentID)) {
+		t.Fatalf("deleted entry = %#v", deleted)
+	}
+
+	thirdJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_3"))
+	if err := repos.SaveJob(ctx, thirdJob); err != nil {
+		t.Fatalf("save third job: %v", err)
+	}
+	thirdResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("third scan: %v", err)
+	}
+	if thirdResult.ImportedCount != 0 || thirdResult.SkippedCount != 1 || thirdResult.FailedCount != 0 {
+		t.Fatalf("third result = %#v, want only retained unchanged file", thirdResult)
+	}
+}
+
 func TestSourceScanWorkerAppliesDefaultSafetyPolicy(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

@@ -3382,6 +3382,8 @@ function scanOutcomeClass(entry: DataSourceDetailResponse['scan_entries'][number
       return 'stateBadge stateReady';
     case 'failed':
       return 'stateBadge stateFailed';
+    case 'deleted':
+      return 'stateBadge stateReady';
     case 'skipped':
       if (entry.reason === 'unchanged') {
         return 'stateBadge stateReady';

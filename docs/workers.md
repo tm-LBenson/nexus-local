@@ -26,10 +26,11 @@ Source scan behavior:
 7. Skip unchanged files when the latest imported entry for the same path has the same content hash.
 8. Upload new or changed supported files through the normal document upload path.
 9. For changed source paths, delete the prior document after the replacement upload succeeds.
-10. Queue one `document_ingestion` job per imported file.
-11. Persist per-file scan entries with imported/skipped/failed outcome, reason, message, size, content hash, and imported document ID when available.
-12. Transition source `scanning -> active`, stamp `last_scan_at`, and persist imported/skipped/failed counts.
-13. Transition the source scan job `running -> succeeded`.
+10. After a clean walk, delete prior documents for source paths that no longer exist.
+11. Queue one `document_ingestion` job per imported file.
+12. Persist per-file scan entries with imported/skipped/failed/deleted outcome, reason, message, size, content hash, and imported document ID when available.
+13. Transition source `scanning -> active`, stamp `last_scan_at`, and persist imported/skipped/failed counts.
+14. Transition the source scan job `running -> succeeded`.
 
 The source path must be visible to the worker process. In Docker deployments, mount the folder, synced drive, or network share into the worker container and use the container-visible path in the source record. For example, a Windows folder can be mounted as `/sources/customer-docs`, and the source root should use `/sources/customer-docs`, not the Windows host path.
 
@@ -40,10 +41,11 @@ Default source scan safety:
 - Common cache/build folders are skipped, including `.git`, `node_modules`, `.cache`, `__pycache__`, `.next`, `dist`, `build`, `target`, `tmp`, and virtual environment folders.
 - Unsupported document types are counted as skipped, not failed.
 - Unchanged supported files are counted as skipped with reason `unchanged`.
+- Missing files that were previously imported are counted as skipped with outcome `deleted` and reason `missing`.
 
 If a source scan cannot access the root folder or hits file-level read/upload failures, the worker transitions the source to `failed`, transitions the job to `failed`, stores imported/skipped/failed counts on the source, records file-level failure entries, and stores a concise count summary plus the first failure in `error_message`.
 
-Changed files replace the previously imported document for the same source path. Stale-file cleanup and deleted-file detection are planned follow-up work.
+Changed files replace the previously imported document for the same source path. Missing files delete the previously imported document for that source path after the current scan completes without file-level failures.
 
 Document ingestion behavior:
 

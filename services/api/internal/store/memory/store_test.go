@@ -161,24 +161,28 @@ func TestListDataSourceScanEntriesScopesAndOrdersEntries(t *testing.T) {
 	repo := New()
 	first := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "first.md", fixedTime())
 	second := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_1"), "second.md", fixedTime().Add(time.Minute))
+	secondLaterJob := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), domain.JobID("job_2"), "first.md", fixedTime().Add(time.Minute))
 	otherSource := newTestScanEntry(t, domain.TenantID("tenant_a"), domain.DataSourceID("src_2"), domain.JobID("job_2"), "other.md", fixedTime().Add(2*time.Minute))
 	otherTenant := newTestScanEntry(t, domain.TenantID("tenant_b"), domain.DataSourceID("src_1"), domain.JobID("job_3"), "tenant.md", fixedTime().Add(3*time.Minute))
 
-	for _, entry := range []domain.DataSourceScanEntry{first, second, otherSource, otherTenant} {
+	for _, entry := range []domain.DataSourceScanEntry{first, second, secondLaterJob, otherSource, otherTenant} {
 		if err := repo.SaveDataSourceScanEntry(ctx, entry); err != nil {
 			t.Fatalf("save scan entry %s: %v", entry.Path, err)
 		}
 	}
 
-	entries, err := repo.ListDataSourceScanEntries(ctx, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), 1)
+	entries, err := repo.ListDataSourceScanEntries(ctx, domain.TenantID("tenant_a"), domain.DataSourceID("src_1"), 2)
 	if err != nil {
 		t.Fatalf("list scan entries: %v", err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("entries len = %d, want 1", len(entries))
+	if len(entries) != 2 {
+		t.Fatalf("entries len = %d, want 2", len(entries))
 	}
-	if entries[0].Path != "second.md" {
-		t.Fatalf("entry path = %s, want second.md", entries[0].Path)
+	if entries[0].Path != "first.md" || entries[0].JobID != domain.JobID("job_2") {
+		t.Fatalf("first entry = %#v, want job_2 first.md", entries[0])
+	}
+	if entries[1].Path != "second.md" || entries[1].JobID != domain.JobID("job_1") {
+		t.Fatalf("second entry = %#v, want job_1 second.md", entries[1])
 	}
 }
 
