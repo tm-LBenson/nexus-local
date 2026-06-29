@@ -25,7 +25,9 @@ param(
   [string]$NexusHttpsPort = "",
   [string]$PostgresPassword = "",
   [string]$ObjectStorageAccessKey = "",
-  [string]$ObjectStorageSecretKey = ""
+  [string]$ObjectStorageSecretKey = "",
+  [string]$SourceHostPath = "",
+  [string]$SourceContainerPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -103,6 +105,17 @@ function Read-SetupValue($label, $default, $provided = "") {
     return $default
   }
   return $answer.Trim()
+}
+
+function Normalize-SourceContainerPath($path) {
+  if ([string]::IsNullOrWhiteSpace($path)) {
+    return "/sources/primary"
+  }
+  $normalized = $path.Trim().Replace("\", "/")
+  if (-not $normalized.StartsWith("/")) {
+    throw "Source container path must start with '/', for example /sources/primary."
+  }
+  return $normalized.TrimEnd("/")
 }
 
 function Select-SetupProfile {
@@ -315,6 +328,10 @@ function Write-EnvFile($path, $values) {
         "QUEUE_BACKEND", "QUEUE_URL", "CACHE_URL"
       )
     },
+    @{ Title = "Source Mounts"; Keys = @(
+        "NEXUS_SOURCE_HOST_PATH", "NEXUS_SOURCE_CONTAINER_PATH"
+      )
+    },
     @{ Title = "Models"; Keys = @(
         "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "VLLM_GPU_MEMORY_UTILIZATION",
@@ -376,9 +393,13 @@ function Get-DisplayPath($path) {
   return $fullPath
 }
 
-function Get-ComposeCommand($selectedProfile, $envPath) {
+function Test-SourceMountEnabled($values) {
+  return $values.Contains("NEXUS_SOURCE_HOST_PATH") -and -not [string]::IsNullOrWhiteSpace($values["NEXUS_SOURCE_HOST_PATH"])
+}
+
+function Get-ComposeCommand($selectedProfile, $envPath, $includeSourceMounts) {
   $envArg = "--env-file `"$envPath`""
-  $fileArgs = (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue | ForEach-Object { "-f $_" }) -join " "
+  $fileArgs = (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts | ForEach-Object { "-f $_" }) -join " "
   $profileArg = ""
   if ($selectedProfile -eq "gpu-local") {
     $profileArg = " --profile gpu"
@@ -386,7 +407,7 @@ function Get-ComposeCommand($selectedProfile, $envPath) {
   return "docker compose $envArg $fileArgs$profileArg up -d --build"
 }
 
-function Get-ComposeFiles($selectedProfile, $embeddingRuntime) {
+function Get-ComposeFiles($selectedProfile, $embeddingRuntime, $includeSourceMounts = $false) {
   $files = [System.Collections.Generic.List[string]]::new()
   switch ($selectedProfile) {
     "cpu-lite" {
@@ -410,12 +431,15 @@ function Get-ComposeFiles($selectedProfile, $embeddingRuntime) {
   if ($embeddingRuntime -eq "gpu") {
     $files.Add("deploy/compose/compose.embeddings.gpu.yml")
   }
+  if ($includeSourceMounts) {
+    $files.Add("deploy/compose/compose.sources.yml")
+  }
   return $files
 }
 
-function Test-ComposeConfig($selectedProfile, $envPath) {
+function Test-ComposeConfig($selectedProfile, $envPath, $includeSourceMounts) {
   $args = @("--env-file", $envPath)
-  foreach ($file in (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue)) {
+  foreach ($file in (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts)) {
     $args += @("-f", (Join-Path $root $file))
   }
   if ($selectedProfile -eq "gpu-local") {
@@ -531,6 +555,13 @@ if ($embeddingBackendValue -ne "hash") {
 $embeddingModelValue = Read-SetupValue "Embedding model" (Get-ProvidedOrDefault $EmbeddingModel $defaultEmbeddingModel) $EmbeddingModel
 $embeddingDimensionsValue = Assert-PositiveInteger "Embedding dimensions" (Read-SetupValue "Embedding dimensions" (Get-ProvidedOrDefault $EmbeddingDimensions $defaultEmbeddingDimensions) $EmbeddingDimensions)
 $embeddingAPIKeyValue = Read-SetupValue "Embedding API key" (Get-ProvidedOrDefault $EmbeddingApiKey "") $EmbeddingApiKey
+$sourceHostDefault = Get-EnvDefault $existingValues "NEXUS_SOURCE_HOST_PATH" ""
+$sourceContainerDefault = Normalize-SourceContainerPath (Get-EnvDefault $existingValues "NEXUS_SOURCE_CONTAINER_PATH" "/sources/primary")
+$sourceHostPathValue = Read-SetupValue "Source host path (optional)" (Get-ProvidedOrDefault $SourceHostPath $sourceHostDefault) $SourceHostPath
+$sourceContainerPathValue = $sourceContainerDefault
+if (-not [string]::IsNullOrWhiteSpace($sourceHostPathValue)) {
+  $sourceContainerPathValue = Normalize-SourceContainerPath (Read-SetupValue "Source container path" (Get-ProvidedOrDefault $SourceContainerPath $sourceContainerDefault) $SourceContainerPath)
+}
 $autheliaValue = "http://authelia:9091"
 if ($selectedProfile -eq "prod-auth") {
   $autheliaValue = Read-SetupValue "Forward-auth internal URL" (Get-ProvidedOrDefault $AutheliaInternalUrl "http://authelia:9091") $AutheliaInternalUrl
@@ -582,6 +613,8 @@ Set-EnvValue $values "VECTOR_API_KEY" ""
 Set-EnvValue $values "QUEUE_BACKEND" "nats"
 Set-EnvValue $values "QUEUE_URL" "nats://nats:4222"
 Set-EnvValue $values "CACHE_URL" "redis://valkey:6379/0"
+Set-EnvValue $values "NEXUS_SOURCE_HOST_PATH" $sourceHostPathValue
+Set-EnvValue $values "NEXUS_SOURCE_CONTAINER_PATH" $sourceContainerPathValue
 Set-EnvValue $values "PROVIDER_PRESET" $providerPresetValue
 Set-EnvValue $values "MODEL_GATEWAY_BASE_URL" $modelGatewayValue
 Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
@@ -618,20 +651,29 @@ if ((Test-Path $OutputPath) -and -not $Force) {
 
 Write-EnvFile $OutputPath $values
 Write-Host "Wrote $OutputPath"
+if (-not [string]::IsNullOrWhiteSpace($sourceHostPathValue) -and -not (Test-Path $sourceHostPathValue)) {
+  Write-Host "[WARN] Source host path was not found from this shell: $sourceHostPathValue"
+}
 
 Test-Ports $portsToCheck
 $hasCompose = Test-SetupTools
+$includeSourceMounts = Test-SourceMountEnabled $values
 if ($hasCompose) {
-  Test-ComposeConfig $selectedProfile $OutputPath
+  Test-ComposeConfig $selectedProfile $OutputPath $includeSourceMounts
   Write-Host "Compose config validated for $selectedProfile."
 }
 
 $displayOutput = Get-DisplayPath $OutputPath
-$nextCommand = Get-ComposeCommand $selectedProfile $displayOutput
+$nextCommand = Get-ComposeCommand $selectedProfile $displayOutput $includeSourceMounts
 
 Write-Host ""
 Write-Host "Next command:"
 Write-Host $nextCommand
+if ($includeSourceMounts) {
+  Write-Host ""
+  Write-Host "Mounted source:"
+  Write-Host "$sourceHostPathValue -> $sourceContainerPathValue"
+}
 
 if ($selectedProfile -eq "prod-auth") {
   Write-Host ""

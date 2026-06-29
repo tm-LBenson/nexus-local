@@ -39,6 +39,8 @@ $composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $
 $embeddingRuntime = $composeConfig.EmbeddingRuntime
 $apiHostPort = Read-NexusEnvValue $envFile "API_HOST_PORT"
 $webHostPort = Read-NexusEnvValue $envFile "WEB_HOST_PORT"
+$sourceHostPath = Read-NexusEnvValue $envFile "NEXUS_SOURCE_HOST_PATH"
+$sourceContainerPath = Read-NexusEnvValue $envFile "NEXUS_SOURCE_CONTAINER_PATH"
 if (-not $apiHostPort) {
   $apiHostPort = "8080"
 }
@@ -76,6 +78,12 @@ if ($composeConfig.Profile -eq "gpu-local") {
 }
 if ($embeddingRuntime -in @("cpu", "gpu")) {
   Write-Host "Embeddings:  http://localhost:8082"
+}
+if ($composeConfig.SourceMounts) {
+  if (-not $sourceContainerPath) {
+    $sourceContainerPath = "/sources/primary"
+  }
+  Write-Host "Source:      $sourceHostPath -> $sourceContainerPath"
 }
 Write-Host ""
 Write-Host "Run scripts\dev-check.ps1 for a service check."

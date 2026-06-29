@@ -54,10 +54,23 @@ function Resolve-NexusEmbeddingRuntime {
   return $normalized
 }
 
+function Test-NexusSourceMountEnabled {
+  param(
+    [string]$EnvFile = ""
+  )
+
+  if ([string]::IsNullOrWhiteSpace($EnvFile)) {
+    return $false
+  }
+  $hostPath = Read-NexusEnvValue $EnvFile "NEXUS_SOURCE_HOST_PATH"
+  return -not [string]::IsNullOrWhiteSpace($hostPath)
+}
+
 function Get-NexusComposeFiles {
   param(
     [string]$Profile,
-    [string]$EmbeddingRuntime
+    [string]$EmbeddingRuntime,
+    [bool]$IncludeSourceMounts = $false
   )
 
   $files = [System.Collections.Generic.List[string]]::new()
@@ -84,6 +97,9 @@ function Get-NexusComposeFiles {
   if ($EmbeddingRuntime -eq "gpu") {
     $files.Add("deploy/compose/compose.embeddings.gpu.yml")
   }
+  if ($IncludeSourceMounts) {
+    $files.Add("deploy/compose/compose.sources.yml")
+  }
   return [string[]]$files
 }
 
@@ -96,7 +112,8 @@ function Get-NexusComposeConfig {
 
   $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $EnvFile
   $embeddingRuntime = Resolve-NexusEmbeddingRuntime -EnvFile $EnvFile
-  $files = Get-NexusComposeFiles -Profile $selectedProfile -EmbeddingRuntime $embeddingRuntime
+  $includeSourceMounts = Test-NexusSourceMountEnabled -EnvFile $EnvFile
+  $files = Get-NexusComposeFiles -Profile $selectedProfile -EmbeddingRuntime $embeddingRuntime -IncludeSourceMounts $includeSourceMounts
   $composeArgs = @("compose")
 
   if (Test-Path $EnvFile) {
@@ -113,6 +130,7 @@ function Get-NexusComposeConfig {
     Args = [string[]]$composeArgs
     Profile = $selectedProfile
     EmbeddingRuntime = $embeddingRuntime
+    SourceMounts = $includeSourceMounts
     Files = [string[]]$files
   }
 }

@@ -138,6 +138,8 @@ The importer walks supported document types, skips common app/cache directories,
 
 The app Library can also create managed sources, edit source paths, include/exclude patterns, and scan schedules, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source detail shows a latest-scan summary plus paged, filterable per-file outcomes for imports, skips, failures, and deletes, with CSV export for review. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default. Include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes. Scheduled source scans run from the worker process while the stack is up.
 
+See [Source Mounts](docs/source-mounts.md) for OneDrive, Teams/SharePoint sync, local folder, NAS, and export path examples.
+
 Stop the stack:
 
 ```powershell
@@ -170,6 +172,7 @@ To test with a local OpenAI-compatible model server running on the Windows host,
 
 See [Guided Setup](docs/setup.md) for split NAS/GPU, local GPU, and production auth profile generation.
 See [Deployment Scenarios](docs/deployment-scenarios.md) for Windows Docker Desktop, NAS plus GPU desktop, on-prem, Coolify/Linux, cloud, rented GPU, minimum requirements, and storage guidance.
+See [Source Mounts](docs/source-mounts.md) for mounting customer document roots into the worker container.
 See [Backup and Restore](docs/backup-restore.md) for basic Postgres, MinIO, and Qdrant snapshots.
 
 ## Local Development

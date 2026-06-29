@@ -46,6 +46,21 @@ Embedding runtime options:
 - `cpu`: start the self-hosted TEI CPU embedding service.
 - `gpu`: start the self-hosted TEI GPU embedding service.
 
+## Source Mounts
+
+Managed source scans run in the worker container, so source paths in Library should usually be container paths such as `/sources/primary`.
+
+To mount a readable document root during setup:
+
+```powershell
+.\scripts\setup.ps1 `
+  -Profile cpu-lite `
+  -SourceHostPath "C:\Path\To\Docs" `
+  -SourceContainerPath "/sources/primary"
+```
+
+When `NEXUS_SOURCE_HOST_PATH` is set, setup and the launcher include `deploy/compose/compose.sources.yml` automatically. See [Source Mounts](source-mounts.md) for OneDrive, Teams/SharePoint sync, NAS, local folder, and export examples.
+
 ## Useful Options
 
 Generate without prompts:

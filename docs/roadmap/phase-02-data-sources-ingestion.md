@@ -35,6 +35,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.11 | Scheduled source maintenance. | Worker queues due source scans from per-source intervals without browser involvement. |
 | 2.12 | Larger import observability. | Source detail shows latest-scan counts, reason buckets, and filterable file outcomes. |
 | 2.13 | Paged scan review and CSV export. | Large imports can be reviewed by outcome without loading every scan entry into the browser. |
+| 2.14 | First-run source mounting guidance. | Operators can mount a document root into the worker and users see worker-path examples in Library. |
 
 ## Dependencies
 
@@ -51,4 +52,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.13 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, and paged scan export. Next, harden it with connector-oriented source setup and first-run source mounting guidance.
+Slices 2.1 through 2.14 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, and first-run source mounting guidance. Next, harden it with connector-oriented source templates for common systems such as SharePoint exports, ticket exports, and network shares.

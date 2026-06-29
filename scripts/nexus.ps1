@@ -53,6 +53,8 @@ function Show-EnvironmentSummary {
   $embeddingRuntime = Read-EnvValue "EMBEDDING_RUNTIME"
   $gateway = Read-EnvValue "MODEL_GATEWAY_BASE_URL"
   $model = Read-EnvValue "GENERAL_MODEL_ID"
+  $sourceHostPath = Read-EnvValue "NEXUS_SOURCE_HOST_PATH"
+  $sourceContainerPath = Read-EnvValue "NEXUS_SOURCE_CONTAINER_PATH"
 
   if (-not $profile) { $profile = "cpu-lite (default)" }
   if (-not $providerPreset) { $providerPreset = "not configured" }
@@ -63,6 +65,12 @@ function Show-EnvironmentSummary {
   Write-Host "Config:  $profile / $providerPreset / embeddings: $embeddingRuntime"
   Write-Host "Gateway: $gateway"
   Write-Host "Model:   $model"
+  if ($sourceHostPath) {
+    if (-not $sourceContainerPath) {
+      $sourceContainerPath = "/sources/primary"
+    }
+    Write-Host "Source:  $sourceHostPath -> $sourceContainerPath"
+  }
   Write-Host "Web:     $webUrl"
   Write-Host ""
 }
@@ -386,6 +394,15 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     Write-Host "Embedding runtime: none"
   }
 
+  $sourceHostPath = ""
+  $sourceContainerPath = ""
+  if (Read-YesNo "Mount a document/source folder now?" $false) {
+    $sourceHostPath = Read-DefaultValue "Source host path" ""
+    if (-not [string]::IsNullOrWhiteSpace($sourceHostPath)) {
+      $sourceContainerPath = Read-DefaultValue "Source container path" "/sources/primary"
+    }
+  }
+
   $webHostPort = ""
   $apiHostPort = ""
   if ($profile -ne "prod-auth") {
@@ -422,6 +439,8 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   Add-SetupArgument $setupArgs "-ModelGatewayPort" $modelGatewayPort
   Add-SetupArgument $setupArgs "-GeneralModelId" $modelID
   Add-SetupArgument $setupArgs "-EmbeddingBaseUrl" $embeddingGateway
+  Add-SetupArgument $setupArgs "-SourceHostPath" $sourceHostPath
+  Add-SetupArgument $setupArgs "-SourceContainerPath" $sourceContainerPath
 
   if (Test-Path $envFile) {
     if (-not (Read-YesNo "Overwrite the current .env?" $true)) {

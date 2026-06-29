@@ -1841,7 +1841,7 @@ export function App() {
                     onChange={(event) =>
                       setSourceForm((current) => ({ ...current, root_path: event.target.value }))
                     }
-                    placeholder="C:\\Docs, /mnt/docs, or \\\\server\\share"
+                    placeholder={sourcePathPlaceholder(sourceForm.type)}
                     value={sourceForm.root_path}
                   />
                   <select
@@ -1860,6 +1860,26 @@ export function App() {
                     <option value="1440">Daily</option>
                     <option value="10080">Weekly</option>
                   </select>
+                  <details className="sourceMountHelper">
+                    <summary>Path helper</summary>
+                    <div className="sourceMountPanel">
+                      <strong>{sourceMountTitle(sourceForm.type)}</strong>
+                      <span>{sourceMountDescription(sourceForm.type)}</span>
+                      <div className="sourcePathChips">
+                        {sourcePathExamples(sourceForm.type).map((path) => (
+                          <button
+                            key={path}
+                            onClick={() =>
+                              setSourceForm((current) => ({ ...current, root_path: path }))
+                            }
+                            type="button"
+                          >
+                            {path}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
                   <div className="sourcePatternFields">
                     <label>
                       <span>Include</span>
@@ -3738,6 +3758,62 @@ function sourceTypeLabel(value: string) {
       return 'Connector';
     default:
       return titleCase(value.replace(/_/g, ' '));
+  }
+}
+
+function sourcePathPlaceholder(type: string) {
+  switch (type) {
+    case 'export':
+      return '/sources/primary/exports';
+    case 'network_share':
+      return '/sources/primary/share';
+    default:
+      return '/sources/primary';
+  }
+}
+
+function sourceMountTitle(type: string) {
+  switch (type) {
+    case 'synced_folder':
+      return 'Synced folder';
+    case 'network_share':
+      return 'Network share';
+    case 'export':
+      return 'Export folder';
+    case 'connector':
+      return 'Connector source';
+    default:
+      return 'Local folder';
+  }
+}
+
+function sourceMountDescription(type: string) {
+  switch (type) {
+    case 'synced_folder':
+      return 'Mount the synced root into the worker, then use its /sources path.';
+    case 'network_share':
+      return 'Mount SMB or NFS on the host first, then expose that folder to the worker.';
+    case 'export':
+      return 'Place exports under a mounted source root and scan the export folder.';
+    case 'connector':
+      return 'Direct connectors are future work; use a synced folder or export path for now.';
+    default:
+      return 'Use the path the worker container can read, not the browser path.';
+  }
+}
+
+function sourcePathExamples(type: string) {
+  switch (type) {
+    case 'synced_folder':
+      return ['/sources/primary', '/sources/primary/OneDrive', '/sources/primary/SharePoint'];
+    case 'network_share':
+      return ['/sources/primary', '/sources/primary/customers', '/sources/primary/runbooks'];
+    case 'export':
+      return ['/sources/primary/exports', '/sources/primary/tickets', '/sources/primary/cases'];
+    case 'connector':
+      return ['/sources/primary/exports', '/sources/primary/synced'];
+    default:
+      return ['/sources/primary', '/sources/primary/docs'];
   }
 }
 

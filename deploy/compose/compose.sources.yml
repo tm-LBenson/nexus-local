@@ -1,0 +1,7 @@
+services:
+  worker:
+    volumes:
+      - type: bind
+        source: ${NEXUS_SOURCE_HOST_PATH:?Set NEXUS_SOURCE_HOST_PATH to a folder the Docker host can read}
+        target: ${NEXUS_SOURCE_CONTAINER_PATH:-/sources/primary}
+        read_only: true

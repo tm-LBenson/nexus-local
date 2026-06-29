@@ -40,6 +40,8 @@ For Docker Desktop on Windows, use the WSL2 backend. NVIDIA GPU containers requi
 
 Qdrant and Postgres care about random IO. A large HDD can store a lot of data, but it is not the best place for hot vector search or database writes.
 
+Managed document sources are different from hot database/vector data. Mount readable document roots into the worker container with `NEXUS_SOURCE_HOST_PATH` and use container paths such as `/sources/primary` in Library. See [Source Mounts](source-mounts.md).
+
 ## Scenario 1: Windows Docker Desktop Test Run
 
 Use this when you want the fastest local test on a Windows desktop or laptop.
