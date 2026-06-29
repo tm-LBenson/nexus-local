@@ -62,6 +62,11 @@ func (w SourceScanWorker) WithObjectStore(objects providers.ObjectStore) SourceS
 	return w
 }
 
+func (w SourceScanWorker) WithVectorIndex(vectors providers.VectorIndex) SourceScanWorker {
+	w.documents = w.documents.WithVectorIndex(vectors)
+	return w
+}
+
 func (w SourceScanWorker) WithPolicy(policy SourceScanPolicy) SourceScanWorker {
 	w.policy = policy.normalized()
 	return w
@@ -342,8 +347,37 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 			}
 			return nil
 		}
+		previous := previousImported[relativeName]
+		reason := ""
+		message := ""
+		if previous.DocumentID != "" && previous.DocumentID != uploadResult.Document.ID {
+			if _, err := w.documents.DeleteDocument(ctx, app.DeleteDocumentInput{
+				TenantID:   source.TenantID,
+				DocumentID: previous.DocumentID,
+			}); err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					reason = "changed"
+					message = fmt.Sprintf("previous document %s was already gone", previous.DocumentID)
+					result.ImportedCount++
+					if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeImported, reason, message, uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
+						return saveErr
+					}
+					return nil
+				}
+				result.FailedCount++
+				if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeFailed, "replace_failed", err.Error(), uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
+					return saveErr
+				}
+				if firstFailure == nil {
+					firstFailure = fmt.Errorf("%s: replace previous document %s: %w", relativeName, previous.DocumentID, err)
+				}
+				return nil
+			}
+			reason = "changed"
+			message = fmt.Sprintf("replaced previous document %s", previous.DocumentID)
+		}
 		result.ImportedCount++
-		if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeImported, "", "", uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
+		if saveErr := w.recordScanEntry(ctx, source, result.JobID, relativeName, domain.DataSourceScanOutcomeImported, reason, message, uploadResult.Document.ID, fileInfo.Size(), contentHash); saveErr != nil {
 			return saveErr
 		}
 		return nil

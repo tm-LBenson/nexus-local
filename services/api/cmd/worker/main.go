@@ -41,7 +41,8 @@ func main() {
 
 	ids := app.NewRandomIDs()
 	sourceScanWorker := worker.NewSourceScanWorker(repos, ids, systemClock{}).
-		WithObjectStore(objectStore)
+		WithObjectStore(objectStore).
+		WithVectorIndex(vectorIndex)
 	ingestionWorker := worker.NewDocumentIngestionWorker(repos, systemClock{}).
 		WithPipeline(objectStore, embedder, vectorIndex)
 	pollInterval := cfg.WorkerPollInterval

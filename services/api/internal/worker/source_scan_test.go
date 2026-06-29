@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
+	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 	objectmemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/objectstore/memory"
+	vectormemory "github.com/tm-lbenson/nexus-local/services/api/internal/providers/vector/memory"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store/memory"
 )
@@ -175,6 +177,104 @@ func TestSourceScanWorkerSkipsUnchangedFilesOnRescan(t *testing.T) {
 		unchanged.DocumentID == "" ||
 		!strings.HasPrefix(unchanged.ContentHash, "sha256:") {
 		t.Fatalf("unchanged entry = %#v", unchanged)
+	}
+}
+
+func TestSourceScanWorkerReplacesChangedFileDocumentOnRescan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	objects := objectmemory.New()
+	vectors := vectormemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "overview.md"), "alpha docs")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	firstJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_1"))
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, firstJob); err != nil {
+		t.Fatalf("save first job: %v", err)
+	}
+
+	worker := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).
+		WithObjectStore(objects).
+		WithVectorIndex(vectors)
+	firstResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	if firstResult.ImportedCount != 1 {
+		t.Fatalf("first result = %#v, want one import", firstResult)
+	}
+	firstEntries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list first scan entries: %v", err)
+	}
+	firstDocumentID := scanEntriesByPath(firstEntries)["overview.md"].DocumentID
+	if firstDocumentID == "" {
+		t.Fatalf("first entries = %#v, want imported document id", firstEntries)
+	}
+	if err := vectors.Upsert(ctx, []providers.Vector{{
+		TenantID:   source.TenantID,
+		DocumentID: firstDocumentID,
+		ChunkID:    "chunk_1",
+		Values:     []float32{1},
+		Text:       "alpha docs",
+	}}); err != nil {
+		t.Fatalf("upsert old vector: %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "overview.md"), "beta docs")
+	secondJob := newSourceScanJobWithID(t, source, domain.JobID("job_source_scan_2"))
+	if err := repos.SaveJob(ctx, secondJob); err != nil {
+		t.Fatalf("save second job: %v", err)
+	}
+	secondResult, err := worker.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if secondResult.ImportedCount != 1 || secondResult.SkippedCount != 0 || secondResult.FailedCount != 0 {
+		t.Fatalf("second result = %#v, want changed file replacement", secondResult)
+	}
+
+	documents, err := repos.ListDocuments(ctx, source.TenantID)
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if activeDocumentCount(documents) != 1 {
+		t.Fatalf("documents = %#v, want one active document after replacement", documents)
+	}
+	oldDocument, err := repos.GetDocument(ctx, source.TenantID, firstDocumentID)
+	if err != nil {
+		t.Fatalf("get old document: %v", err)
+	}
+	if oldDocument.Status != domain.DocumentStatusDeleted {
+		t.Fatalf("old document status = %q, want deleted", oldDocument.Status)
+	}
+	if keys := objects.Keys(); len(keys) != 1 {
+		t.Fatalf("object keys = %v, want only replacement object", keys)
+	}
+	if vectors.Count() != 0 {
+		t.Fatalf("vector count = %d, want old document vectors removed", vectors.Count())
+	}
+
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list scan entries: %v", err)
+	}
+	var changed domain.DataSourceScanEntry
+	for _, entry := range entries {
+		if entry.JobID == secondJob.ID && entry.Path == "overview.md" {
+			changed = entry
+			break
+		}
+	}
+	if changed.Outcome != domain.DataSourceScanOutcomeImported ||
+		changed.Reason != "changed" ||
+		changed.DocumentID == "" ||
+		changed.DocumentID == firstDocumentID ||
+		!strings.Contains(changed.Message, string(firstDocumentID)) {
+		t.Fatalf("changed entry = %#v", changed)
 	}
 }
 
@@ -389,6 +489,16 @@ func scanEntriesByPath(entries []domain.DataSourceScanEntry) map[string]domain.D
 		byPath[entry.Path] = entry
 	}
 	return byPath
+}
+
+func activeDocumentCount(documents []domain.Document) int {
+	count := 0
+	for _, document := range documents {
+		if document.Status != domain.DocumentStatusDeleted {
+			count++
+		}
+	}
+	return count
 }
 
 type scanIDs struct {
