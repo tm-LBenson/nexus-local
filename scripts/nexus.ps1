@@ -471,6 +471,7 @@ Commands:
   smoke            Run the end-to-end smoke test
   smoke-no-ask     Run smoke test without the model gateway Ask step
   open, ui         Open the web UI
+  backup-smoke     Create and validate a temporary backup
   backup           Create a backup
   restore          Restore from a backup path
   test             Run API tests
@@ -565,6 +566,9 @@ function Invoke-CommandMode($name, [string[]]$arguments = @()) {
     "ui" {
       Open-WebApp
     }
+    "backup-smoke" {
+      Invoke-LocalScript "dev-check.ps1" (@("-BackupSmoke") + $arguments)
+    }
     "backup" {
       Invoke-LocalScript "backup.ps1" $arguments
     }
@@ -607,11 +611,12 @@ function Show-Menu {
     Write-Host "5. Check"
     Write-Host "6. Smoke test"
     Write-Host "7. Smoke test without Ask"
-    Write-Host "8. Backup"
-    Write-Host "9. Restore"
-    Write-Host "10. Stop"
-    Write-Host "11. Reset volumes"
-    Write-Host "12. API tests"
+    Write-Host "8. Backup smoke"
+    Write-Host "9. Backup"
+    Write-Host "10. Restore"
+    Write-Host "11. Stop"
+    Write-Host "12. Reset volumes"
+    Write-Host "13. API tests"
     Write-Host "H. Help"
     Write-Host "Q. Quit"
     Write-Host ""
@@ -626,10 +631,11 @@ function Show-Menu {
         "5" { Invoke-LocalScript "dev-check.ps1"; Pause-Menu }
         "6" { Invoke-LocalScript "dev-check.ps1" @("-Smoke"); Pause-Menu }
         "7" { Invoke-LocalScript "dev-check.ps1" @("-Smoke", "-SkipAsk"); Pause-Menu }
-        "8" { Invoke-LocalScript "backup.ps1"; Pause-Menu }
-        "9" { Invoke-RestoreFromMenu; Pause-Menu }
-        "10" { Invoke-LocalScript "dev-down.ps1"; Pause-Menu }
-        "11" {
+        "8" { Invoke-LocalScript "dev-check.ps1" @("-BackupSmoke"); Pause-Menu }
+        "9" { Invoke-LocalScript "backup.ps1"; Pause-Menu }
+        "10" { Invoke-RestoreFromMenu; Pause-Menu }
+        "11" { Invoke-LocalScript "dev-down.ps1"; Pause-Menu }
+        "12" {
           if (Confirm-Action "This removes local database, object, queue, cache, and vector volumes. Type REMOVE to continue" "REMOVE") {
             Invoke-LocalScript "dev-down.ps1" @("-Volumes")
           } else {
@@ -637,7 +643,7 @@ function Show-Menu {
           }
           Pause-Menu
         }
-        "12" { Invoke-LocalScript "test.ps1"; Pause-Menu }
+        "13" { Invoke-LocalScript "test.ps1"; Pause-Menu }
         "h" { Show-Help; Pause-Menu }
         "help" { Show-Help; Pause-Menu }
         "q" { return }

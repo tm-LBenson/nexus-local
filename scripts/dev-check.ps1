@@ -1,5 +1,6 @@
 param(
   [switch]$Smoke,
+  [switch]$BackupSmoke,
   [switch]$SkipAsk,
   [switch]$IncludeAsk,
   [string]$ApiUrl = "http://localhost:8080",
@@ -10,7 +11,9 @@ param(
   [string]$UserId = "",
   [string]$UserEmail = "",
   [int]$SmokeTimeoutSeconds = 90,
-  [string]$Profile = ""
+  [string]$Profile = "",
+  [string]$BackupOutputDir = "",
+  [switch]$KeepBackup
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +21,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root ".env"
 $smokeScript = Join-Path $PSScriptRoot "dev-smoke.ps1"
+$backupSmokeScript = Join-Path $PSScriptRoot "backup-smoke.ps1"
 $composeHelper = Join-Path (Join-Path $PSScriptRoot "lib") "compose.ps1"
 . $composeHelper
 $failures = 0
@@ -229,6 +233,24 @@ if ($Smoke) {
     & $smokeScript @smokeParams
   } catch {
     Fail "smoke test" $_.Exception.Message
+  }
+}
+
+if ($BackupSmoke) {
+  Write-Host ""
+  try {
+    $backupParams = @{
+      Profile = $composeConfig.Profile
+    }
+    if (-not [string]::IsNullOrWhiteSpace($BackupOutputDir)) {
+      $backupParams.OutputDir = $BackupOutputDir
+    }
+    if ($KeepBackup) {
+      $backupParams.KeepBackup = $true
+    }
+    & $backupSmokeScript @backupParams
+  } catch {
+    Fail "backup smoke" $_.Exception.Message
   }
 }
 

@@ -61,6 +61,23 @@ function Backup-VolumeFromContainer($containerID, $sourcePath, $archiveName, $ba
   )
 }
 
+function Start-PausedServices($composeArgs, $services) {
+  $coldCopyServices = @($services | Where-Object { $_ -in @("minio", "qdrant") })
+  $appServices = @($services | Where-Object { $_ -in @("api", "worker") })
+  $otherServices = @($services | Where-Object { $_ -notin @("minio", "qdrant", "api", "worker") })
+
+  if ($coldCopyServices.Count -gt 0) {
+    Invoke-Docker ($composeArgs + @("start") + $coldCopyServices)
+    Start-Sleep -Seconds 5
+  }
+  if ($otherServices.Count -gt 0) {
+    Invoke-Docker ($composeArgs + @("start") + $otherServices)
+  }
+  if ($appServices.Count -gt 0) {
+    Invoke-Docker ($composeArgs + @("start") + $appServices)
+  }
+}
+
 $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $envFile
 Require-Command docker
 
@@ -142,6 +159,6 @@ try {
 } finally {
   if ($stoppedServices.Count -gt 0) {
     Write-Host "Restarting paused services..."
-    Invoke-Docker ($composeArgs + @("start") + $stoppedServices)
+    Start-PausedServices $composeArgs $stoppedServices
   }
 }

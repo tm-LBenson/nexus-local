@@ -46,6 +46,30 @@ Use `-SkipServiceStop` only when you understand the consistency tradeoff:
 .\scripts\backup.ps1 -Profile cpu-lite -SkipServiceStop
 ```
 
+## Validate Backup and Restore Preflight
+
+Run a non-destructive backup smoke check against a running local stack:
+
+```powershell
+.\scripts\backup-smoke.ps1 -Profile cpu-lite
+```
+
+The same check is available through the launcher:
+
+```powershell
+.\nexus.ps1 backup-smoke
+```
+
+The smoke check creates a temporary backup, verifies the manifest, checks that the Postgres dump and MinIO/Qdrant archives can be read, runs restore preflight validation, and removes the temporary backup unless `-KeepBackup` is passed.
+
+To validate an existing backup without restoring it:
+
+```powershell
+.\scripts\restore.ps1 `
+  -BackupPath .\backups\nexus-local-cpu-lite-20260101-120000 `
+  -ValidateOnly
+```
+
 ## Restore a Backup
 
 Start the same Compose profile with a compatible `.env`, then run:
@@ -76,5 +100,6 @@ The script does not overwrite `.env`. If `env.snapshot` is present, review it ma
 
 - Run a backup before destructive maintenance or upgrades.
 - Keep at least one backup off the NAS or host running the stack.
+- Run `.\nexus.ps1 backup-smoke` after backup/restore script changes or before a demo build.
 - Test restore on a disposable profile before trusting a backup routine.
 - Treat desktop GPU or rented GPU nodes as replaceable compute; back up the NAS or server that owns Postgres, MinIO, and Qdrant.

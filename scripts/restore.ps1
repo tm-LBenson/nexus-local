@@ -4,7 +4,8 @@ param(
   [string]$Profile = "",
   [string]$HelperImage = "alpine:3.20",
   [switch]$Force,
-  [switch]$NoRestart
+  [switch]$NoRestart,
+  [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +60,12 @@ function Restore-VolumeFromArchive($containerID, $targetPath, $archiveName, $bac
   )
 }
 
+function Start-RestoredServices($composeArgs) {
+  Invoke-Docker ($composeArgs + @("start", "minio", "qdrant"))
+  Start-Sleep -Seconds 5
+  Invoke-Docker ($composeArgs + @("start", "api", "worker"))
+}
+
 Require-Command docker
 
 $backupFullPath = (Resolve-Path -LiteralPath $BackupPath).Path
@@ -86,6 +93,22 @@ if (-not $Profile) {
 }
 $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $envFile
 
+$composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $selectedProfile
+$composeArgs = $composeConfig.Args
+$postgresContainer = Get-ServiceContainer $composeArgs "postgres"
+$minioContainer = Get-ServiceContainer $composeArgs "minio"
+$qdrantContainer = Get-ServiceContainer $composeArgs "qdrant"
+
+if ($ValidateOnly) {
+  Write-Host "Restore validation passed."
+  Write-Host "Profile: $selectedProfile"
+  Write-Host "Backup path: $backupFullPath"
+  Write-Host "Postgres container: $postgresContainer"
+  Write-Host "MinIO container: $minioContainer"
+  Write-Host "Qdrant container: $qdrantContainer"
+  exit 0
+}
+
 if (-not $Force) {
   Write-Host "Restore target profile: $selectedProfile"
   Write-Host "Backup path: $backupFullPath"
@@ -97,11 +120,6 @@ if (-not $Force) {
   }
 }
 
-$composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $selectedProfile
-$composeArgs = $composeConfig.Args
-$postgresContainer = Get-ServiceContainer $composeArgs "postgres"
-$minioContainer = Get-ServiceContainer $composeArgs "minio"
-$qdrantContainer = Get-ServiceContainer $composeArgs "qdrant"
 $stoppedServices = @("api", "worker", "minio", "qdrant")
 
 try {
@@ -133,6 +151,6 @@ try {
 } finally {
   if (-not $NoRestart) {
     Write-Host "Starting restored services..."
-    Invoke-Docker ($composeArgs + @("start", "minio", "qdrant", "api", "worker"))
+    Start-RestoredServices $composeArgs
   }
 }

@@ -118,6 +118,14 @@ Run an end-to-end smoke test:
 
 The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, and deletes the temporary document. The workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
+Run a non-destructive backup/restore preflight:
+
+```powershell
+.\nexus.ps1 backup-smoke
+```
+
+This creates a temporary backup, verifies the Postgres dump and MinIO/Qdrant archives, runs restore validation without overwriting data, then deletes the temporary backup unless `-KeepBackup` is passed.
+
 Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint, notes, or technical docs folder:
 
 ```powershell
