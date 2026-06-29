@@ -859,11 +859,68 @@ h3 {
   padding-top: 14px;
 }
 
+.answerBoxActive {
+  border-top-color: #c8d4d5;
+}
+
 .answerBox p,
 .searchHit p {
   color: #2f3c43;
   line-height: 1.48;
   overflow-wrap: anywhere;
+}
+
+.answerProgress {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #dfe7e7;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: #f8fbfa;
+}
+
+.answerProgress strong,
+.answerProgress em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.answerProgress strong {
+  color: #172026;
+  font-size: 0.84rem;
+}
+
+.answerProgress em {
+  color: #69777d;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.answerText {
+  white-space: pre-wrap;
+}
+
+.answerTextStreaming {
+  border-left: 3px solid #9bc8b7;
+  padding-left: 10px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #c8d4d5;
+  border-top-color: #1d5262;
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+}
+
+.compactFailure {
+  padding: 9px 10px;
 }
 
 .answerMeta {
@@ -883,6 +940,18 @@ h3 {
   color: #0a684c;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .inlineDetails {

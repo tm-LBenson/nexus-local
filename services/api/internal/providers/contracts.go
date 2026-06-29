@@ -105,6 +105,7 @@ type ChatCompletionRequest struct {
 	Model       string            `json:"model,omitempty"`
 	Messages    []ChatMessage     `json:"messages"`
 	Temperature float32           `json:"temperature,omitempty"`
+	MaxTokens   int               `json:"max_tokens,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 

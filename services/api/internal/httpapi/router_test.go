@@ -138,6 +138,49 @@ func TestModelTargetCheckEndpoint(t *testing.T) {
 	}
 }
 
+func TestModelTargetCheckEndpointUsesTinyProbe(t *testing.T) {
+	router, err := providers.NewModelRouter([]providers.TargetConfig{
+		{Name: "general", Provider: "openai-compatible", BaseURL: "http://gpu.local:8000/v1", Model: "general-model"},
+	}, "general")
+	if err != nil {
+		t.Fatalf("model router: %v", err)
+	}
+	cfg := config.Config{
+		Env:                 "test",
+		Version:             "test",
+		CORSAllowedOrigin:   "http://localhost:5173",
+		AuthMode:            internalauth.ModeDev,
+		DevUserID:           "user_1",
+		DevUserEmail:        "dev@example.local",
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	}
+	gateway := &capturingModelGateway{}
+	server := NewRouter(cfg, Dependencies{
+		ModelRouter:   router,
+		ModelGateway:  gateway,
+		Authenticator: internalauth.NewAuthenticator(cfg),
+		Authorizer:    internalauth.NewAuthorizer(cfg, memory.New()),
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/model-targets/check", bytes.NewBufferString(`{"target":"general"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if gateway.request.MaxTokens != 8 {
+		t.Fatalf("max tokens = %d, want 8", gateway.request.MaxTokens)
+	}
+	if gateway.request.Metadata["purpose"] != "model_target_check" {
+		t.Fatalf("metadata = %#v", gateway.request.Metadata)
+	}
+	if gateway.deadlineSeconds < 55 || gateway.deadlineSeconds > 60 {
+		t.Fatalf("deadlineSeconds = %d, want about 60", gateway.deadlineSeconds)
+	}
+}
+
 func TestModelTargetCheckEndpointMapsGatewayFailure(t *testing.T) {
 	router, err := providers.NewModelRouter([]providers.TargetConfig{
 		{Name: "general", Provider: "openai-compatible", BaseURL: "http://gpu.local:8000/v1", Model: "general-model"},
@@ -1470,6 +1513,26 @@ func (failingModelGateway) Complete(ctx context.Context, input providers.ChatCom
 		return providers.ChatCompletion{}, err
 	}
 	return providers.ChatCompletion{}, fmt.Errorf("gateway unavailable")
+}
+
+type capturingModelGateway struct {
+	request         providers.ChatCompletionRequest
+	deadlineSeconds int
+}
+
+func (g *capturingModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	g.request = input
+	if deadline, ok := ctx.Deadline(); ok {
+		g.deadlineSeconds = int(time.Until(deadline).Round(time.Second) / time.Second)
+	}
+	return providers.ChatCompletion{
+		Model:        "fake-model",
+		Content:      "ok",
+		FinishReason: "stop",
+	}, nil
 }
 
 func (httpModelGateway) StreamComplete(ctx context.Context, input providers.ChatCompletionRequest, emit func(providers.ChatCompletionChunk) error) (providers.ChatCompletion, error) {

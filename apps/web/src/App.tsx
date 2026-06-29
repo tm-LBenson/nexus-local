@@ -41,6 +41,8 @@ import {
 
 type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' | 'settings';
 
+type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
+
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
@@ -130,6 +132,10 @@ export function App() {
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
   const [streamAnswer, setStreamAnswer] = useState('');
   const [streamStatus, setStreamStatus] = useState('');
+  const [askPhase, setAskPhase] = useState<AskPhase>('idle');
+  const [askStartedAt, setAskStartedAt] = useState<number | null>(null);
+  const [askElapsedSeconds, setAskElapsedSeconds] = useState(0);
+  const [currentAskQuestion, setCurrentAskQuestion] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingSample, setUploadingSample] = useState(false);
@@ -186,8 +192,14 @@ export function App() {
         : 'Idle';
   const visibleAskAnswer = askResult?.assistant_message.content || streamAnswer;
   const visibleAskTitle =
-    askResult?.conversation.title || askResult?.conversation.id || streamStatus || 'Working';
+    askResult?.conversation.title ||
+    askResult?.conversation.id ||
+    currentAskQuestion ||
+    streamStatus ||
+    'Working';
   const visibleAskModel = askResult?.completion.model || askForm.model_target;
+  const showAskProgress = asking || askPhase === 'failed';
+  const showAskResult = Boolean(askResult || visibleAskAnswer || showAskProgress || streamStatus);
   const contentTitle =
     activeView === 'ask'
       ? 'Dashboard'
@@ -247,6 +259,20 @@ export function App() {
       canceled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!asking || askStartedAt === null) {
+      return;
+    }
+
+    const updateElapsed = () => {
+      setAskElapsedSeconds(Math.max(0, Math.floor((Date.now() - askStartedAt) / 1000)));
+    };
+
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(interval);
+  }, [asking, askStartedAt]);
 
   useEffect(() => {
     if (!trackingIngestion) {
@@ -840,7 +866,8 @@ export function App() {
       setError('Create a workspace first');
       return;
     }
-    if (!askForm.question.trim()) {
+    const question = askForm.question.trim();
+    if (!question) {
       setError('Enter a question');
       return;
     }
@@ -848,7 +875,12 @@ export function App() {
     setError(null);
     setAskResult(null);
     setStreamAnswer('');
+    setCurrentAskQuestion(question);
+    setAskPhase('connecting');
+    setAskStartedAt(Date.now());
+    setAskElapsedSeconds(0);
     setStreamStatus('Starting');
+    let failed = false;
     try {
       let streamedResult: AskConversationResponse | undefined;
       await askConversationStream({
@@ -856,11 +888,15 @@ export function App() {
         conversation_id: askForm.conversation_id || undefined,
         document_id: askForm.document_id || undefined,
         model_target: askForm.model_target,
-        question: askForm.question,
+        question,
         limit: Number(askForm.limit),
       }, {
-        onStatus: setStreamStatus,
+        onStatus: (message) => {
+          setStreamStatus(message);
+          setAskPhase(askPhaseFromStatus(message));
+        },
         onDelta: (content) => {
+          setAskPhase('streaming');
           setStreamStatus('Streaming');
           setStreamAnswer((current) => current + content);
         },
@@ -868,6 +904,7 @@ export function App() {
           streamedResult = response;
           setAskResult(response);
           setStreamAnswer(response.assistant_message.content);
+          setAskPhase('complete');
         },
       });
       if (!streamedResult) {
@@ -889,10 +926,17 @@ export function App() {
         setConversationMessages(await listConversationMessages(tenantID, result.conversation.id));
       }
     } catch (err) {
-      setError(messageFromError(err));
+      failed = true;
+      const message = messageFromError(err);
+      setAskPhase('failed');
+      setStreamStatus(message);
+      setError(message);
     } finally {
       setAsking(false);
-      setStreamStatus('');
+      setAskStartedAt(null);
+      if (!failed) {
+        setStreamStatus('');
+      }
     }
   }
 
@@ -1019,6 +1063,7 @@ export function App() {
                 <form className="askComposer" onSubmit={submitAsk}>
                   <textarea
                     aria-label="Question"
+                    disabled={asking}
                     onChange={(event) =>
                       setAskForm((current) => ({ ...current, question: event.target.value }))
                     }
@@ -1032,6 +1077,7 @@ export function App() {
                         <label>
                           Target
                           <select
+                            disabled={asking}
                             value={askForm.model_target}
                             onChange={(event) =>
                               setAskForm((current) => ({
@@ -1051,6 +1097,7 @@ export function App() {
                         <label>
                           Source
                           <DocumentSelect
+                            disabled={asking}
                             documents={documents?.documents ?? []}
                             value={askForm.document_id}
                             onChange={(value) =>
@@ -1061,6 +1108,7 @@ export function App() {
                         <label>
                           Limit
                           <input
+                            disabled={asking}
                             max="20"
                             min="1"
                             type="number"
@@ -1076,6 +1124,7 @@ export function App() {
                         <label>
                           Conversation
                           <input
+                            disabled={asking}
                             value={askForm.conversation_id}
                             onChange={(event) =>
                               setAskForm((current) => ({
@@ -1088,18 +1137,38 @@ export function App() {
                       </div>
                     </details>
                     <button disabled={asking || !workspaceReady} type="submit">
-                      {asking ? streamStatus || 'Asking' : 'Ask'}
+                      {asking ? 'Asking' : 'Ask'}
                     </button>
                   </div>
                 </form>
 
-                {(askResult || visibleAskAnswer || streamStatus) && (
-                  <div className="answerBox">
+                {showAskResult && (
+                  <div className={asking ? 'answerBox answerBoxActive' : 'answerBox'}>
                     <div className="answerMeta">
                       <strong>{visibleAskTitle}</strong>
                       <span>{visibleAskModel}</span>
                     </div>
-                    <p>{visibleAskAnswer || streamStatus}</p>
+                    {showAskProgress && (
+                      <div className="answerProgress" role="status" aria-live="polite">
+                        {asking && <span className="spinner" aria-hidden="true"></span>}
+                        <strong>
+                          {askPhase === 'failed'
+                            ? 'Request failed'
+                            : askPhaseLabel(askPhase, visibleAskAnswer)}
+                        </strong>
+                        <em>{formatElapsed(askElapsedSeconds)}</em>
+                      </div>
+                    )}
+                    {askPhase === 'failed' ? (
+                      <div className="failureNotice compactFailure">
+                        <strong>Answer failed</strong>
+                        <span>{streamStatus || 'The request did not complete.'}</span>
+                      </div>
+                    ) : (
+                      <p className={asking ? 'answerText answerTextStreaming' : 'answerText'}>
+                        {visibleAskAnswer || askWaitingLabel(askPhase)}
+                      </p>
+                    )}
                     {askResult && (
                       <details className="inlineDetails">
                         <summary>Sources</summary>
@@ -2103,16 +2172,18 @@ function ResultHit({
 }
 
 function DocumentSelect({
+  disabled = false,
   documents,
   onChange,
   value,
 }: {
+  disabled?: boolean;
   documents: ListDocumentsResponse['documents'];
   onChange: (value: string) => void;
   value: string;
 }) {
   return (
-    <select onChange={(event) => onChange(event.target.value)} value={value}>
+    <select disabled={disabled} onChange={(event) => onChange(event.target.value)} value={value}>
       <option value="">All documents</option>
       {documents.map((document) => (
         <option key={document.id} value={document.id}>
@@ -2446,6 +2517,60 @@ function compactEndpoint(value?: string) {
   }
 }
 
+function askPhaseFromStatus(message: string): AskPhase {
+  const lower = message.toLowerCase();
+  if (lower.includes('connect')) {
+    return 'connecting';
+  }
+  if (lower.includes('retriev')) {
+    return 'retrieving';
+  }
+  if (lower.includes('generat')) {
+    return 'generating';
+  }
+  if (lower.includes('stream')) {
+    return 'streaming';
+  }
+  return 'generating';
+}
+
+function askPhaseLabel(phase: AskPhase, answer: string) {
+  if (answer && phase !== 'failed') {
+    return 'Receiving answer';
+  }
+  switch (phase) {
+    case 'connecting':
+      return 'Connecting';
+    case 'retrieving':
+      return 'Retrieving context';
+    case 'generating':
+      return 'Waiting for model';
+    case 'streaming':
+      return 'Receiving answer';
+    case 'complete':
+      return 'Complete';
+    case 'failed':
+      return 'Request failed';
+    case 'idle':
+      return 'Starting';
+  }
+}
+
+function askWaitingLabel(phase: AskPhase) {
+  switch (phase) {
+    case 'connecting':
+      return 'Opening model stream';
+    case 'retrieving':
+      return 'Finding relevant context';
+    case 'generating':
+      return 'Waiting for the first token';
+    case 'streaming':
+      return 'Receiving answer';
+    default:
+      return 'Working';
+  }
+}
+
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -2590,6 +2715,15 @@ function formatDateTime(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+function formatElapsed(seconds: number) {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}m ${remainder.toString().padStart(2, '0')}s`;
 }
 
 function formatTimeOnly(value: string) {

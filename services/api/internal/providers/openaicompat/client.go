@@ -31,6 +31,7 @@ type chatCompletionRequest struct {
 	Model       string                  `json:"model"`
 	Messages    []providers.ChatMessage `json:"messages"`
 	Temperature float32                 `json:"temperature,omitempty"`
+	MaxTokens   int                     `json:"max_tokens,omitempty"`
 	Metadata    map[string]string       `json:"metadata,omitempty"`
 	Stream      bool                    `json:"stream,omitempty"`
 }
@@ -83,6 +84,7 @@ func (c *Client) Complete(ctx context.Context, input providers.ChatCompletionReq
 		Model:       input.Model,
 		Messages:    input.Messages,
 		Temperature: input.Temperature,
+		MaxTokens:   input.MaxTokens,
 		Metadata:    input.Metadata,
 	})
 	if err != nil {
@@ -135,6 +137,7 @@ func (c *Client) StreamComplete(ctx context.Context, input providers.ChatComplet
 		Model:       input.Model,
 		Messages:    input.Messages,
 		Temperature: input.Temperature,
+		MaxTokens:   input.MaxTokens,
 		Metadata:    input.Metadata,
 		Stream:      true,
 	})

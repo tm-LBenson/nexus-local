@@ -383,14 +383,16 @@ export async function askConversationStream(
   input: AskConversationInput,
   handlers: AskConversationStreamHandlers = {},
 ) {
+  const streamInactivityTimeoutMs = 180000;
   const controller = new AbortController();
-  let timeoutID = window.setTimeout(() => controller.abort(), 90000);
+  let timeoutID = window.setTimeout(() => controller.abort(), streamInactivityTimeoutMs);
   const resetTimeout = () => {
     window.clearTimeout(timeoutID);
-    timeoutID = window.setTimeout(() => controller.abort(), 90000);
+    timeoutID = window.setTimeout(() => controller.abort(), streamInactivityTimeoutMs);
   };
 
   try {
+    handlers.onStatus?.('Connecting');
     const response = await fetch(`${apiBaseUrl}/v1/conversations/ask/stream`, {
       method: 'POST',
       headers: {

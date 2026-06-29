@@ -147,7 +147,7 @@ func modelTargetCheckHandler(modelRouter *providers.ModelRouter, modelGateway pr
 			return
 		}
 
-		checkCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		checkCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
 
 		started := time.Now()
@@ -159,6 +159,7 @@ func modelTargetCheckHandler(modelRouter *providers.ModelRouter, modelGateway pr
 				{Role: "user", Content: "Nexus Local model target check. Reply with exactly: ok."},
 			},
 			Temperature: 0,
+			MaxTokens:   8,
 			Metadata: map[string]string{
 				"purpose": "model_target_check",
 			},

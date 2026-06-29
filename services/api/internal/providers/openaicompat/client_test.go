@@ -52,6 +52,7 @@ func TestClientCompletePostsChatCompletionRequest(t *testing.T) {
 			{Role: "user", Content: "Say hi"},
 		},
 		Temperature: 0.2,
+		MaxTokens:   12,
 	})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
@@ -59,6 +60,9 @@ func TestClientCompletePostsChatCompletionRequest(t *testing.T) {
 
 	if captured["model"] != "test-model" {
 		t.Fatalf("model = %v, want test-model", captured["model"])
+	}
+	if captured["max_tokens"] != float64(12) {
+		t.Fatalf("max_tokens = %v, want 12", captured["max_tokens"])
 	}
 	if result.Content != "Hello from the GPU" {
 		t.Fatalf("content = %q", result.Content)
@@ -106,6 +110,7 @@ func TestClientStreamCompleteParsesChatCompletionChunks(t *testing.T) {
 			{Role: "user", Content: "Say hi"},
 		},
 		Temperature: 0.2,
+		MaxTokens:   10,
 		Metadata:    map[string]string{"tenant_id": "tenant_1"},
 	}, func(chunk providers.ChatCompletionChunk) error {
 		chunks = append(chunks, chunk.Content)
@@ -117,6 +122,9 @@ func TestClientStreamCompleteParsesChatCompletionChunks(t *testing.T) {
 
 	if captured["stream"] != true {
 		t.Fatalf("stream = %v, want true", captured["stream"])
+	}
+	if captured["max_tokens"] != float64(10) {
+		t.Fatalf("max_tokens = %v, want 10", captured["max_tokens"])
 	}
 	if strings.Join(chunks, "") != "Hello from stream" {
 		t.Fatalf("chunks = %q", chunks)
