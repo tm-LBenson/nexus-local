@@ -272,6 +272,19 @@ func (s *DataSource) FailScan(imported int, skipped int, failed int, now time.Ti
 	return nil
 }
 
+func (s *DataSource) CancelScan(now time.Time) error {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if s.Status != DataSourceStatusScanning {
+		return fmt.Errorf("cancel scan from %s: %w", s.Status, ErrInvalidStateTransition)
+	}
+	s.Status = DataSourceStatusActive
+	s.ScheduleNextScan(now)
+	s.UpdatedAt = now
+	return nil
+}
+
 func (s *DataSource) ScheduleNextScan(now time.Time) {
 	if now.IsZero() {
 		now = time.Now().UTC()

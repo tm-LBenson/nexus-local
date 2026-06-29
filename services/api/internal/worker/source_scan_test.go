@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -617,6 +618,55 @@ func TestSourceScanWorkerCancelsArchivedSource(t *testing.T) {
 	}
 }
 
+func TestSourceScanWorkerStopsWhenScanJobIsCanceled(t *testing.T) {
+	ctx := context.Background()
+	base := memory.New()
+	repos := &cancelingJobStore{RepositorySet: base, cancelAfter: 3}
+	objects := objectmemory.New()
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.md"), "alpha")
+	mustWriteFile(t, filepath.Join(root, "b.md"), "beta")
+	source := newTestDataSource(t, root, domain.DataSourceStatusActive)
+	job := newSourceScanJob(t, source)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	result, err := NewSourceScanWorker(repos, &scanIDs{}, fixedClock{}).
+		WithObjectStore(objects).
+		ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("process source scan: %v", err)
+	}
+	if result.ImportedCount != 1 || result.FailedCount != 0 {
+		t.Fatalf("result = %#v, want one imported before cancellation", result)
+	}
+	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if updatedJob.State != domain.JobStateCanceled || updatedJob.ResultJSON == "" {
+		t.Fatalf("job = %#v, want canceled with result", updatedJob)
+	}
+	updatedSource, err := repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if updatedSource.Status != domain.DataSourceStatusActive {
+		t.Fatalf("source status = %q, want active", updatedSource.Status)
+	}
+	entries, err := repos.ListDataSourceScanEntries(ctx, source.TenantID, source.ID, 10)
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one entry before cancellation", entries)
+	}
+}
+
 func TestSourceScanWorkerReturnsNoQueuedJobs(t *testing.T) {
 	worker := NewSourceScanWorker(memory.New(), &scanIDs{}, fixedClock{}).WithObjectStore(objectmemory.New())
 
@@ -695,6 +745,31 @@ func activeDocumentCount(documents []domain.Document) int {
 		}
 	}
 	return count
+}
+
+type cancelingJobStore struct {
+	store.RepositorySet
+	cancelAfter int
+	gets        int
+}
+
+func (s *cancelingJobStore) GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error) {
+	job, err := s.RepositorySet.GetJob(ctx, tenantID, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if job.Type == domain.JobTypeSourceScan && job.State == domain.JobStateRunning {
+		s.gets++
+		if s.gets >= s.cancelAfter {
+			if err := job.Transition(domain.JobStateCanceled, fixedTime().Add(time.Second)); err != nil {
+				return domain.Job{}, err
+			}
+			if err := s.RepositorySet.SaveJob(ctx, job); err != nil {
+				return domain.Job{}, err
+			}
+		}
+	}
+	return job, nil
 }
 
 type scanIDs struct {

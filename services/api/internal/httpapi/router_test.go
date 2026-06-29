@@ -707,6 +707,25 @@ func TestDataSourceEndpoints(t *testing.T) {
 		t.Fatalf("scan body = %#v", scanBody)
 	}
 
+	cancelScan := httptest.NewRecorder()
+	cancelScanReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/scan/cancel?tenant_id=tenant_1", nil)
+	server.ServeHTTP(cancelScan, cancelScanReq)
+	if cancelScan.Code != http.StatusOK {
+		t.Fatalf("cancel scan status = %d, want %d, body = %s", cancelScan.Code, http.StatusOK, cancelScan.Body.String())
+	}
+	var cancelScanBody struct {
+		Source dataSourcePayload `json:"source"`
+		Job    jobPayload        `json:"job"`
+	}
+	if err := json.NewDecoder(cancelScan.Body).Decode(&cancelScanBody); err != nil {
+		t.Fatalf("decode cancel scan: %v", err)
+	}
+	if cancelScanBody.Source.ID != "src_http" ||
+		cancelScanBody.Job.Type != "source_scan" ||
+		cancelScanBody.Job.State != "canceled" {
+		t.Fatalf("cancel scan body = %#v", cancelScanBody)
+	}
+
 	getAfterScan := httptest.NewRecorder()
 	getAfterScanReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
 	server.ServeHTTP(getAfterScan, getAfterScanReq)
@@ -769,11 +788,12 @@ func TestDataSourceEndpoints(t *testing.T) {
 	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
 		t.Fatalf("decode audit: %v", err)
 	}
-	if len(auditBody.Events) != 4 {
-		t.Fatalf("audit events len = %d, want 4", len(auditBody.Events))
+	if len(auditBody.Events) != 5 {
+		t.Fatalf("audit events len = %d, want 5", len(auditBody.Events))
 	}
 	hasArchivedAudit := false
 	hasScanAudit := false
+	hasScanCanceledAudit := false
 	for _, event := range auditBody.Events {
 		if event.Action == "data_source.archived" && event.ResourceID == "src_http" {
 			hasArchivedAudit = true
@@ -781,12 +801,18 @@ func TestDataSourceEndpoints(t *testing.T) {
 		if event.Action == "data_source.scan_requested" && event.ResourceID == "src_http" {
 			hasScanAudit = true
 		}
+		if event.Action == "data_source.scan_canceled" && event.ResourceID == "src_http" {
+			hasScanCanceledAudit = true
+		}
 	}
 	if !hasArchivedAudit {
 		t.Fatalf("audit events = %#v, want archived source event", auditBody.Events)
 	}
 	if !hasScanAudit {
 		t.Fatalf("audit events = %#v, want source scan event", auditBody.Events)
+	}
+	if !hasScanCanceledAudit {
+		t.Fatalf("audit events = %#v, want source scan canceled event", auditBody.Events)
 	}
 }
 

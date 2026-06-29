@@ -71,6 +71,11 @@ type ScanDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type CancelDataSourceScanInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+}
+
 type PreflightDataSourceInput struct {
 	TenantID     domain.TenantID
 	DataSourceID domain.DataSourceID
@@ -536,6 +541,48 @@ func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSource
 	}, nil
 }
 
+func (s DataSourceService) CancelScan(ctx context.Context, input CancelDataSourceScanInput) (ScanDataSourceResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return ScanDataSourceResult{}, fmt.Errorf("cancel data source scan: %w", domain.ErrInvalidEntity)
+	}
+
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	job, ok := activeDataSourceJob(jobs, source.ID, domain.JobTypeSourceScan)
+	if !ok {
+		return ScanDataSourceResult{}, fmt.Errorf("source %s has no active scan to cancel: %w", source.ID, domain.ErrInvalidStateTransition)
+	}
+	if err := job.Transition(domain.JobStateCanceled, s.clock.Now()); err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	job.ErrorMessage = "scan canceled by user"
+	if err := s.repos.SaveJob(ctx, job); err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	if source.Status == domain.DataSourceStatusScanning {
+		if err := source.CancelScan(s.clock.Now()); err != nil {
+			return ScanDataSourceResult{}, err
+		}
+		if err := s.repos.SaveDataSource(ctx, source); err != nil {
+			return ScanDataSourceResult{}, err
+		}
+	}
+
+	return ScanDataSourceResult{
+		Source: source,
+		Job:    job,
+	}, nil
+}
+
 func (s DataSourceService) RequestPreflight(ctx context.Context, input PreflightDataSourceInput) (PreflightDataSourceResult, error) {
 	if err := ctx.Err(); err != nil {
 		return PreflightDataSourceResult{}, err
@@ -816,6 +863,15 @@ func filterActiveDataSources(sources []domain.DataSource) []domain.DataSource {
 
 func isActiveDataSourceScanJob(job domain.Job, sourceID domain.DataSourceID) bool {
 	return isActiveDataSourceJob(job, sourceID, domain.JobTypeSourceScan)
+}
+
+func activeDataSourceJob(jobs []domain.Job, sourceID domain.DataSourceID, jobType domain.JobType) (domain.Job, bool) {
+	for _, job := range jobs {
+		if isActiveDataSourceJob(job, sourceID, jobType) {
+			return job, true
+		}
+	}
+	return domain.Job{}, false
 }
 
 func latestRelevantDataSourceJob(jobs []domain.Job, source domain.DataSource, jobType domain.JobType) (domain.Job, bool) {

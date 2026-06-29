@@ -2132,6 +2132,13 @@ h3 {
   white-space: nowrap;
 }
 
+.sourceRunActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .sourcePlanPanel {
   align-items: start;
 }
@@ -2859,6 +2866,15 @@ h3 {
 
   .sourceProgressPanel button {
     grid-column: 1 / -1;
+  }
+
+  .sourceRunActions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .sourceRunActions button {
+    flex: 1 1 112px;
   }
 
   .scanEntryFilters,

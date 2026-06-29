@@ -212,3 +212,37 @@ func TestDataSourceScanResults(t *testing.T) {
 		t.Fatalf("err = %v, want invalid entity", err)
 	}
 }
+
+func TestDataSourceCancelScanReturnsToActiveWithoutCompleting(t *testing.T) {
+	source, err := NewDataSource(DataSourceCreate{
+		ID:                  DataSourceID("src_1"),
+		TenantID:            TenantID("tenant_1"),
+		OwnerID:             UserID("user_1"),
+		Name:                "Docs",
+		RootPath:            "C:\\Docs",
+		ScanIntervalMinutes: 60,
+	})
+	if err != nil {
+		t.Fatalf("new data source: %v", err)
+	}
+	now := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
+	if err := source.Transition(DataSourceStatusScanning, now); err != nil {
+		t.Fatalf("start scan: %v", err)
+	}
+	if err := source.CancelScan(now.Add(time.Minute)); err != nil {
+		t.Fatalf("cancel scan: %v", err)
+	}
+	if source.Status != DataSourceStatusActive {
+		t.Fatalf("status = %q, want active", source.Status)
+	}
+	if source.LastScanAt != nil ||
+		source.LastScanImported != 0 ||
+		source.LastScanSkipped != 0 ||
+		source.LastScanFailed != 0 {
+		t.Fatalf("last scan = %v/%d/%d/%d, want untouched", source.LastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed)
+	}
+	wantNext := now.Add(61 * time.Minute)
+	if source.NextScanAt == nil || !source.NextScanAt.Equal(wantNext) {
+		t.Fatalf("next scan = %v, want %s", source.NextScanAt, wantNext)
+	}
+}

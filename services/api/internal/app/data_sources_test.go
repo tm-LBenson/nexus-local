@@ -538,6 +538,94 @@ func TestRequestDataSourceScanQueuesJob(t *testing.T) {
 	}
 }
 
+func TestCancelDataSourceScanCancelsQueuedJob(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job := newDataSourceJob(t, source, domain.JobID("job_scan"), domain.JobTypeSourceScan)
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	result, err := service.CancelScan(ctx, CancelDataSourceScanInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("cancel scan: %v", err)
+	}
+	if result.Source.Status != domain.DataSourceStatusActive ||
+		result.Job.ID != job.ID ||
+		result.Job.State != domain.JobStateCanceled {
+		t.Fatalf("result = %#v, want active source and canceled job", result)
+	}
+	savedJob, err := repos.GetJob(ctx, source.TenantID, job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if savedJob.State != domain.JobStateCanceled || savedJob.ErrorMessage == "" {
+		t.Fatalf("job = %#v, want canceled with message", savedJob)
+	}
+}
+
+func TestCancelDataSourceScanCancelsRunningJobAndUnsticksSource(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusScanning)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	job := newDataSourceJob(t, source, domain.JobID("job_scan"), domain.JobTypeSourceScan)
+	if err := job.Transition(domain.JobStateRunning, fixedClock{}.Now()); err != nil {
+		t.Fatalf("run job: %v", err)
+	}
+	if err := repos.SaveJob(ctx, job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+
+	result, err := service.CancelScan(ctx, CancelDataSourceScanInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("cancel scan: %v", err)
+	}
+	if result.Source.Status != domain.DataSourceStatusActive ||
+		result.Job.State != domain.JobStateCanceled {
+		t.Fatalf("result = %#v, want active source and canceled job", result)
+	}
+	savedSource, err := repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if savedSource.Status != domain.DataSourceStatusActive {
+		t.Fatalf("source status = %q, want active", savedSource.Status)
+	}
+}
+
+func TestCancelDataSourceScanRejectsWhenNoActiveScan(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
+	source := newDataSource(t, "src_1", domain.DataSourceStatusActive)
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	_, err := service.CancelScan(ctx, CancelDataSourceScanInput{
+		TenantID:     source.TenantID,
+		DataSourceID: source.ID,
+	})
+	if !errors.Is(err, domain.ErrInvalidStateTransition) {
+		t.Fatalf("err = %v, want invalid state transition", err)
+	}
+}
+
 func TestRequestDataSourceScanRejectsDuplicateActiveScan(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
@@ -1219,6 +1307,22 @@ func newSourceScanEntryAt(t *testing.T, source domain.DataSource, jobID domain.J
 		t.Fatalf("new scan entry: %v", err)
 	}
 	return entry
+}
+
+func newDataSourceJob(t *testing.T, source domain.DataSource, jobID domain.JobID, jobType domain.JobType) domain.Job {
+	t.Helper()
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           jobID,
+		TenantID:     source.TenantID,
+		Type:         jobType,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("new job: %v", err)
+	}
+	return job
 }
 
 func failedSourcePreflightJob(t *testing.T, source domain.DataSource, now time.Time, message string) domain.Job {

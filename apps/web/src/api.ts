@@ -480,6 +480,14 @@ export async function scanDataSource(tenantId: string, sourceId: string) {
   );
 }
 
+export async function cancelDataSourceScan(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceScanResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}/scan/cancel?${params.toString()}`,
+    { method: 'POST' },
+  );
+}
+
 export async function preflightDataSource(tenantId: string, sourceId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<DataSourceScanResponse>(

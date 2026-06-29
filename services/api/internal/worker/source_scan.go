@@ -117,7 +117,7 @@ func (w SourceScanWorker) ProcessNext(ctx context.Context) (SourceScanResult, er
 
 	result, err := w.processClaimedJob(ctx, job)
 	if err != nil {
-		if errors.Is(err, ErrSourceArchived) {
+		if errors.Is(err, ErrSourceArchived) || errors.Is(err, ErrSourceScanCanceled) {
 			if err := w.finishSourceScanJob(&job, &result); err != nil {
 				return SourceScanResult{}, err
 			}
@@ -151,6 +151,7 @@ func (w SourceScanWorker) ProcessNext(ctx context.Context) (SourceScanResult, er
 }
 
 var ErrSourceArchived = errors.New("source was archived before scan")
+var ErrSourceScanCanceled = errors.New("source scan was canceled")
 
 func (w SourceScanWorker) processClaimedJob(ctx context.Context, job domain.Job) (SourceScanResult, error) {
 	if job.Type != domain.JobTypeSourceScan || job.ResourceType != "data_source" || job.ResourceID == "" {
@@ -182,6 +183,10 @@ func (w SourceScanWorker) processClaimedJob(ctx context.Context, job domain.Job)
 
 	result, scanErr := w.scanSource(ctx, source, result)
 	if scanErr != nil {
+		if errors.Is(scanErr, ErrSourceScanCanceled) {
+			_ = w.markSourceCanceled(ctx, source)
+			return result, scanErr
+		}
 		_ = w.markSourceFailed(ctx, source, result)
 		return result, scanErr
 	}
@@ -232,6 +237,9 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	seenPaths := map[string]bool{}
 	skippedDirectoryPrefixes := make([]string, 0)
 	var firstFailure error
+	if err := w.ensureSourceScanNotCanceled(ctx, source.TenantID, result.JobID); err != nil {
+		return result, err
+	}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -249,6 +257,9 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 		}
 		if path == root {
 			return nil
+		}
+		if err := w.ensureSourceScanNotCanceled(ctx, source.TenantID, result.JobID); err != nil {
+			return err
 		}
 		relativeName := sourceRelativePath(root, path)
 		if entry.IsDir() {
@@ -433,6 +444,9 @@ func (w SourceScanWorker) scanSource(ctx context.Context, source domain.DataSour
 	if err != nil {
 		return result, err
 	}
+	if err := w.ensureSourceScanNotCanceled(ctx, source.TenantID, result.JobID); err != nil {
+		return result, err
+	}
 	if result.FailedCount == 0 {
 		var reconcileErr error
 		result, reconcileErr = w.reconcileDeletedSourceFiles(ctx, source, result, previousImported, seenPaths, skippedDirectoryPrefixes)
@@ -555,6 +569,31 @@ func (w SourceScanWorker) markSourceFailed(ctx context.Context, source domain.Da
 		return err
 	}
 	return w.repos.SaveDataSource(ctx, latest)
+}
+
+func (w SourceScanWorker) markSourceCanceled(ctx context.Context, source domain.DataSource) error {
+	latest, err := w.repos.GetDataSource(ctx, source.TenantID, source.ID)
+	if err != nil {
+		return err
+	}
+	if latest.Status != domain.DataSourceStatusScanning {
+		return nil
+	}
+	if err := latest.CancelScan(w.clock.Now()); err != nil {
+		return err
+	}
+	return w.repos.SaveDataSource(ctx, latest)
+}
+
+func (w SourceScanWorker) ensureSourceScanNotCanceled(ctx context.Context, tenantID domain.TenantID, jobID domain.JobID) error {
+	job, err := w.repos.GetJob(ctx, tenantID, jobID)
+	if err != nil {
+		return err
+	}
+	if job.State == domain.JobStateCanceled {
+		return ErrSourceScanCanceled
+	}
+	return nil
 }
 
 func (w SourceScanWorker) finishSourceScanJob(job *domain.Job, result *SourceScanResult) error {

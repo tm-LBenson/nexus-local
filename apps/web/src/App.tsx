@@ -20,6 +20,7 @@ import {
   archiveDataSource,
   askConversationStream,
   apiBase,
+  cancelDataSourceScan,
   checkModelTarget,
   createDataSource,
   createTenant,
@@ -341,6 +342,7 @@ export function App() {
   const [preflightingSourceID, setPreflightingSourceID] = useState('');
   const [planningSourceID, setPlanningSourceID] = useState('');
   const [scanningSourceID, setScanningSourceID] = useState('');
+  const [cancelingSourceScanID, setCancelingSourceScanID] = useState('');
   const [reindexingSourceID, setReindexingSourceID] = useState('');
   const [retryingSourceFailuresID, setRetryingSourceFailuresID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
@@ -1274,6 +1276,37 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setScanningSourceID('');
+    }
+  }
+
+  async function cancelSourceScan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setCancelingSourceScanID(source.id);
+    setError(null);
+    try {
+      const result = await cancelDataSourceScan(tenantID, source.id);
+      setSourceDetail((current) =>
+        current && current.source.id === source.id
+          ? {
+              ...current,
+              source: result.source,
+              jobs: [result.job, ...current.jobs.filter((job) => job.id !== result.job.id)],
+            }
+          : current,
+      );
+      await Promise.all([
+        refreshDataSources(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        sourceDetail?.source.id === source.id ? refreshSourceDetail(source.id) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setCancelingSourceScanID('');
     }
   }
 
@@ -2655,7 +2688,9 @@ export function App() {
                   />
                   <SourceScanRunStatus
                     activeJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                    canceling={cancelingSourceScanID === sourceDetail.source.id}
                     detail={sourceDetail}
+                    onCancel={() => void cancelSourceScan(sourceDetail.source)}
                     onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
                     refreshing={refreshingSourceID === sourceDetail.source.id}
                   />
@@ -4920,12 +4955,16 @@ function sourceCurrentScanProgress(
 
 function SourceScanRunStatus({
   activeJob,
+  canceling,
   detail,
+  onCancel,
   onRefresh,
   refreshing,
 }: {
   activeJob?: ListJobsResponse['jobs'][number];
+  canceling: boolean;
   detail: DataSourceDetailResponse;
+  onCancel: () => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
@@ -4962,9 +5001,16 @@ function SourceScanRunStatus({
           ))}
         </div>
       </div>
-      <button disabled={refreshing} onClick={onRefresh} type="button">
-        {refreshing ? 'Refreshing' : 'Refresh'}
-      </button>
+      <div className="sourceRunActions">
+        <button disabled={refreshing} onClick={onRefresh} type="button">
+          {refreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+        {active && (
+          <button className="dangerButton" disabled={canceling} onClick={onCancel} type="button">
+            {canceling ? 'Canceling' : 'Cancel'}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -5097,6 +5143,9 @@ function sourceScanRunMessage(
   }
   if (job.state === 'failed' && job.error_message.trim() !== '') {
     return job.error_message;
+  }
+  if (job.state === 'canceled' && job.error_message.trim() !== '') {
+    return `${job.error_message} / ${formatDateTime(job.updated_at)}`;
   }
   const startedAt = sourceScanRunStartedAt(job, run);
   const finishedAt = sourceScanRunFinishedAt(job, run);
