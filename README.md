@@ -124,9 +124,10 @@ Run a managed-source stress check:
 ```powershell
 .\scripts\dev-check.ps1 -SourceStress
 .\scripts\dev-check.ps1 -SourceStress -SourceStressFileCount 150 -SourceStressTimeoutSeconds 300
+.\scripts\dev-check.ps1 -SourceStress -SourceStressPreset support-ops
 ```
 
-The source stress check creates a temporary mixed fixture folder, creates a managed source, queues a real source scan, verifies imported/skipped/failed counts and skip reasons, waits for imported documents to become searchable, then archives the temporary source and deletes its imported documents. If `.env` contains `NEXUS_SOURCE_HOST_PATH`, the script writes fixtures below that host path and uses `NEXUS_SOURCE_CONTAINER_PATH` as the worker-visible path. Otherwise, pass both `-HostFixturePath` and `-SourcePath` when the worker sees a different path than the shell running the script.
+The source stress check creates a temporary mixed fixture folder, creates a managed source, queues a real source scan, verifies imported/skipped/failed counts and skip reasons, waits for imported documents to become searchable, then archives the temporary source and deletes its imported documents. Fixture presets include `mixed-docs`, `support-ops`, and `governance`; they cover Markdown, text, JSON, HTML, CSV/TSV, and VTT transcript files. If `.env` contains `NEXUS_SOURCE_HOST_PATH`, the script writes fixtures below that host path and uses `NEXUS_SOURCE_CONTAINER_PATH` as the worker-visible path. Otherwise, pass both `-HostFixturePath` and `-SourcePath` when the worker sees a different path than the shell running the script.
 
 Run a non-destructive backup/restore preflight:
 

@@ -15,6 +15,8 @@ param(
   [string]$UserEmail = "",
   [int]$SmokeTimeoutSeconds = 90,
   [int]$SourceStressFileCount = 40,
+  [ValidateSet("mixed-docs", "support-ops", "governance")]
+  [string]$SourceStressPreset = "mixed-docs",
   [int]$SourceStressTimeoutSeconds = 180,
   [string]$Profile = "",
   [string]$BackupOutputDir = "",
@@ -270,6 +272,7 @@ if ($SourceStress) {
       ApiUrl = $ApiUrl
       TimeoutSeconds = $SourceStressTimeoutSeconds
       FileCount = $SourceStressFileCount
+      FixturePreset = $SourceStressPreset
     }
     if (-not [string]::IsNullOrWhiteSpace($TenantId)) {
       $sourceStressParams.TenantId = $TenantId

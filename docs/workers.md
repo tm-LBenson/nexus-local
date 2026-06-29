@@ -40,7 +40,7 @@ Source scan behavior:
 13. Transition source `scanning -> active`, stamp `last_scan_at`, and persist imported/skipped/failed counts.
 14. Transition the source scan job `running -> succeeded`.
 
-The operator stress path is `scripts/source-stress.ps1`, or `scripts/dev-check.ps1 -SourceStress`. It generates a mixed folder fixture, scans it through a real managed source, verifies imported/skipped/failed counts and skip-reason buckets, waits for imported documents to become ready, and checks search against one imported document. Use it after touching source mounts, source scanning, document ingestion, embeddings, or vector search.
+The operator stress path is `scripts/source-stress.ps1`, or `scripts/dev-check.ps1 -SourceStress`. It generates a mixed folder fixture, scans it through a real managed source, verifies imported/skipped/failed counts and skip-reason buckets, waits for imported documents to become ready, and checks search against one imported document. Use `-SourceStressPreset support-ops` for support cases/runbooks/ticket exports or `-SourceStressPreset governance` for policy/process/status workflow documents. Use the stress gate after touching source mounts, source scanning, document ingestion, embeddings, or vector search.
 
 The source path must be visible to the worker process. In Docker deployments, mount the folder, synced drive, or network share into the worker container and use the container-visible path in the source record. For example, a Windows folder can be mounted as `/sources/customer-docs`, and the source root should use `/sources/customer-docs`, not the Windows host path.
 

@@ -43,6 +43,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.19 | Configurable document ingestion concurrency. | Operators can tune parallel ingestion for larger imports while job claiming stays atomic and tested. |
 | 2.20 | Managed source stress gate. | Operators can generate a repeatable mixed source fixture, scan it through the real worker path, verify import/skip/failure counts, wait for ingestion, and prove search works. |
 | 2.21 | Richer batch import reporting UI. | Source detail shows a compact scan report with outcome mix, clickable count filters, reason buckets, and faster CSV/review controls. |
+| 2.22 | Customer-shaped stress fixtures. | The source stress gate can generate support-ops and governance-style folder trees across supported text/export/transcript formats. |
 
 ## Dependencies
 
@@ -59,4 +60,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.21 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, and richer batch import reporting in the UI. Next, harden it with larger customer-shaped fixture sets.
+Slices 2.1 through 2.22 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, richer batch import reporting in the UI, and customer-shaped stress fixtures. Next, harden source imports with preflight path validation and clearer mount/permission checks before a scan is queued.

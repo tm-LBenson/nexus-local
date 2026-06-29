@@ -5,6 +5,8 @@ param(
   [string]$SourcePath = "",
   [string]$HostFixturePath = "",
   [int]$FileCount = 40,
+  [ValidateSet("mixed-docs", "support-ops", "governance")]
+  [string]$FixturePreset = "mixed-docs",
   [int]$TimeoutSeconds = 180,
   [string[]]$IncludePatterns = @("**/*"),
   [string[]]$ExcludePatterns = @("archive/**", "drafts/**"),
@@ -197,7 +199,114 @@ function Write-StressBinaryFile($rootPath, $relativePath, [byte[]]$bytes) {
   [System.IO.File]::WriteAllBytes($path, $bytes)
 }
 
-function New-SourceStressFixture($path, $fileCount, $runId) {
+function New-StressDocumentSpec($preset, $index) {
+  $number = $index.ToString("0000")
+  switch ($preset) {
+    "support-ops" {
+      switch ($index % 7) {
+        0 { return [pscustomobject]@{ RelativePath = "runbooks/oidc/oidc-triage-$number.md"; Topic = "OIDC troubleshooting runbook" } }
+        1 { return [pscustomobject]@{ RelativePath = "cases/acme/case-$number.json"; Topic = "Customer support case export" } }
+        2 { return [pscustomobject]@{ RelativePath = "kb/sso/article-$number.html"; Topic = "Knowledge base article" } }
+        3 { return [pscustomobject]@{ RelativePath = "exports/tickets/ticket-$number.csv"; Topic = "Ticket queue export" } }
+        4 { return [pscustomobject]@{ RelativePath = "transcripts/support-call-$number.vtt"; Topic = "Support call transcript" } }
+        5 { return [pscustomobject]@{ RelativePath = "cases/beta/notes-$number.txt"; Topic = "Escalation notes" } }
+        default { return [pscustomobject]@{ RelativePath = "exports/events/event-$number.tsv"; Topic = "Authentication event export" } }
+      }
+    }
+    "governance" {
+      switch ($index % 7) {
+        0 { return [pscustomobject]@{ RelativePath = "policies/access/access-policy-$number.md"; Topic = "Access policy" } }
+        1 { return [pscustomobject]@{ RelativePath = "processes/intake/intake-flow-$number.html"; Topic = "Workflow procedure" } }
+        2 { return [pscustomobject]@{ RelativePath = "records/status/status-export-$number.csv"; Topic = "Paperwork status export" } }
+        3 { return [pscustomobject]@{ RelativePath = "requests/customer/request-$number.json"; Topic = "Customer request record" } }
+        4 { return [pscustomobject]@{ RelativePath = "audits/evidence/evidence-$number.txt"; Topic = "Audit evidence note" } }
+        5 { return [pscustomobject]@{ RelativePath = "training/captions/training-$number.vtt"; Topic = "Training transcript" } }
+        default { return [pscustomobject]@{ RelativePath = "records/review/review-$number.tsv"; Topic = "Review queue export" } }
+      }
+    }
+    default {
+      $bucket = switch ($index % 4) {
+        0 { "runbooks" }
+        1 { "cases" }
+        2 { "policies" }
+        default { "technical-notes" }
+      }
+      $extension = ".md"
+      if ($index % 5 -eq 0) {
+        $extension = ".txt"
+      }
+      return [pscustomobject]@{
+        RelativePath = "$bucket/doc-$number$extension"
+        Topic = "Source stress document"
+      }
+    }
+  }
+}
+
+function New-StressDocumentContent($preset, $spec, $index, $runId, $needle) {
+  $extension = [System.IO.Path]::GetExtension($spec.RelativePath).ToLowerInvariant()
+  $title = "$($spec.Topic) $index"
+  switch ($extension) {
+    ".json" {
+      return [ordered]@{
+        title = $title
+        run_id = $runId
+        needle = $needle
+        status = "open"
+        source = $preset
+        observations = @(
+          "Gateway callback validation succeeded",
+          "MFA enrollment was verified",
+          "Knowledge base retrieval should find this record"
+        )
+      } | ConvertTo-Json -Depth 5
+    }
+    ".html" {
+      return @"
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>$title</title></head>
+<body>
+<h1>$title</h1>
+<p>Run $runId</p>
+<p>Needle: $needle</p>
+<p>This page represents a customer knowledge article or process page.</p>
+</body>
+</html>
+"@
+    }
+    ".csv" {
+      return "id,title,needle,status,owner`n$index,""$title"",$needle,open,operations`n"
+    }
+    ".tsv" {
+      return "id`tname`tneedle`tstatus`towner`n$index`t$title`t$needle`tactive`toperations`n"
+    }
+    ".vtt" {
+      return @"
+WEBVTT
+
+00:00:00.000 --> 00:00:03.000
+$title.
+
+00:00:03.000 --> 00:00:07.000
+The trace marker is $needle and the response should be grounded in this transcript.
+"@
+    }
+    default {
+      return @"
+# $title
+
+Run: $runId
+Needle: $needle
+Preset: $preset
+
+This fixture file represents realistic customer knowledge that should become searchable after managed source ingestion.
+"@
+    }
+  }
+}
+
+function New-SourceStressFixture($path, $fileCount, $runId, $fixturePreset) {
   if ($fileCount -lt 1) {
     throw "FileCount must be at least 1."
   }
@@ -212,25 +321,10 @@ function New-SourceStressFixture($path, $fileCount, $runId) {
 
   $imported = @()
   for ($index = 1; $index -le $fileCount; $index++) {
-    $bucket = switch ($index % 4) {
-      0 { "runbooks" }
-      1 { "cases" }
-      2 { "policies" }
-      default { "technical-notes" }
-    }
-    $extension = ".md"
-    if ($index % 5 -eq 0) {
-      $extension = ".txt"
-    }
-    $relative = "$bucket/doc-$($index.ToString('0000'))$extension"
+    $spec = New-StressDocumentSpec $fixturePreset $index
+    $relative = $spec.RelativePath
     $needle = "nexus-source-stress-$runId-$($index.ToString('0000'))"
-    $content = @"
-# Source stress document $index
-
-Run: $runId
-Needle: $needle
-This fixture file verifies managed source scanning, ingestion, and retrieval.
-"@
+    $content = New-StressDocumentContent $fixturePreset $spec $index $runId $needle
     Write-StressTextFile $path $relative $content
     $imported += [pscustomobject]@{
       RelativePath = ($relative -replace "\\", "/")
@@ -248,6 +342,7 @@ This fixture file verifies managed source scanning, ingestion, and retrieval.
 
   return [pscustomobject]@{
     Imported = $imported
+    Preset = $fixturePreset
     ExpectedImported = $fileCount
     ExpectedSkipped = 7
     ExpectedFailed = 0
@@ -307,6 +402,31 @@ function Wait-SourceScan($tenantId, $sourceId, $jobId) {
   }
 
   throw "source scan $jobId did not finish before timeout; last state: $lastState"
+}
+
+function Get-SourceScanEntries($tenantId, $sourceId, $outcome) {
+  $entries = @()
+  $offset = 0
+  $limit = 500
+  $encodedTenant = UrlEncode $tenantId
+  $encodedSource = UrlEncode $sourceId
+
+  while ($true) {
+    $url = "$apiBase/v1/data-sources/$encodedSource`?tenant_id=$encodedTenant&scan_entry_limit=$limit&scan_entry_offset=$offset"
+    if (-not [string]::IsNullOrWhiteSpace($outcome)) {
+      $url = "$url&scan_entry_outcome=$(UrlEncode $outcome)"
+    }
+    $detail = Invoke-Json "GET" $url
+    $pageEntries = @($detail.scan_entries)
+    $entries += $pageEntries
+    if (-not $detail.scan_entries_page.has_more) {
+      return $entries
+    }
+    if ($pageEntries.Count -eq 0) {
+      throw "scan entry paging made no progress at offset $offset"
+    }
+    $offset += $detail.scan_entries_page.limit
+  }
 }
 
 function Wait-ImportedDocumentsReady($tenantId, $documentIds) {
@@ -397,6 +517,7 @@ try {
   Write-Host "API:        $apiBase"
   Write-Host "Host path:  $fixtureRoot"
   Write-Host "Source:     $sourceRoot"
+  Write-Host "Preset:     $FixturePreset"
   Write-Host "Files:      $FileCount supported + mixed skipped fixtures"
   Write-Host ""
 
@@ -408,14 +529,14 @@ try {
 
   $tenantId = Select-TenantId $WorkspaceName
 
-  $expected = New-SourceStressFixture $fixtureRoot $FileCount $runId
+  $expected = New-SourceStressFixture $fixtureRoot $FileCount $runId $FixturePreset
   $fixtureCreated = $true
-  Pass "fixture" "$($expected.ExpectedImported) importable, $($expected.ExpectedSkipped) expected skips"
+  Pass "fixture" "$($expected.Preset): $($expected.ExpectedImported) importable, $($expected.ExpectedSkipped) expected skips"
 
   $source = Invoke-Json "POST" "$apiBase/v1/data-sources" @{
     tenant_id = $tenantId
     type = "folder"
-    name = "Nexus Source Stress $runId"
+    name = "Nexus Source Stress $FixturePreset $runId"
     root_path = $sourceRoot
     include_patterns = $IncludePatterns
     exclude_patterns = $ExcludePatterns
@@ -439,7 +560,7 @@ try {
   Assert-ScanSummary $detail $expected
   Pass "scan summary" "$($detail.scan_summary.imported) imported, $($detail.scan_summary.skipped) skipped, $($detail.scan_summary.failed) failed"
 
-  $importedEntries = @($detail.scan_entries | Where-Object { $_.outcome -eq "imported" })
+  $importedEntries = @(Get-SourceScanEntries $tenantId $sourceId "imported")
   if ($importedEntries.Count -ne $expected.ExpectedImported) {
     throw "detail returned $($importedEntries.Count) imported entries, want $($expected.ExpectedImported)"
   }
