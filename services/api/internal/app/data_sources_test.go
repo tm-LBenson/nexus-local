@@ -21,13 +21,14 @@ func TestCreateDataSource(t *testing.T) {
 	service := NewDataSourceService(repos, fixedIDs{}, fixedClock{})
 
 	result, err := service.Create(ctx, CreateDataSourceInput{
-		TenantID:        domain.TenantID("tenant_1"),
-		OwnerID:         domain.UserID("user_1"),
-		Type:            domain.DataSourceTypeSyncedFolder,
-		Name:            "OneDrive Docs",
-		RootPath:        "C:\\Users\\team\\OneDrive\\Docs",
-		IncludePatterns: []string{"**/*.md"},
-		ExcludePatterns: []string{"archive/**"},
+		TenantID:            domain.TenantID("tenant_1"),
+		OwnerID:             domain.UserID("user_1"),
+		Type:                domain.DataSourceTypeSyncedFolder,
+		Name:                "OneDrive Docs",
+		RootPath:            "C:\\Users\\team\\OneDrive\\Docs",
+		IncludePatterns:     []string{"**/*.md"},
+		ExcludePatterns:     []string{"archive/**"},
+		ScanIntervalMinutes: 60,
 	})
 	if err != nil {
 		t.Fatalf("create source: %v", err)
@@ -47,7 +48,9 @@ func TestCreateDataSource(t *testing.T) {
 		len(saved.IncludePatterns) != 1 ||
 		saved.IncludePatterns[0] != "**/*.md" ||
 		len(saved.ExcludePatterns) != 1 ||
-		saved.ExcludePatterns[0] != "archive/**" {
+		saved.ExcludePatterns[0] != "archive/**" ||
+		saved.ScanIntervalMinutes != 60 ||
+		saved.NextScanAt == nil {
 		t.Fatalf("saved source = %#v", saved)
 	}
 }
@@ -96,13 +99,14 @@ func TestUpdateDataSource(t *testing.T) {
 	}
 
 	result, err := service.Update(ctx, UpdateDataSourceInput{
-		TenantID:        source.TenantID,
-		DataSourceID:    source.ID,
-		Type:            domain.DataSourceTypeNetworkShare,
-		Name:            "NAS Runbooks",
-		RootPath:        "\\\\nas\\runbooks",
-		IncludePatterns: []string{"runbooks/**"},
-		ExcludePatterns: []string{"drafts/**"},
+		TenantID:            source.TenantID,
+		DataSourceID:        source.ID,
+		Type:                domain.DataSourceTypeNetworkShare,
+		Name:                "NAS Runbooks",
+		RootPath:            "\\\\nas\\runbooks",
+		IncludePatterns:     []string{"runbooks/**"},
+		ExcludePatterns:     []string{"drafts/**"},
+		ScanIntervalMinutes: 1440,
 	})
 	if err != nil {
 		t.Fatalf("update source: %v", err)
@@ -115,6 +119,9 @@ func TestUpdateDataSource(t *testing.T) {
 		len(result.Source.ExcludePatterns) != 1 ||
 		result.Source.ExcludePatterns[0] != "drafts/**" {
 		t.Fatalf("patterns = %#v/%#v", result.Source.IncludePatterns, result.Source.ExcludePatterns)
+	}
+	if result.Source.ScanIntervalMinutes != 1440 || result.Source.NextScanAt == nil {
+		t.Fatalf("schedule = %d/%v", result.Source.ScanIntervalMinutes, result.Source.NextScanAt)
 	}
 }
 

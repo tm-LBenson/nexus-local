@@ -59,6 +59,50 @@ func TestNewDataSourceNormalizesPatterns(t *testing.T) {
 	}
 }
 
+func TestNewDataSourceCanScheduleScans(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	source, err := NewDataSource(DataSourceCreate{
+		ID:                  DataSourceID("src_1"),
+		TenantID:            TenantID("tenant_1"),
+		OwnerID:             UserID("user_1"),
+		Name:                "Support Docs",
+		RootPath:            "C:\\Docs",
+		ScanIntervalMinutes: 60,
+		Now:                 now,
+	})
+	if err != nil {
+		t.Fatalf("new data source: %v", err)
+	}
+	if source.ScanIntervalMinutes != 60 || source.NextScanAt == nil || !source.NextScanAt.Equal(now) {
+		t.Fatalf("schedule = %d/%v, want 60/%s", source.ScanIntervalMinutes, source.NextScanAt, now)
+	}
+
+	if err := source.Transition(DataSourceStatusScanning, now); err != nil {
+		t.Fatalf("transition: %v", err)
+	}
+	if err := source.CompleteScan(1, 0, 0, now.Add(10*time.Minute)); err != nil {
+		t.Fatalf("complete scan: %v", err)
+	}
+	wantNext := now.Add(70 * time.Minute)
+	if source.NextScanAt == nil || !source.NextScanAt.Equal(wantNext) {
+		t.Fatalf("next scan = %v, want %s", source.NextScanAt, wantNext)
+	}
+}
+
+func TestNewDataSourceRejectsInvalidSchedule(t *testing.T) {
+	_, err := NewDataSource(DataSourceCreate{
+		ID:                  DataSourceID("src_1"),
+		TenantID:            TenantID("tenant_1"),
+		OwnerID:             UserID("user_1"),
+		Name:                "Support Docs",
+		RootPath:            "C:\\Docs",
+		ScanIntervalMinutes: 1,
+	})
+	if !errors.Is(err, ErrInvalidEntity) {
+		t.Fatalf("err = %v, want invalid entity", err)
+	}
+}
+
 func TestNewDataSourceRejectsUnsafePattern(t *testing.T) {
 	_, err := NewDataSource(DataSourceCreate{
 		ID:              DataSourceID("src_1"),
@@ -99,7 +143,7 @@ func TestDataSourceUpdateAndArchive(t *testing.T) {
 		t.Fatalf("new data source: %v", err)
 	}
 	updatedAt := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
-	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", []string{"**/*.md"}, []string{"archive/**"}, updatedAt); err != nil {
+	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", []string{"**/*.md"}, []string{"archive/**"}, 1440, updatedAt); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if source.Name != "Runbooks" || source.Type != DataSourceTypeNetworkShare || source.RootPath != "\\\\nas\\runbooks" {
@@ -109,10 +153,16 @@ func TestDataSourceUpdateAndArchive(t *testing.T) {
 		len(source.ExcludePatterns) != 1 || source.ExcludePatterns[0] != "archive/**" {
 		t.Fatalf("patterns after update = %#v/%#v", source.IncludePatterns, source.ExcludePatterns)
 	}
+	if source.ScanIntervalMinutes != 1440 || source.NextScanAt == nil {
+		t.Fatalf("schedule after update = %d/%v", source.ScanIntervalMinutes, source.NextScanAt)
+	}
 	if err := source.Transition(DataSourceStatusArchived, updatedAt.Add(time.Hour)); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", nil, nil, updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
+	if source.NextScanAt != nil {
+		t.Fatalf("next scan after archive = %v, want nil", source.NextScanAt)
+	}
+	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", nil, nil, 0, updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
 		t.Fatalf("err = %v, want invalid entity", err)
 	}
 }

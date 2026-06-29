@@ -15,6 +15,14 @@ The worker executable processes two durable job types from the same database-bac
 - `source_scan` jobs for managed folder/synced-drive/network-share sources.
 - `document_ingestion` jobs for parsing and indexing uploaded or scanned documents.
 
+Source scheduling behavior:
+
+1. On each worker poll, find sources whose `next_scan_at` is due.
+2. Skip archived/scanning sources and sources with an already active `source_scan` job.
+3. Queue a normal `source_scan` job for each due source.
+4. Advance `next_scan_at` by `scan_interval_minutes` so duplicate scans are not queued every poll.
+5. Manual scans and completed/failed scheduled scans also advance the next due scan.
+
 Source scan behavior:
 
 1. Claim the next queued `source_scan` job.

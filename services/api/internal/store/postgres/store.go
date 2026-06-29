@@ -236,13 +236,18 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 	if source.LastScanAt != nil {
 		lastScanAt = *source.LastScanAt
 	}
+	var nextScanAt any
+	if source.NextScanAt != nil {
+		nextScanAt = *source.NextScanAt
+	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO data_sources (
-			tenant_id, id, owner_id, type, name, root_path, include_patterns, exclude_patterns, status, last_scan_at,
+			tenant_id, id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+			scan_interval_minutes, next_scan_at, status, last_scan_at,
 			last_scan_imported, last_scan_skipped, last_scan_failed,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (tenant_id, id) DO UPDATE
 		SET owner_id = EXCLUDED.owner_id,
 		    type = EXCLUDED.type,
@@ -250,21 +255,25 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 		    root_path = EXCLUDED.root_path,
 		    include_patterns = EXCLUDED.include_patterns,
 		    exclude_patterns = EXCLUDED.exclude_patterns,
+		    scan_interval_minutes = EXCLUDED.scan_interval_minutes,
+		    next_scan_at = EXCLUDED.next_scan_at,
 		    status = EXCLUDED.status,
 		    last_scan_at = EXCLUDED.last_scan_at,
 		    last_scan_imported = EXCLUDED.last_scan_imported,
 		    last_scan_skipped = EXCLUDED.last_scan_skipped,
 		    last_scan_failed = EXCLUDED.last_scan_failed,
 		    updated_at = EXCLUDED.updated_at
-	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.IncludePatterns, source.ExcludePatterns, source.Status, lastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed, source.CreatedAt, source.UpdatedAt)
+	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.IncludePatterns, source.ExcludePatterns, source.ScanIntervalMinutes, nextScanAt, source.Status, lastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed, source.CreatedAt, source.UpdatedAt)
 	return err
 }
 
 func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id domain.DataSourceID) (domain.DataSource, error) {
 	var source domain.DataSource
 	var lastScanAt sql.NullTime
+	var nextScanAt sql.NullTime
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns, status, last_scan_at,
+		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		       scan_interval_minutes, next_scan_at, status, last_scan_at,
 		       last_scan_imported, last_scan_skipped, last_scan_failed,
 		       created_at, updated_at
 		FROM data_sources
@@ -278,6 +287,8 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 		&source.RootPath,
 		&source.IncludePatterns,
 		&source.ExcludePatterns,
+		&source.ScanIntervalMinutes,
+		&nextScanAt,
 		&source.Status,
 		&lastScanAt,
 		&source.LastScanImported,
@@ -292,12 +303,16 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 	if lastScanAt.Valid {
 		source.LastScanAt = &lastScanAt.Time
 	}
+	if nextScanAt.Valid {
+		source.NextScanAt = &nextScanAt.Time
+	}
 	return source, nil
 }
 
 func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns, status, last_scan_at,
+		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		       scan_interval_minutes, next_scan_at, status, last_scan_at,
 		       last_scan_imported, last_scan_skipped, last_scan_failed,
 		       created_at, updated_at
 		FROM data_sources
@@ -313,6 +328,7 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 	for rows.Next() {
 		var source domain.DataSource
 		var lastScanAt sql.NullTime
+		var nextScanAt sql.NullTime
 		if err := rows.Scan(
 			&source.ID,
 			&source.TenantID,
@@ -322,6 +338,8 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 			&source.RootPath,
 			&source.IncludePatterns,
 			&source.ExcludePatterns,
+			&source.ScanIntervalMinutes,
+			&nextScanAt,
 			&source.Status,
 			&lastScanAt,
 			&source.LastScanImported,
@@ -334,6 +352,70 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		}
 		if lastScanAt.Valid {
 			source.LastScanAt = &lastScanAt.Time
+		}
+		if nextScanAt.Valid {
+			source.NextScanAt = &nextScanAt.Time
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
+func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error) {
+	query := `
+		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		       scan_interval_minutes, next_scan_at, status, last_scan_at,
+		       last_scan_imported, last_scan_skipped, last_scan_failed,
+		       created_at, updated_at
+		FROM data_sources
+		WHERE scan_interval_minutes > 0
+		  AND next_scan_at IS NOT NULL
+		  AND next_scan_at <= $1
+		  AND status IN ('active', 'failed')
+		ORDER BY next_scan_at ASC, tenant_id, id
+	`
+	args := []any{now}
+	if limit > 0 {
+		query += " LIMIT $2"
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sources := make([]domain.DataSource, 0)
+	for rows.Next() {
+		var source domain.DataSource
+		var lastScanAt sql.NullTime
+		var nextScanAt sql.NullTime
+		if err := rows.Scan(
+			&source.ID,
+			&source.TenantID,
+			&source.OwnerID,
+			&source.Type,
+			&source.Name,
+			&source.RootPath,
+			&source.IncludePatterns,
+			&source.ExcludePatterns,
+			&source.ScanIntervalMinutes,
+			&nextScanAt,
+			&source.Status,
+			&lastScanAt,
+			&source.LastScanImported,
+			&source.LastScanSkipped,
+			&source.LastScanFailed,
+			&source.CreatedAt,
+			&source.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if lastScanAt.Valid {
+			source.LastScanAt = &lastScanAt.Time
+		}
+		if nextScanAt.Valid {
+			source.NextScanAt = &nextScanAt.Time
 		}
 		sources = append(sources, source)
 	}

@@ -35,21 +35,23 @@ const (
 )
 
 type DataSource struct {
-	ID               DataSourceID
-	TenantID         TenantID
-	OwnerID          UserID
-	Type             DataSourceType
-	Name             string
-	RootPath         string
-	IncludePatterns  []string
-	ExcludePatterns  []string
-	Status           DataSourceStatus
-	LastScanAt       *time.Time
-	LastScanImported int
-	LastScanSkipped  int
-	LastScanFailed   int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  DataSourceID
+	TenantID            TenantID
+	OwnerID             UserID
+	Type                DataSourceType
+	Name                string
+	RootPath            string
+	IncludePatterns     []string
+	ExcludePatterns     []string
+	ScanIntervalMinutes int
+	NextScanAt          *time.Time
+	Status              DataSourceStatus
+	LastScanAt          *time.Time
+	LastScanImported    int
+	LastScanSkipped     int
+	LastScanFailed      int
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 type DataSourceScanEntry struct {
@@ -67,15 +69,16 @@ type DataSourceScanEntry struct {
 }
 
 type DataSourceCreate struct {
-	ID              DataSourceID
-	TenantID        TenantID
-	OwnerID         UserID
-	Type            DataSourceType
-	Name            string
-	RootPath        string
-	IncludePatterns []string
-	ExcludePatterns []string
-	Now             time.Time
+	ID                  DataSourceID
+	TenantID            TenantID
+	OwnerID             UserID
+	Type                DataSourceType
+	Name                string
+	RootPath            string
+	IncludePatterns     []string
+	ExcludePatterns     []string
+	ScanIntervalMinutes int
+	Now                 time.Time
 }
 
 type DataSourceScanEntryCreate struct {
@@ -105,6 +108,10 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 	if err != nil {
 		return DataSource{}, fmt.Errorf("data source exclude patterns: %w", err)
 	}
+	scanIntervalMinutes, err := NormalizeScanIntervalMinutes(input.ScanIntervalMinutes)
+	if err != nil {
+		return DataSource{}, fmt.Errorf("data source scan interval: %w", err)
+	}
 	if emptyID(string(input.ID)) ||
 		emptyID(string(input.TenantID)) ||
 		emptyID(string(input.OwnerID)) ||
@@ -117,19 +124,26 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	var nextScanAt *time.Time
+	if scanIntervalMinutes > 0 {
+		next := now
+		nextScanAt = &next
+	}
 
 	return DataSource{
-		ID:              input.ID,
-		TenantID:        input.TenantID,
-		OwnerID:         input.OwnerID,
-		Type:            sourceType,
-		Name:            strings.TrimSpace(input.Name),
-		RootPath:        strings.TrimSpace(input.RootPath),
-		IncludePatterns: includePatterns,
-		ExcludePatterns: excludePatterns,
-		Status:          DataSourceStatusActive,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                  input.ID,
+		TenantID:            input.TenantID,
+		OwnerID:             input.OwnerID,
+		Type:                sourceType,
+		Name:                strings.TrimSpace(input.Name),
+		RootPath:            strings.TrimSpace(input.RootPath),
+		IncludePatterns:     includePatterns,
+		ExcludePatterns:     excludePatterns,
+		ScanIntervalMinutes: scanIntervalMinutes,
+		NextScanAt:          nextScanAt,
+		Status:              DataSourceStatusActive,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}, nil
 }
 
@@ -162,7 +176,7 @@ func NewDataSourceScanEntry(input DataSourceScanEntryCreate) (DataSourceScanEntr
 	}, nil
 }
 
-func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, includePatterns []string, excludePatterns []string, now time.Time) error {
+func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, includePatterns []string, excludePatterns []string, scanIntervalMinutes int, now time.Time) error {
 	if sourceType == "" {
 		sourceType = s.Type
 	}
@@ -173,6 +187,10 @@ func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath str
 	normalizedExclude, err := NormalizeDataSourcePatterns(excludePatterns)
 	if err != nil {
 		return fmt.Errorf("data source update exclude patterns: %w", err)
+	}
+	normalizedInterval, err := NormalizeScanIntervalMinutes(scanIntervalMinutes)
+	if err != nil {
+		return fmt.Errorf("data source update scan interval: %w", err)
 	}
 	if !sourceType.Valid() ||
 		strings.TrimSpace(name) == "" ||
@@ -188,6 +206,13 @@ func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath str
 	s.RootPath = strings.TrimSpace(rootPath)
 	s.IncludePatterns = normalizedInclude
 	s.ExcludePatterns = normalizedExclude
+	intervalChanged := s.ScanIntervalMinutes != normalizedInterval
+	s.ScanIntervalMinutes = normalizedInterval
+	if normalizedInterval == 0 {
+		s.NextScanAt = nil
+	} else if intervalChanged || s.NextScanAt == nil {
+		s.NextScanAt = nextScanAtForInterval(normalizedInterval, s.LastScanAt, now)
+	}
 	s.UpdatedAt = now
 	return nil
 }
@@ -204,6 +229,9 @@ func (s *DataSource) Transition(next DataSourceStatus, now time.Time) error {
 		scannedAt := now
 		s.LastScanAt = &scannedAt
 	}
+	if next == DataSourceStatusArchived {
+		s.NextScanAt = nil
+	}
 	s.UpdatedAt = now
 	return nil
 }
@@ -218,6 +246,7 @@ func (s *DataSource) CompleteScan(imported int, skipped int, failed int, now tim
 	s.LastScanImported = imported
 	s.LastScanSkipped = skipped
 	s.LastScanFailed = failed
+	s.ScheduleNextScan(now)
 	return nil
 }
 
@@ -238,8 +267,22 @@ func (s *DataSource) FailScan(imported int, skipped int, failed int, now time.Ti
 	s.LastScanImported = imported
 	s.LastScanSkipped = skipped
 	s.LastScanFailed = failed
+	s.ScheduleNextScan(now)
 	s.UpdatedAt = now
 	return nil
+}
+
+func (s *DataSource) ScheduleNextScan(now time.Time) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if s.ScanIntervalMinutes <= 0 || s.Status == DataSourceStatusArchived {
+		s.NextScanAt = nil
+		return
+	}
+	next := now.Add(time.Duration(s.ScanIntervalMinutes) * time.Minute)
+	s.NextScanAt = &next
+	s.UpdatedAt = now
 }
 
 func (t DataSourceType) Valid() bool {
@@ -272,6 +315,40 @@ func validateScanCounts(imported int, skipped int, failed int) error {
 		return fmt.Errorf("data source scan counts: %w", ErrInvalidEntity)
 	}
 	return nil
+}
+
+const minScanIntervalMinutes = 5
+const maxScanIntervalMinutes = 43200
+
+func NormalizeScanIntervalMinutes(minutes int) (int, error) {
+	if minutes < 0 {
+		return 0, fmt.Errorf("scan interval is negative: %w", ErrInvalidEntity)
+	}
+	if minutes == 0 {
+		return 0, nil
+	}
+	if minutes < minScanIntervalMinutes || minutes > maxScanIntervalMinutes {
+		return 0, fmt.Errorf("scan interval must be 0 or between %d and %d minutes: %w", minScanIntervalMinutes, maxScanIntervalMinutes, ErrInvalidEntity)
+	}
+	return minutes, nil
+}
+
+func nextScanAtForInterval(minutes int, lastScanAt *time.Time, now time.Time) *time.Time {
+	if minutes <= 0 {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if lastScanAt == nil {
+		next := now
+		return &next
+	}
+	next := lastScanAt.Add(time.Duration(minutes) * time.Minute)
+	if next.Before(now) {
+		next = now
+	}
+	return &next
 }
 
 const maxDataSourcePatterns = 100

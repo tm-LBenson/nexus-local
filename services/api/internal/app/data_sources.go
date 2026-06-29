@@ -25,23 +25,25 @@ type DataSourceService struct {
 }
 
 type CreateDataSourceInput struct {
-	TenantID        domain.TenantID
-	OwnerID         domain.UserID
-	Type            domain.DataSourceType
-	Name            string
-	RootPath        string
-	IncludePatterns []string
-	ExcludePatterns []string
+	TenantID            domain.TenantID
+	OwnerID             domain.UserID
+	Type                domain.DataSourceType
+	Name                string
+	RootPath            string
+	IncludePatterns     []string
+	ExcludePatterns     []string
+	ScanIntervalMinutes int
 }
 
 type UpdateDataSourceInput struct {
-	TenantID        domain.TenantID
-	DataSourceID    domain.DataSourceID
-	Type            domain.DataSourceType
-	Name            string
-	RootPath        string
-	IncludePatterns []string
-	ExcludePatterns []string
+	TenantID            domain.TenantID
+	DataSourceID        domain.DataSourceID
+	Type                domain.DataSourceType
+	Name                string
+	RootPath            string
+	IncludePatterns     []string
+	ExcludePatterns     []string
+	ScanIntervalMinutes int
 }
 
 type DataSourceDetailInput struct {
@@ -122,15 +124,16 @@ func (s DataSourceService) Create(ctx context.Context, input CreateDataSourceInp
 		return DataSourceResult{}, err
 	}
 	source, err := domain.NewDataSource(domain.DataSourceCreate{
-		ID:              s.ids.NewDataSourceID(),
-		TenantID:        input.TenantID,
-		OwnerID:         input.OwnerID,
-		Type:            input.Type,
-		Name:            input.Name,
-		RootPath:        input.RootPath,
-		IncludePatterns: input.IncludePatterns,
-		ExcludePatterns: input.ExcludePatterns,
-		Now:             s.clock.Now(),
+		ID:                  s.ids.NewDataSourceID(),
+		TenantID:            input.TenantID,
+		OwnerID:             input.OwnerID,
+		Type:                input.Type,
+		Name:                input.Name,
+		RootPath:            input.RootPath,
+		IncludePatterns:     input.IncludePatterns,
+		ExcludePatterns:     input.ExcludePatterns,
+		ScanIntervalMinutes: input.ScanIntervalMinutes,
+		Now:                 s.clock.Now(),
 	})
 	if err != nil {
 		return DataSourceResult{}, err
@@ -149,7 +152,7 @@ func (s DataSourceService) Update(ctx context.Context, input UpdateDataSourceInp
 	if err != nil {
 		return DataSourceResult{}, err
 	}
-	if err := source.Update(input.Name, input.Type, input.RootPath, input.IncludePatterns, input.ExcludePatterns, s.clock.Now()); err != nil {
+	if err := source.Update(input.Name, input.Type, input.RootPath, input.IncludePatterns, input.ExcludePatterns, input.ScanIntervalMinutes, s.clock.Now()); err != nil {
 		return DataSourceResult{}, err
 	}
 	if err := s.repos.SaveDataSource(ctx, source); err != nil {

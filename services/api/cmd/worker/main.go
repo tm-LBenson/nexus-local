@@ -40,6 +40,7 @@ func main() {
 	}
 
 	ids := app.NewRandomIDs()
+	sourceScheduler := worker.NewSourceScheduler(repos, ids, systemClock{})
 	sourceScanWorker := worker.NewSourceScanWorker(repos, ids, systemClock{}).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
@@ -57,6 +58,13 @@ func main() {
 			log.Print("worker stopped")
 			return
 		default:
+		}
+
+		scheduleResult, err := sourceScheduler.QueueDueScans(ctx, 25)
+		if err != nil {
+			log.Printf("source scheduler error: %v", err)
+		} else if scheduleResult.QueuedCount > 0 || scheduleResult.SkippedActiveCount > 0 {
+			log.Printf("source scheduler queued=%d skipped_active=%d", scheduleResult.QueuedCount, scheduleResult.SkippedActiveCount)
 		}
 
 		scanResult, err := sourceScanWorker.ProcessNext(ctx)

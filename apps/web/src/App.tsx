@@ -96,6 +96,7 @@ const initialSourceForm = {
   root_path: '',
   include_patterns: '',
   exclude_patterns: '',
+  scan_interval_minutes: '0',
 };
 
 const supportedDocumentAccept = [
@@ -800,6 +801,7 @@ export function App() {
         root_path: sourceForm.root_path.trim(),
         include_patterns: patternLinesToList(sourceForm.include_patterns),
         exclude_patterns: patternLinesToList(sourceForm.exclude_patterns),
+        scan_interval_minutes: Number(sourceForm.scan_interval_minutes),
       });
       setSourceForm(initialSourceForm);
       await Promise.all([
@@ -833,6 +835,7 @@ export function App() {
         root_path: sourceEditForm.root_path.trim(),
         include_patterns: patternLinesToList(sourceEditForm.include_patterns),
         exclude_patterns: patternLinesToList(sourceEditForm.exclude_patterns),
+        scan_interval_minutes: Number(sourceEditForm.scan_interval_minutes),
       });
       setSourceDetail((current) =>
         current && current.source.id === result.source.id
@@ -1787,6 +1790,22 @@ export function App() {
                     placeholder="C:\\Docs, /mnt/docs, or \\\\server\\share"
                     value={sourceForm.root_path}
                   />
+                  <select
+                    aria-label="Source schedule"
+                    onChange={(event) =>
+                      setSourceForm((current) => ({
+                        ...current,
+                        scan_interval_minutes: event.target.value,
+                      }))
+                    }
+                    value={sourceForm.scan_interval_minutes}
+                  >
+                    <option value="0">Manual</option>
+                    <option value="15">15 min</option>
+                    <option value="60">Hourly</option>
+                    <option value="1440">Daily</option>
+                    <option value="10080">Weekly</option>
+                  </select>
                   <div className="sourcePatternFields">
                     <label>
                       <span>Include</span>
@@ -2022,6 +2041,18 @@ export function App() {
                       </dd>
                     </div>
                     <div>
+                      <dt>Schedule</dt>
+                      <dd>{sourceScheduleLabel(sourceDetail.source.scan_interval_minutes)}</dd>
+                    </div>
+                    <div>
+                      <dt>Next scan</dt>
+                      <dd>
+                        {sourceDetail.source.next_scan_at
+                          ? formatDateTime(sourceDetail.source.next_scan_at)
+                          : 'Manual'}
+                      </dd>
+                    </div>
+                    <div>
                       <dt>Imported</dt>
                       <dd>{sourceDetail.source.last_scan_imported ?? 0}</dd>
                     </div>
@@ -2085,6 +2116,26 @@ export function App() {
                         }
                         value={sourceEditForm.root_path}
                       />
+                      <select
+                        aria-label="Edit source schedule"
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        onChange={(event) =>
+                          setSourceEditForm((current) => ({
+                            ...current,
+                            scan_interval_minutes: event.target.value,
+                          }))
+                        }
+                        value={sourceEditForm.scan_interval_minutes}
+                      >
+                        <option value="0">Manual</option>
+                        <option value="15">15 min</option>
+                        <option value="60">Hourly</option>
+                        <option value="1440">Daily</option>
+                        <option value="10080">Weekly</option>
+                      </select>
                       <div className="sourcePatternFields">
                         <label>
                           <span>Include</span>
@@ -3557,6 +3608,7 @@ function sourceFormFromSource(source: ListDataSourcesResponse['sources'][number]
     root_path: source.root_path,
     include_patterns: (source.include_patterns ?? []).join('\n'),
     exclude_patterns: (source.exclude_patterns ?? []).join('\n'),
+    scan_interval_minutes: String(source.scan_interval_minutes ?? 0),
   };
 }
 
@@ -3647,6 +3699,31 @@ function askWaitingLabel(phase: AskPhase) {
     default:
       return 'Working';
   }
+}
+
+function sourceScheduleLabel(minutes: number) {
+  if (!minutes) {
+    return 'Manual';
+  }
+  if (minutes === 15) {
+    return '15 min';
+  }
+  if (minutes === 60) {
+    return 'Hourly';
+  }
+  if (minutes === 1440) {
+    return 'Daily';
+  }
+  if (minutes === 10080) {
+    return 'Weekly';
+  }
+  if (minutes % 1440 === 0) {
+    return `${minutes / 1440} days`;
+  }
+  if (minutes % 60 === 0) {
+    return `${minutes / 60} hours`;
+  }
+  return `${minutes} min`;
 }
 
 function titleCase(value: string) {

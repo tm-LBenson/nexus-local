@@ -32,6 +32,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.8 | Explicit destructive source cleanup. | User can archive a source and delete documents imported from that source, with audit trail and active-scan protection. |
 | 2.9 | Source-level reindex controls. | User can queue fresh ingestion jobs for documents from a source without rescanning the folder. |
 | 2.10 | Source include/exclude configuration. | User can narrow managed imports with source-relative patterns and see filtered files in scan outcomes. |
+| 2.11 | Scheduled source maintenance. | Worker queues due source scans from per-source intervals without browser involvement. |
 
 ## Dependencies
 
@@ -48,4 +49,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.10 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, and configurable source filters. Next, harden it with scheduled source maintenance and connector-oriented source setup.
+Slices 2.1 through 2.11 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, and scheduled source scans. Next, harden it with connector-oriented source setup and larger import observability.

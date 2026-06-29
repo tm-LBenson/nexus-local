@@ -37,6 +37,7 @@ type DataSourceRepository interface {
 	SaveDataSource(ctx context.Context, source domain.DataSource) error
 	GetDataSource(ctx context.Context, tenantID domain.TenantID, id domain.DataSourceID) (domain.DataSource, error)
 	ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error)
+	ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error)
 	SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error
 	ListDataSourceScanEntries(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, limit int) ([]domain.DataSourceScanEntry, error)
 }

@@ -584,7 +584,8 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"name": "OneDrive Support Docs",
 		"root_path": "C:\\Users\\team\\OneDrive\\Support",
 		"include_patterns": ["**/*.md", "**/*.pdf"],
-		"exclude_patterns": ["archive/**"]
+		"exclude_patterns": ["archive/**"],
+		"scan_interval_minutes": 60
 	}`))
 	server.ServeHTTP(create, createReq)
 	if create.Code != http.StatusCreated {
@@ -607,6 +608,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 		len(createBody.Source.ExcludePatterns) != 1 ||
 		createBody.Source.ExcludePatterns[0] != "archive/**" {
 		t.Fatalf("create patterns = %#v/%#v", createBody.Source.IncludePatterns, createBody.Source.ExcludePatterns)
+	}
+	if createBody.Source.ScanIntervalMinutes != 60 || createBody.Source.NextScanAt == "" {
+		t.Fatalf("create schedule = %d/%q", createBody.Source.ScanIntervalMinutes, createBody.Source.NextScanAt)
 	}
 
 	list := httptest.NewRecorder()
@@ -632,7 +636,8 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"name": "NAS Runbooks",
 		"root_path": "\\\\nas\\runbooks",
 		"include_patterns": ["runbooks/**"],
-		"exclude_patterns": ["drafts/**", "*.tmp"]
+		"exclude_patterns": ["drafts/**", "*.tmp"],
+		"scan_interval_minutes": 1440
 	}`))
 	server.ServeHTTP(update, updateReq)
 	if update.Code != http.StatusOK {
@@ -652,6 +657,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 		len(updateBody.Source.ExcludePatterns) != 2 ||
 		updateBody.Source.ExcludePatterns[1] != "*.tmp" {
 		t.Fatalf("updated patterns = %#v/%#v", updateBody.Source.IncludePatterns, updateBody.Source.ExcludePatterns)
+	}
+	if updateBody.Source.ScanIntervalMinutes != 1440 || updateBody.Source.NextScanAt == "" {
+		t.Fatalf("updated schedule = %d/%q", updateBody.Source.ScanIntervalMinutes, updateBody.Source.NextScanAt)
 	}
 
 	get := httptest.NewRecorder()
@@ -673,6 +681,9 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 	if len(getBody.Source.IncludePatterns) != 1 || getBody.Source.IncludePatterns[0] != "runbooks/**" {
 		t.Fatalf("get patterns = %#v", getBody.Source.IncludePatterns)
+	}
+	if getBody.Source.ScanIntervalMinutes != 1440 || getBody.Source.NextScanAt == "" {
+		t.Fatalf("get schedule = %d/%q", getBody.Source.ScanIntervalMinutes, getBody.Source.NextScanAt)
 	}
 
 	scan := httptest.NewRecorder()

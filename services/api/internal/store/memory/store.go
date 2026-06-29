@@ -293,6 +293,39 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 	return sources, nil
 }
 
+func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sources := make([]domain.DataSource, 0)
+	for _, source := range s.dataSources {
+		if source.ScanIntervalMinutes <= 0 ||
+			source.NextScanAt == nil ||
+			source.NextScanAt.After(now) ||
+			source.Status == domain.DataSourceStatusArchived ||
+			source.Status == domain.DataSourceStatusScanning {
+			continue
+		}
+		sources = append(sources, source)
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if sources[i].NextScanAt.Equal(*sources[j].NextScanAt) {
+			if sources[i].TenantID != sources[j].TenantID {
+				return sources[i].TenantID < sources[j].TenantID
+			}
+			return sources[i].ID < sources[j].ID
+		}
+		return sources[i].NextScanAt.Before(*sources[j].NextScanAt)
+	})
+	if limit > 0 && len(sources) > limit {
+		sources = sources[:limit]
+	}
+	return sources, nil
+}
+
 func (s *Store) SaveDataSourceScanEntry(ctx context.Context, entry domain.DataSourceScanEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
