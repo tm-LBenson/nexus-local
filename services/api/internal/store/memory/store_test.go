@@ -276,6 +276,31 @@ func TestDeleteConversationRemovesMessages(t *testing.T) {
 	}
 }
 
+func TestAuditEventsAreTenantScopedAndRecentFirst(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+
+	first := newTestAuditEvent(t, domain.TenantID("tenant_a"), domain.AuditEventID("audit_1"), fixedTime())
+	second := newTestAuditEvent(t, domain.TenantID("tenant_a"), domain.AuditEventID("audit_2"), fixedTime().Add(time.Minute))
+	otherTenant := newTestAuditEvent(t, domain.TenantID("tenant_b"), domain.AuditEventID("audit_3"), fixedTime().Add(2*time.Minute))
+	for _, event := range []domain.AuditEvent{first, second, otherTenant} {
+		if err := repo.SaveAuditEvent(ctx, event); err != nil {
+			t.Fatalf("save audit %s: %v", event.ID, err)
+		}
+	}
+
+	events, err := repo.ListAuditEvents(ctx, domain.TenantID("tenant_a"), 1)
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1", len(events))
+	}
+	if events[0].ID != domain.AuditEventID("audit_2") {
+		t.Fatalf("event id = %s, want audit_2", events[0].ID)
+	}
+}
+
 func newTestDocument(t *testing.T, tenantID domain.TenantID, documentID domain.DocumentID) domain.Document {
 	t.Helper()
 
@@ -338,6 +363,24 @@ func newTestJob(t *testing.T, tenantID domain.TenantID, jobID domain.JobID, now 
 		t.Fatalf("new job: %v", err)
 	}
 	return job
+}
+
+func newTestAuditEvent(t *testing.T, tenantID domain.TenantID, eventID domain.AuditEventID, now time.Time) domain.AuditEvent {
+	t.Helper()
+
+	event, err := domain.NewAuditEvent(domain.AuditEventCreate{
+		ID:           eventID,
+		TenantID:     tenantID,
+		ActorUserID:  domain.UserID("user_1"),
+		Action:       "search.completed",
+		ResourceType: "search",
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Now:          now,
+	})
+	if err != nil {
+		t.Fatalf("new audit event: %v", err)
+	}
+	return event
 }
 
 func newTestConversation(t *testing.T, tenantID domain.TenantID, conversationID domain.ConversationID, now time.Time) domain.Conversation {

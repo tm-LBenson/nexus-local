@@ -16,6 +16,7 @@ Stable product concepts:
 - messages
 - documents
 - jobs
+- audit events
 
 The domain package should not import Postgres, Qdrant, MinIO, NATS, HTTP clients, or framework code. It owns product rules such as document lifecycle transitions and job state transitions.
 
@@ -78,6 +79,14 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 `DELETE /v1/documents/<document_id>?tenant_id=<tenant_id>` soft-deletes a document, removes its stored object when object storage is configured, and removes vectors when a vector index is configured. Normal document lists omit deleted documents.
 
 `GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100. Failed jobs include `error_message` with the ingestion or worker failure reason.
+
+`GET /v1/audit-events?tenant_id=<tenant_id>` lists recent tenant audit events for administrative review. Results are newest first, default to 50 events, and cap at 200. Events include actor, action, resource type, resource ID, outcome, metadata, and creation time.
+
+Current audited actions:
+
+- `document.uploaded`
+- `search.completed`
+- `conversation.ask`
 
 `GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows.
 

@@ -49,6 +49,11 @@ type ConversationRepository interface {
 	ListMessages(ctx context.Context, tenantID domain.TenantID, conversationID domain.ConversationID) ([]domain.Message, error)
 }
 
+type AuditRepository interface {
+	SaveAuditEvent(ctx context.Context, event domain.AuditEvent) error
+	ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error)
+}
+
 type RepositorySet interface {
 	TenantRepository
 	UserRepository
@@ -56,4 +61,5 @@ type RepositorySet interface {
 	DocumentRepository
 	JobRepository
 	ConversationRepository
+	AuditRepository
 }

@@ -56,6 +56,7 @@ func main() {
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
 	jobService := app.NewJobService(repos)
+	auditService := app.NewAuditService(repos, ids, clock)
 	searchService := app.NewSearchService(embedder, vectorIndex)
 	conversationService := app.NewConversationService(repos, ids, clock, searchService, modelGateway)
 
@@ -67,6 +68,7 @@ func main() {
 			Tenants:       tenantService,
 			Documents:     documentService,
 			Jobs:          jobService,
+			Audit:         auditService,
 			Search:        searchService,
 			Conversations: conversationService,
 			Authenticator: authenticator,

@@ -31,6 +31,7 @@ type Dependencies struct {
 	Tenants       app.TenantService
 	Documents     app.DocumentService
 	Jobs          app.JobService
+	Audit         app.AuditService
 	Search        app.SearchService
 	Conversations app.ConversationService
 	Authenticator internalauth.Authenticator
@@ -54,16 +55,17 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/documents/{document_id}", getDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/documents/{document_id}/download", downloadDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("POST /v1/documents/register", registerDocumentHandler(deps.Documents, deps.Authorizer))
-	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer))
+	mux.HandleFunc("POST /v1/documents/upload", uploadDocumentHandler(deps.Documents, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("POST /v1/documents/{document_id}/retry", retryDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/documents/{document_id}", deleteDocumentHandler(deps.Documents, deps.Authorizer))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
-	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer))
+	mux.HandleFunc("GET /v1/audit-events", listAuditEventsHandler(deps.Audit, deps.Authorizer))
+	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/conversations", listConversationsHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("GET /v1/conversations/{conversation_id}/messages", listConversationMessagesHandler(deps.Conversations, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/conversations/{conversation_id}", deleteConversationHandler(deps.Conversations, deps.Authorizer))
-	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer))
-	mux.HandleFunc("POST /v1/conversations/ask/stream", askConversationStreamHandler(deps.Conversations, deps.Authorizer))
+	mux.HandleFunc("POST /v1/conversations/ask", askConversationHandler(deps.Conversations, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("POST /v1/conversations/ask/stream", askConversationStreamHandler(deps.Conversations, deps.Authorizer, deps.Audit))
 
 	return loggingMiddleware(corsMiddleware(cfg, authMiddleware(deps.Authenticator, mux)))
 }
@@ -297,6 +299,18 @@ type jobPayload struct {
 	ErrorMessage string `json:"error_message"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
+}
+
+type auditEventPayload struct {
+	ID           string            `json:"id"`
+	TenantID     string            `json:"tenant_id"`
+	ActorUserID  string            `json:"actor_user_id"`
+	Action       string            `json:"action"`
+	ResourceType string            `json:"resource_type"`
+	ResourceID   string            `json:"resource_id"`
+	Outcome      string            `json:"outcome"`
+	Metadata     map[string]string `json:"metadata"`
+	CreatedAt    string            `json:"created_at"`
 }
 
 type searchRequest struct {
@@ -651,7 +665,7 @@ func downloadDocumentHandler(service app.DocumentService, authorizer internalaut
 	}
 }
 
-func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer) http.HandlerFunc {
+func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(64 << 20); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form")
@@ -702,6 +716,18 @@ func uploadDocumentHandler(service app.DocumentService, authorizer internalauth.
 			writeError(w, status, fmt.Sprintf("upload document: %v", err))
 			return
 		}
+		recordAudit(r.Context(), audit, app.RecordAuditInput{
+			TenantID:     tenantID,
+			ActorUserID:  principal.UserID,
+			Action:       "document.uploaded",
+			ResourceType: "document",
+			ResourceID:   string(result.Document.ID),
+			Outcome:      domain.AuditOutcomeSucceeded,
+			Metadata: map[string]string{
+				"name":       result.Document.Name,
+				"size_bytes": strconv.FormatInt(result.Document.SizeBytes, 10),
+			},
+		})
 
 		writeJSON(w, http.StatusCreated, envelope{
 			"document": encodeDocument(result.Document),
@@ -805,14 +831,48 @@ func listJobsHandler(service app.JobService, authorizer internalauth.Authorizer)
 	}
 }
 
-func searchHandler(service app.SearchService, authorizer internalauth.Authorizer) http.HandlerFunc {
+func listAuditEventsHandler(service app.AuditService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageTenant); !ok {
+			return
+		}
+		limit, err := queryInt(r, "limit")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+
+		result, err := service.List(r.Context(), app.ListAuditEventsInput{
+			TenantID: tenantID,
+			Limit:    limit,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, domain.ErrInvalidEntity) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, fmt.Sprintf("list audit events: %v", err))
+			return
+		}
+
+		events := make([]auditEventPayload, 0, len(result.Events))
+		for _, event := range result.Events {
+			events = append(events, encodeAuditEvent(event))
+		}
+		writeJSON(w, http.StatusOK, envelope{"events": events})
+	}
+}
+
+func searchHandler(service app.SearchService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req searchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
-		if _, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionReadDocuments); !ok {
+		principal, ok := requireTenantPermission(w, r, authorizer, domain.TenantID(req.TenantID), domain.PermissionReadDocuments)
+		if !ok {
 			return
 		}
 
@@ -839,6 +899,18 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 		for _, hit := range result.Hits {
 			hits = append(hits, encodeSearchHit(hit))
 		}
+		recordAudit(r.Context(), audit, app.RecordAuditInput{
+			TenantID:     domain.TenantID(req.TenantID),
+			ActorUserID:  principal.UserID,
+			Action:       "search.completed",
+			ResourceType: "search",
+			Outcome:      domain.AuditOutcomeSucceeded,
+			Metadata: map[string]string{
+				"document_id": req.DocumentID,
+				"hit_count":   strconv.Itoa(len(result.Hits)),
+				"query_len":   strconv.Itoa(len(strings.TrimSpace(req.Query))),
+			},
+		})
 		writeJSON(w, http.StatusOK, envelope{"hits": hits})
 	}
 }
@@ -944,7 +1016,7 @@ func queryInt(r *http.Request, key string) (int, error) {
 	return strconv.Atoi(value)
 }
 
-func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+func askConversationHandler(service app.ConversationService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, tenantID, principal, ok := prepareAskConversation(w, r, authorizer)
 		if !ok {
@@ -952,15 +1024,17 @@ func askConversationHandler(service app.ConversationService, authorizer internal
 		}
 		result, err := service.Ask(r.Context(), askConversationInput(req, tenantID, principal.UserID))
 		if err != nil {
+			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0)
 			writeError(w, askConversationStatus(err), fmt.Sprintf("ask conversation: %v", err))
 			return
 		}
+		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits))
 
 		writeJSON(w, http.StatusOK, encodeAskConversationResult(result))
 	}
 }
 
-func askConversationStreamHandler(service app.ConversationService, authorizer internalauth.Authorizer) http.HandlerFunc {
+func askConversationStreamHandler(service app.ConversationService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -993,12 +1067,14 @@ func askConversationStreamHandler(service app.ConversationService, authorizer in
 			return nil
 		})
 		if err != nil {
+			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0)
 			if writeErr := writeSSE(w, "error", envelope{"message": fmt.Sprintf("ask conversation: %v", err)}); writeErr != nil {
 				log.Printf("write sse error: %v", writeErr)
 			}
 			flusher.Flush()
 			return
 		}
+		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits))
 
 		if err := writeSSE(w, "done", encodeAskConversationResult(result)); err != nil {
 			log.Printf("write sse done: %v", err)
@@ -1023,6 +1099,34 @@ func prepareAskConversation(w http.ResponseWriter, r *http.Request, authorizer i
 		return askConversationRequest{}, "", internalauth.Principal{}, false
 	}
 	return req, tenantID, principal, true
+}
+
+func recordAskAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorID domain.UserID, req askConversationRequest, outcome domain.AuditOutcome, conversationID string, model string, hitCount int) {
+	metadata := map[string]string{
+		"document_id":   req.DocumentID,
+		"model_target":  req.ModelTarget,
+		"question_len":  strconv.Itoa(len(strings.TrimSpace(req.Question))),
+		"retrieval_lim": strconv.Itoa(req.Limit),
+		"hit_count":     strconv.Itoa(hitCount),
+	}
+	if model != "" {
+		metadata["model"] = model
+	}
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorID,
+		Action:       "conversation.ask",
+		ResourceType: "conversation",
+		ResourceID:   conversationID,
+		Outcome:      outcome,
+		Metadata:     metadata,
+	})
+}
+
+func recordAudit(ctx context.Context, audit app.AuditService, input app.RecordAuditInput) {
+	if _, err := audit.Record(ctx, input); err != nil {
+		log.Printf("record audit event failed: %v", err)
+	}
 }
 
 func askConversationInput(req askConversationRequest, tenantID domain.TenantID, ownerID domain.UserID) app.AskInput {
@@ -1134,6 +1238,24 @@ func encodeJob(job domain.Job) jobPayload {
 		ErrorMessage: job.ErrorMessage,
 		CreatedAt:    job.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:    job.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeAuditEvent(event domain.AuditEvent) auditEventPayload {
+	metadata := event.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	return auditEventPayload{
+		ID:           string(event.ID),
+		TenantID:     string(event.TenantID),
+		ActorUserID:  string(event.ActorUserID),
+		Action:       event.Action,
+		ResourceType: event.ResourceType,
+		ResourceID:   event.ResourceID,
+		Outcome:      string(event.Outcome),
+		Metadata:     metadata,
+		CreatedAt:    event.CreatedAt.Format(time.RFC3339),
 	}
 }
 

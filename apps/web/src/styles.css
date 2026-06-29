@@ -1031,6 +1031,7 @@ h3 {
 .documentRow,
 .conversationRow,
 .jobRow,
+.auditRow,
 .searchHit {
   display: grid;
   align-items: center;
@@ -1087,6 +1088,19 @@ h3 {
 .jobRow {
   grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px 130px;
   gap: 10px;
+}
+
+.auditRow {
+  grid-template-columns: minmax(0, 1fr) 108px minmax(150px, 220px) 120px 130px;
+  gap: 10px;
+}
+
+.auditRow p {
+  grid-column: 1 / -1;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspaceTable .dataHeader,
@@ -1174,6 +1188,11 @@ h3 {
 .jobRow strong,
 .jobRow em,
 .jobRow time,
+.auditRow strong,
+.auditRow em,
+.auditRow small,
+.auditRow time,
+.auditRow p,
 .tenantRow strong,
 .memberRow strong,
 .targetRow span,
@@ -1187,6 +1206,7 @@ h3 {
 .documentRow span,
 .conversationRow span,
 .jobRow span,
+.auditRow span,
 .tenantRow span,
 .memberRow span {
   color: #0a684c;
@@ -1201,6 +1221,10 @@ h3 {
 .jobRow em,
 .jobRow small,
 .jobRow time,
+.auditRow em,
+.auditRow small,
+.auditRow time,
+.auditRow p,
 .targetRow em,
 .searchHit em {
   color: #69777d;
@@ -1779,6 +1803,7 @@ h3 {
   .documentRow,
   .conversationRow,
   .jobRow,
+  .auditRow,
   .dataHeader,
   .dataRow,
   .tenantRow,

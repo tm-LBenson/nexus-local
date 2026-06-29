@@ -38,7 +38,7 @@ flowchart LR
 
 ## Data Services
 
-- Postgres: users, tenants, conversations, messages, document metadata, jobs, audits.
+- Postgres: users, tenants, conversations, messages, document metadata, jobs, audit events, and future policy state.
 - Qdrant: vector search when scale and recall matter.
 - MinIO: local S3-compatible document storage.
 - NATS JetStream: durable job queue and progress events.
@@ -48,3 +48,6 @@ flowchart LR
 
 Every non-product dependency should sit behind a provider interface. That keeps the system movable from NAS to desktop to AWS to customer-owned hardware.
 
+## Product Direction
+
+Nexus Local should grow from private document search into a secure AI operations layer. See [Product Vision](product-vision.md) for the customer scenarios, trust requirements, and agent direction that guide architectural choices.

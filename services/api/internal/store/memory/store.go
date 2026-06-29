@@ -20,6 +20,7 @@ type Store struct {
 	jobs          map[tenantJobKey]domain.Job
 	conversations map[tenantConversationKey]domain.Conversation
 	messages      map[tenantMessageKey]domain.Message
+	auditEvents   map[tenantAuditEventKey]domain.AuditEvent
 }
 
 type membershipKey struct {
@@ -48,6 +49,11 @@ type tenantMessageKey struct {
 	messageID      domain.MessageID
 }
 
+type tenantAuditEventKey struct {
+	tenantID domain.TenantID
+	eventID  domain.AuditEventID
+}
+
 func New() *Store {
 	return &Store{
 		tenants:       map[domain.TenantID]domain.Tenant{},
@@ -57,6 +63,7 @@ func New() *Store {
 		jobs:          map[tenantJobKey]domain.Job{},
 		conversations: map[tenantConversationKey]domain.Conversation{},
 		messages:      map[tenantMessageKey]domain.Message{},
+		auditEvents:   map[tenantAuditEventKey]domain.AuditEvent{},
 	}
 }
 
@@ -408,4 +415,42 @@ func (s *Store) ListMessages(ctx context.Context, tenantID domain.TenantID, conv
 		return messages[i].CreatedAt.Before(messages[j].CreatedAt)
 	})
 	return messages, nil
+}
+
+func (s *Store) SaveAuditEvent(ctx context.Context, event domain.AuditEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.auditEvents[tenantAuditEventKey{
+		tenantID: event.TenantID,
+		eventID:  event.ID,
+	}] = event
+	return nil
+}
+
+func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	events := make([]domain.AuditEvent, 0)
+	for _, event := range s.auditEvents {
+		if event.TenantID == tenantID {
+			events = append(events, event)
+		}
+	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
+			return events[i].ID < events[j].ID
+		}
+		return events[i].CreatedAt.After(events[j].CreatedAt)
+	})
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
 }

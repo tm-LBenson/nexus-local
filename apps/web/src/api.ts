@@ -141,6 +141,22 @@ export type ListJobsResponse = {
   jobs: RegisteredJob[];
 };
 
+export type AuditEvent = {
+  id: string;
+  tenant_id: string;
+  actor_user_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  outcome: string;
+  metadata: Record<string, string>;
+  created_at: string;
+};
+
+export type ListAuditEventsResponse = {
+  events: AuditEvent[];
+};
+
 export type SearchHit = {
   document_id: string;
   chunk_id: string;
@@ -316,6 +332,11 @@ export async function deleteDocument(tenantId: string, documentId: string) {
 export async function listJobs(tenantId: string, limit = 25) {
   const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
   return request<ListJobsResponse>(`/v1/jobs?${params.toString()}`);
+}
+
+export async function listAuditEvents(tenantId: string, limit = 50) {
+  const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
+  return request<ListAuditEventsResponse>(`/v1/audit-events?${params.toString()}`);
 }
 
 export async function registerDocument(input: DocumentRegistration) {

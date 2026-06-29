@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -477,6 +478,71 @@ func (s *Store) ListMessages(ctx context.Context, tenantID domain.TenantID, conv
 		messages = append(messages, message)
 	}
 	return messages, rows.Err()
+}
+
+func (s *Store) SaveAuditEvent(ctx context.Context, event domain.AuditEvent) error {
+	metadata, err := json.Marshal(event.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO audit_events (
+			tenant_id, id, actor_user_id, action, resource_type, resource_id, outcome, metadata, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET actor_user_id = EXCLUDED.actor_user_id,
+		    action = EXCLUDED.action,
+		    resource_type = EXCLUDED.resource_type,
+		    resource_id = EXCLUDED.resource_id,
+		    outcome = EXCLUDED.outcome,
+		    metadata = EXCLUDED.metadata,
+		    created_at = EXCLUDED.created_at
+	`, event.TenantID, event.ID, event.ActorUserID, event.Action, event.ResourceType, event.ResourceID, event.Outcome, metadata, event.CreatedAt)
+	return err
+}
+
+func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, actor_user_id, action, resource_type, resource_id, outcome, metadata, created_at
+		FROM audit_events
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC, id
+		LIMIT $2
+	`, tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		var event domain.AuditEvent
+		var metadata []byte
+		if err := rows.Scan(
+			&event.ID,
+			&event.TenantID,
+			&event.ActorUserID,
+			&event.Action,
+			&event.ResourceType,
+			&event.ResourceID,
+			&event.Outcome,
+			&metadata,
+			&event.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if len(metadata) > 0 {
+			if err := json.Unmarshal(metadata, &event.Metadata); err != nil {
+				return nil, err
+			}
+		}
+		if event.Metadata == nil {
+			event.Metadata = map[string]string{}
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
 }
 
 func translateErr(err error) error {

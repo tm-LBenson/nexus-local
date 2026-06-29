@@ -906,6 +906,97 @@ func TestAskConversationEndpointCanScopeToDocument(t *testing.T) {
 	}
 }
 
+func TestAuditEventsEndpointListsUserActions(t *testing.T) {
+	server := newTestServer(t)
+
+	var uploadBody bytes.Buffer
+	writer := multipart.NewWriter(&uploadBody)
+	if err := writer.WriteField("tenant_id", "tenant_1"); err != nil {
+		t.Fatalf("tenant field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "Audit.md")
+	if err != nil {
+		t.Fatalf("file field: %v", err)
+	}
+	if _, err := part.Write([]byte("audit event fixture")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	upload := httptest.NewRecorder()
+	uploadReq := httptest.NewRequest(http.MethodPost, "/v1/documents/upload", &uploadBody)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	server.ServeHTTP(upload, uploadReq)
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, want %d, body = %s", upload.Code, http.StatusCreated, upload.Body.String())
+	}
+
+	search := httptest.NewRecorder()
+	searchReq := httptest.NewRequest(http.MethodPost, "/v1/search", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"query": "alpha beta",
+		"limit": 1
+	}`))
+	server.ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK {
+		t.Fatalf("search status = %d, want %d, body = %s", search.Code, http.StatusOK, search.Body.String())
+	}
+
+	ask := httptest.NewRecorder()
+	askReq := httptest.NewRequest(http.MethodPost, "/v1/conversations/ask", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"question": "What is the alpha beta plan?",
+		"limit": 1
+	}`))
+	server.ServeHTTP(ask, askReq)
+	if ask.Code != http.StatusOK {
+		t.Fatalf("ask status = %d, want %d, body = %s", ask.Code, http.StatusOK, ask.Body.String())
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1&limit=10", nil)
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var body struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Events) != 3 {
+		t.Fatalf("events len = %d, want 3: %#v", len(body.Events), body.Events)
+	}
+	actions := map[string]auditEventPayload{}
+	for _, event := range body.Events {
+		actions[event.Action] = event
+		if event.ActorUserID != "user_1" {
+			t.Fatalf("actor user id = %q, want user_1", event.ActorUserID)
+		}
+		if event.Outcome != string(domain.AuditOutcomeSucceeded) {
+			t.Fatalf("event outcome = %q, want succeeded", event.Outcome)
+		}
+	}
+	for _, action := range []string{"document.uploaded", "search.completed", "conversation.ask"} {
+		if _, ok := actions[action]; !ok {
+			t.Fatalf("missing audit action %q in %#v", action, actions)
+		}
+	}
+	if actions["document.uploaded"].ResourceID != "doc_http" {
+		t.Fatalf("document resource id = %q", actions["document.uploaded"].ResourceID)
+	}
+	if actions["search.completed"].Metadata["hit_count"] != "1" {
+		t.Fatalf("search metadata = %#v", actions["search.completed"].Metadata)
+	}
+	if actions["conversation.ask"].ResourceID != "conv_http" {
+		t.Fatalf("conversation resource id = %q", actions["conversation.ask"].ResourceID)
+	}
+}
+
 func TestAskConversationStreamEndpoint(t *testing.T) {
 	server := newTestServer(t)
 
@@ -1242,6 +1333,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		WithObjectStore(objectmemory.New()).
 		WithVectorIndex(vectorIndex)
 	jobs := app.NewJobService(repos)
+	audit := app.NewAuditService(repos, ids, httpClock{})
 	seedEmbedding, err := embedder.Embed(context.Background(), providers.EmbeddingRequest{Texts: []string{"alpha beta launch plan"}})
 	if err != nil {
 		t.Fatalf("embed seed: %v", err)
@@ -1284,6 +1376,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		Tenants:       tenants,
 		Documents:     documents,
 		Jobs:          jobs,
+		Audit:         audit,
 		Search:        search,
 		Conversations: conversations,
 		Authenticator: internalauth.NewAuthenticator(cfg),
@@ -1294,6 +1387,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 type httpIDs struct {
 	job     int
 	message int
+	audit   int
 }
 
 func (httpIDs) NewDocumentID() domain.DocumentID {
@@ -1322,6 +1416,11 @@ func (g *httpIDs) NewMessageID() domain.MessageID {
 		return domain.MessageID("msg_user_http")
 	}
 	return domain.MessageID("msg_assistant_http")
+}
+
+func (g *httpIDs) NewAuditEventID() domain.AuditEventID {
+	g.audit++
+	return domain.AuditEventID(fmt.Sprintf("audit_http_%d", g.audit))
 }
 
 type httpClock struct{}

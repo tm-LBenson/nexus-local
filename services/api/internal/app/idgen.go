@@ -36,6 +36,10 @@ func (g RandomIDs) NewMessageID() domain.MessageID {
 	return domain.MessageID("msg_" + randomHex(g.reader, 16))
 }
 
+func (g RandomIDs) NewAuditEventID() domain.AuditEventID {
+	return domain.AuditEventID("audit_" + randomHex(g.reader, 16))
+}
+
 func randomHex(reader io.Reader, bytesLen int) string {
 	buf := make([]byte, bytesLen)
 	if _, err := io.ReadFull(reader, buf); err != nil {

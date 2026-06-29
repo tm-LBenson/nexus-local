@@ -2,11 +2,12 @@
 
 Nexus Local is a self-hosted AI workspace for private document ingestion, semantic search, and retrieval-augmented chat. It is designed to run on local hardware, a NAS plus GPU workstation, rented GPU infrastructure, or a conventional cloud server without tying the application to one vendor.
 
-The project is early, but the core shape is already in place: a replaceable backend, a slim web UI, provider-neutral storage/search/model interfaces, and Docker profiles for self-hosted deployment.
+The project is early, but the core shape is already in place: a replaceable backend, a slim web UI, provider-neutral storage/search/model interfaces, and Docker profiles for self-hosted deployment. The longer-term direction is described in [Product Vision](docs/product-vision.md).
 
 ## What It Does
 
 - Upload documents into tenant-scoped workspaces.
+- Import local folders or synced document roots through a bulk import script.
 - Manage workspace members and roles for self-hosted team access.
 - Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
 - Chunk, embed, and index documents for semantic retrieval.
@@ -14,6 +15,7 @@ The project is early, but the core shape is already in place: a replaceable back
 - Search across indexed document chunks.
 - Ask questions over uploaded documents through an OpenAI-compatible model gateway.
 - Track ingestion jobs and background activity.
+- Record audit events for sensitive user actions.
 - Review and resume conversation history.
 - Soft-delete documents and clean up stored objects and vectors.
 
@@ -243,6 +245,7 @@ Useful endpoints during development:
 - `POST /v1/documents/{document_id}/retry?tenant_id=tenant_1`
 - `DELETE /v1/documents/{document_id}?tenant_id=tenant_1`
 - `GET /v1/jobs?tenant_id=tenant_1`
+- `GET /v1/audit-events?tenant_id=tenant_1`
 - `POST /v1/search`
 - `POST /v1/conversations/ask`
 - `POST /v1/conversations/ask/stream`
@@ -254,6 +257,7 @@ The stream endpoint returns server-sent events: `status`, `delta`, `error`, and 
 Search and ask responses include a `source` object for each hit with the document name, document ID, chunk ID, and chunk index when available.
 Search and ask requests can include `document_id` to scope retrieval to one uploaded document.
 Job responses include `error_message` when ingestion fails, and failed documents can be retried from the document detail view or retry endpoint.
+Audit event responses include tenant, actor, action, resource, outcome, metadata, and timestamp fields for administrative review.
 
 Example document upload:
 
@@ -353,6 +357,8 @@ Near-term priorities:
 - Stronger local setup scripts.
 - Better worker visibility and retry controls.
 - Streaming chat responses.
+- Richer audit filters, export, and policy review surfaces.
+- Bulk data-source management for folders, synced drives, exports, and future connectors.
 - More document management tools.
 - Observability stack examples with Prometheus/Grafana/OpenTelemetry.
 

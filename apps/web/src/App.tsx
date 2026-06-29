@@ -6,6 +6,7 @@ import {
   Health,
   ListConversationMessagesResponse,
   ListConversationsResponse,
+  ListAuditEventsResponse,
   ListDocumentsResponse,
   ListJobsResponse,
   ListTenantMembersResponse,
@@ -29,6 +30,7 @@ import {
   getReadiness,
   listConversationMessages,
   listConversations,
+  listAuditEvents,
   listDocuments,
   listJobs,
   listTenantMembers,
@@ -115,6 +117,7 @@ export function App() {
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
+  const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
   const [tenantMembers, setTenantMembers] = useState<ListTenantMembersResponse | null>(null);
   const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
   const [conversationMessages, setConversationMessages] =
@@ -141,6 +144,7 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [asking, setAsking] = useState(false);
   const [checkingTarget, setCheckingTarget] = useState('');
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [ingestionSyncing, setIngestionSyncing] = useState(false);
   const [lastIngestionSync, setLastIngestionSync] = useState('');
 
@@ -151,8 +155,8 @@ export function App() {
   const workspaceReady = tenantID !== '';
   const needsWorkspace = currentUser !== null && currentUser.memberships.length === 0;
   const workspaceLabel = selectedTenant?.tenant.name ?? (tenantID || 'No workspace');
-  const canManageMembers =
-    selectedTenant?.role === 'owner' || selectedTenant?.role === 'admin';
+  const canManageTenant = selectedTenant?.role === 'owner' || selectedTenant?.role === 'admin';
+  const canManageMembers = canManageTenant;
   const ownerCount = tenantMembers?.members.filter((member) => member.role === 'owner').length ?? 0;
   const activeJobCount = useMemo(
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)).length ?? 0,
@@ -300,6 +304,15 @@ export function App() {
     void refreshTenantMembers(tenantID);
   }, [activeView, tenantID, canManageMembers]);
 
+  useEffect(() => {
+    if (activeView !== 'settings' || !tenantID || !canManageTenant) {
+      setAuditEvents(null);
+      return;
+    }
+
+    void refreshAuditEvents(tenantID);
+  }, [activeView, tenantID, canManageTenant]);
+
   async function loadBootstrapData() {
     const [healthResult, readinessResult, targetsResult, currentUserResult] = await Promise.all([
       getHealth(),
@@ -317,6 +330,7 @@ export function App() {
     if (!initialTenantID) {
       setDocuments({ documents: [] });
       setJobs({ jobs: [] });
+      setAuditEvents(null);
       setConversations({ conversations: [] });
       setActiveView('ask');
       return { targets: targetsResult.targets };
@@ -425,6 +439,22 @@ export function App() {
     }
   }
 
+  async function refreshAuditEvents(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setAuditEvents(null);
+      return;
+    }
+    setLoadingAudit(true);
+    try {
+      setAuditEvents(await listAuditEvents(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setLoadingAudit(false);
+    }
+  }
+
   async function refreshConversations(nextTenantID = tenantID) {
     setError(null);
     if (!nextTenantID) {
@@ -441,16 +471,21 @@ export function App() {
   async function refreshRuntime() {
     setError(null);
     try {
-      const [healthResult, readinessResult, targetsResult, jobsResult] = await Promise.all([
-        getHealth(),
-        getReadiness(),
-        getModelTargets(),
-        tenantID ? listJobs(tenantID) : Promise.resolve({ jobs: [] }),
-      ]);
+      const [healthResult, readinessResult, targetsResult, jobsResult, auditResult] =
+        await Promise.all([
+          getHealth(),
+          getReadiness(),
+          getModelTargets(),
+          tenantID ? listJobs(tenantID) : Promise.resolve({ jobs: [] }),
+          tenantID && canManageTenant
+            ? listAuditEvents(tenantID).catch(() => null)
+            : Promise.resolve(null),
+        ]);
       setHealth(healthResult);
       setReadiness(readinessResult);
       setTargets(targetsResult.targets);
       setJobs(jobsResult);
+      setAuditEvents(auditResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -490,6 +525,7 @@ export function App() {
     setDocumentDetail(null);
     setSearchResult(null);
     setTenantMembers(null);
+    setAuditEvents(null);
     setSelectedConversationID('');
     setConversationMessages(null);
     setAskForm((current) => ({ ...current, conversation_id: '', document_id: '' }));
@@ -499,18 +535,21 @@ export function App() {
       setDocuments({ documents: [] });
       setJobs({ jobs: [] });
       setTenantMembers(null);
+      setAuditEvents(null);
       setConversations({ conversations: [] });
       return;
     }
     try {
-      const [documentsResult, jobsResult, conversationsResult] = await Promise.all([
+      const [documentsResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
         listDocuments(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
+        listAuditEvents(nextTenantID).catch(() => null),
       ]);
       setDocuments(documentsResult);
       setJobs(jobsResult);
       setConversations(conversationsResult);
+      setAuditEvents(auditResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -557,7 +596,11 @@ export function App() {
       const result = await uploadDocument({ tenant_id: tenantID, file: nextFile });
       setRegistration(result);
       setDocumentDetail({ document: result.document, jobs: [result.job] });
-      await Promise.all([refreshDocuments(tenantID), refreshJobs(tenantID)]);
+      await Promise.all([
+        refreshDocuments(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -781,6 +824,9 @@ export function App() {
           limit: Number(searchForm.limit),
         }),
       );
+      if (canManageTenant) {
+        await refreshAuditEvents(tenantID);
+      }
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -836,6 +882,9 @@ export function App() {
       }));
       setSelectedConversationID(result.conversation.id);
       await refreshConversations(tenantID);
+      if (canManageTenant) {
+        await refreshAuditEvents(tenantID);
+      }
       if (conversationMessages && selectedConversationID === result.conversation.id) {
         setConversationMessages(await listConversationMessages(tenantID, result.conversation.id));
       }
@@ -1894,6 +1943,44 @@ export function App() {
                 </div>
               </details>
 
+              {workspaceReady && canManageTenant && (
+                <details className="settingsDetails">
+                  <summary>
+                    <span>Audit</span>
+                    <em>{auditEvents ? `${auditEvents.events.length} recent` : 'not loaded'}</em>
+                  </summary>
+                  <div className="settingsDetailsBody">
+                    <div className="settingsDetailsActions">
+                      <button
+                        disabled={loadingAudit}
+                        onClick={() => void refreshAuditEvents()}
+                        type="button"
+                      >
+                        {loadingAudit ? 'Refreshing' : 'Refresh'}
+                      </button>
+                    </div>
+                    <div className="tableList">
+                      {auditEvents?.events.map((event) => (
+                        <div className="auditRow" key={event.id} title={event.id}>
+                          <strong>{event.action}</strong>
+                          <span className={stateClass(event.outcome)}>{event.outcome}</span>
+                          <em>{auditResourceLabel(event)}</em>
+                          <small>{event.actor_user_id}</small>
+                          <time dateTime={event.created_at}>
+                            {formatDateTime(event.created_at)}
+                          </time>
+                          <p>{auditMetadataLabel(event.metadata)}</p>
+                        </div>
+                      ))}
+                      {auditEvents && auditEvents.events.length === 0 && (
+                        <p className="muted">No audit events</p>
+                      )}
+                      {!auditEvents && !loadingAudit && <p className="muted">Audit not loaded</p>}
+                    </div>
+                  </div>
+                </details>
+              )}
+
               <details className="settingsDetails">
                 <summary>
                   <span>Diagnostics</span>
@@ -2431,8 +2518,26 @@ function jobTitle(job: ListJobsResponse['jobs'][number]) {
   return job.id;
 }
 
+function auditResourceLabel(event: ListAuditEventsResponse['events'][number]) {
+  if (event.resource_type && event.resource_id) {
+    return `${event.resource_type}/${event.resource_id}`;
+  }
+  return event.resource_type || event.resource_id || event.id;
+}
+
+function auditMetadataLabel(metadata: Record<string, string>) {
+  const entries = Object.entries(metadata).filter(([, value]) => value.trim() !== '');
+  if (entries.length === 0) {
+    return 'no metadata';
+  }
+  return entries
+    .slice(0, 4)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' / ');
+}
+
 function stateClass(state: string) {
-  if (['failed'].includes(state)) {
+  if (['failed', 'denied'].includes(state)) {
     return 'stateBadge stateFailed';
   }
   if (['queued', 'running', 'retrying', 'uploaded', 'processing'].includes(state)) {
