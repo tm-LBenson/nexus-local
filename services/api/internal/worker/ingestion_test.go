@@ -142,7 +142,7 @@ func TestDocumentIngestionWorkerCancelsJobForDeletedDocument(t *testing.T) {
 	}
 }
 
-func TestDocumentIngestionWorkerFailsUnsupportedJob(t *testing.T) {
+func TestDocumentIngestionWorkerIgnoresUnsupportedJobType(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()
 	job, err := domain.NewJob(domain.JobCreate{
@@ -162,19 +162,19 @@ func TestDocumentIngestionWorkerFailsUnsupportedJob(t *testing.T) {
 
 	worker := NewDocumentIngestionWorker(repos, fixedClock{})
 	_, err = worker.ProcessNext(ctx)
-	if err == nil {
-		t.Fatal("err = nil, want unsupported job error")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 
 	updatedJob, err := repos.GetJob(ctx, job.TenantID, job.ID)
 	if err != nil {
 		t.Fatalf("get job: %v", err)
 	}
-	if updatedJob.State != domain.JobStateFailed {
-		t.Fatalf("job state = %q, want failed", updatedJob.State)
+	if updatedJob.State != domain.JobStateQueued {
+		t.Fatalf("job state = %q, want queued", updatedJob.State)
 	}
-	if updatedJob.ErrorMessage == "" {
-		t.Fatal("job error message is empty")
+	if updatedJob.Attempts != 0 {
+		t.Fatalf("attempts = %d, want 0", updatedJob.Attempts)
 	}
 }
 

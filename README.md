@@ -257,6 +257,7 @@ Useful endpoints during development:
 - `POST /v1/data-sources`
 - `GET /v1/data-sources/{source_id}?tenant_id=tenant_1`
 - `PATCH /v1/data-sources/{source_id}`
+- `POST /v1/data-sources/{source_id}/scan?tenant_id=tenant_1`
 - `DELETE /v1/data-sources/{source_id}?tenant_id=tenant_1`
 - `GET /v1/jobs?tenant_id=tenant_1`
 - `GET /v1/audit-events?tenant_id=tenant_1`

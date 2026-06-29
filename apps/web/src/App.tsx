@@ -39,6 +39,7 @@ import {
   listJobs,
   listTenantMembers,
   retryDocument,
+  scanDataSource,
   searchDocuments,
   uploadDocument,
 } from './api';
@@ -159,6 +160,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [creatingSource, setCreatingSource] = useState(false);
   const [archivingSourceID, setArchivingSourceID] = useState('');
+  const [scanningSourceID, setScanningSourceID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
@@ -189,12 +191,23 @@ export function App() {
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)) ?? [],
     [jobs],
   );
-  const activeIngestionDocumentIDs = useMemo(
+  const activeIngestionJobs = useMemo(
     () =>
-      new Set(
+      activeJobs.filter(
+        (job) => job.type === 'document_ingestion' && job.resource_type === 'document',
+      ),
+    [activeJobs],
+  );
+  const activeIngestionDocumentIDs = useMemo(
+    () => new Set(activeIngestionJobs.map((job) => job.resource_id)),
+    [activeIngestionJobs],
+  );
+  const activeSourceScanJobs = useMemo(
+    () =>
+      new Map(
         activeJobs
-          .filter((job) => job.type === 'document_ingestion' && job.resource_type === 'document')
-          .map((job) => job.resource_id),
+          .filter((job) => job.type === 'source_scan' && job.resource_type === 'data_source')
+          .map((job) => [job.resource_id, job]),
       ),
     [activeJobs],
   );
@@ -217,7 +230,7 @@ export function App() {
   const trackedDocumentID = documentDetail?.document.id ?? registration?.document.id ?? '';
   const trackingIngestion = useMemo(
     () =>
-      activeJobCount > 0 ||
+      activeIngestionJobs.length > 0 ||
       Boolean(documentDetail && isActiveDocumentStatus(documentDetail.document.status)) ||
       Boolean(documentDetail && hasActiveIngestionJob(documentDetail)) ||
       Boolean(
@@ -225,13 +238,13 @@ export function App() {
           (isActiveDocumentStatus(registration.document.status) ||
             isActiveJobState(registration.job.state)),
       ),
-    [activeJobCount, documentDetail, registration],
+    [activeIngestionJobs.length, documentDetail, registration],
   );
   const ingestionLabel = ingestionSyncing
     ? 'Updating'
     : trackingIngestion
-      ? activeJobCount > 0
-        ? `${activeJobCount} active`
+      ? activeIngestionJobs.length > 0
+        ? `${activeIngestionJobs.length} active`
         : 'Tracking'
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
@@ -787,6 +800,27 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setArchivingSourceID('');
+    }
+  }
+
+  async function requestDataSourceScan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    setScanningSourceID(source.id);
+    setError(null);
+    try {
+      await scanDataSource(tenantID, source.id);
+      await Promise.all([
+        refreshDataSources(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setScanningSourceID('');
     }
   }
 
@@ -1551,7 +1585,10 @@ export function App() {
                 <h2>Sources</h2>
                 <div className="headerActions">
                   <span className="syncStatus">{dataSources?.sources.length ?? 0} active</span>
-                  <button onClick={() => void refreshDataSources()} type="button">
+                  <button
+                    onClick={() => void Promise.all([refreshDataSources(), refreshJobs()])}
+                    type="button"
+                  >
                     Refresh
                   </button>
                 </div>
@@ -1596,27 +1633,47 @@ export function App() {
               </details>
 
               <div className="tableList sourceList">
-                {dataSources?.sources.map((source) => (
-                  <div className="sourceRow" key={source.id}>
-                    <strong>{source.name}</strong>
-                    <span className={stateClass(source.status)}>{source.status}</span>
-                    <em>{sourceTypeLabel(source.type)}</em>
-                    <small title={source.root_path}>{source.root_path}</small>
-                    <details className="rowMenu">
-                      <summary>More</summary>
-                      <div className="rowMenuActions">
-                        <button
-                          className="dangerButton"
-                          disabled={archivingSourceID === source.id}
-                          onClick={() => void removeDataSource(source)}
-                          type="button"
-                        >
-                          {archivingSourceID === source.id ? 'Archiving' : 'Archive'}
-                        </button>
-                      </div>
-                    </details>
-                  </div>
-                ))}
+                {dataSources?.sources.map((source) => {
+                  const scanJob = activeSourceScanJobs.get(source.id);
+                  return (
+                    <div className="sourceRow" key={source.id}>
+                      <strong>{source.name}</strong>
+                      <span className={stateClass(scanJob?.state ?? source.status)}>
+                        {scanJob ? `scan ${scanJob.state}` : source.status}
+                      </span>
+                      <em>{sourceTypeLabel(source.type)}</em>
+                      <small title={source.root_path}>{source.root_path}</small>
+                      <details className="rowMenu">
+                        <summary>More</summary>
+                        <div className="rowMenuActions">
+                          <button
+                            disabled={
+                              Boolean(scanJob) ||
+                              scanningSourceID === source.id ||
+                              archivingSourceID === source.id
+                            }
+                            onClick={() => void requestDataSourceScan(source)}
+                            type="button"
+                          >
+                            {scanningSourceID === source.id
+                              ? 'Queuing'
+                              : scanJob
+                                ? titleCase(scanJob.state)
+                                : 'Scan'}
+                          </button>
+                          <button
+                            className="dangerButton"
+                            disabled={archivingSourceID === source.id}
+                            onClick={() => void removeDataSource(source)}
+                            type="button"
+                          >
+                            {archivingSourceID === source.id ? 'Archiving' : 'Archive'}
+                          </button>
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })}
                 {dataSources && dataSources.sources.length === 0 && (
                   <p className="muted">No sources</p>
                 )}

@@ -11,6 +11,7 @@ import (
 
 type DataSourceIDs interface {
 	NewDataSourceID() domain.DataSourceID
+	NewJobID() domain.JobID
 }
 
 type DataSourceService struct {
@@ -50,8 +51,18 @@ type ArchiveDataSourceInput struct {
 	DataSourceID domain.DataSourceID
 }
 
+type ScanDataSourceInput struct {
+	TenantID     domain.TenantID
+	DataSourceID domain.DataSourceID
+}
+
 type DataSourceResult struct {
 	Source domain.DataSource
+}
+
+type ScanDataSourceResult struct {
+	Source domain.DataSource
+	Job    domain.Job
 }
 
 type ListDataSourcesResult struct {
@@ -151,6 +162,53 @@ func (s DataSourceService) Archive(ctx context.Context, input ArchiveDataSourceI
 	return DataSourceResult{Source: source}, nil
 }
 
+func (s DataSourceService) RequestScan(ctx context.Context, input ScanDataSourceInput) (ScanDataSourceResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	if strings.TrimSpace(string(input.TenantID)) == "" || strings.TrimSpace(string(input.DataSourceID)) == "" {
+		return ScanDataSourceResult{}, fmt.Errorf("scan data source: %w", domain.ErrInvalidEntity)
+	}
+
+	source, err := s.repos.GetDataSource(ctx, input.TenantID, input.DataSourceID)
+	if err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	if source.Status == domain.DataSourceStatusArchived {
+		return ScanDataSourceResult{}, fmt.Errorf("archived data source %s cannot be scanned: %w", source.ID, domain.ErrInvalidStateTransition)
+	}
+
+	jobs, err := s.repos.ListJobs(ctx, input.TenantID, maxJobListLimit)
+	if err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	for _, job := range jobs {
+		if isActiveDataSourceScanJob(job, source.ID) {
+			return ScanDataSourceResult{}, fmt.Errorf("scan is already queued or running for data source %s with job %s: %w", source.ID, job.ID, domain.ErrInvalidStateTransition)
+		}
+	}
+
+	job, err := domain.NewJob(domain.JobCreate{
+		ID:           s.ids.NewJobID(),
+		TenantID:     source.TenantID,
+		Type:         domain.JobTypeSourceScan,
+		ResourceType: "data_source",
+		ResourceID:   string(source.ID),
+		Now:          s.clock.Now(),
+	})
+	if err != nil {
+		return ScanDataSourceResult{}, err
+	}
+	if err := s.repos.SaveJob(ctx, job); err != nil {
+		return ScanDataSourceResult{}, err
+	}
+
+	return ScanDataSourceResult{
+		Source: source,
+		Job:    job,
+	}, nil
+}
+
 func filterActiveDataSources(sources []domain.DataSource) []domain.DataSource {
 	active := sources[:0]
 	for _, source := range sources {
@@ -159,4 +217,11 @@ func filterActiveDataSources(sources []domain.DataSource) []domain.DataSource {
 		}
 	}
 	return active
+}
+
+func isActiveDataSourceScanJob(job domain.Job, sourceID domain.DataSourceID) bool {
+	if job.Type != domain.JobTypeSourceScan || job.ResourceType != "data_source" || job.ResourceID != string(sourceID) {
+		return false
+	}
+	return job.State == domain.JobStateQueued || job.State == domain.JobStateRunning || job.State == domain.JobStateRetrying
 }

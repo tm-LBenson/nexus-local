@@ -43,7 +43,7 @@ type JobRepository interface {
 	SaveJob(ctx context.Context, job domain.Job) error
 	GetJob(ctx context.Context, tenantID domain.TenantID, id domain.JobID) (domain.Job, error)
 	ListJobs(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.Job, error)
-	ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error)
+	ClaimNextQueuedJob(ctx context.Context, now time.Time, types ...domain.JobType) (domain.Job, error)
 }
 
 type ConversationRepository interface {

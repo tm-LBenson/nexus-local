@@ -336,16 +336,21 @@ func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit in
 	return jobs, nil
 }
 
-func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
+func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time, types ...domain.JobType) (domain.Job, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.Job{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	allowedTypes := map[domain.JobType]struct{}{}
+	for _, jobType := range types {
+		allowedTypes[jobType] = struct{}{}
+	}
+
 	queued := make([]domain.Job, 0)
 	for _, job := range s.jobs {
-		if job.State == domain.JobStateQueued {
+		if job.State == domain.JobStateQueued && jobTypeAllowed(job.Type, allowedTypes) {
 			queued = append(queued, job)
 		}
 	}
@@ -366,6 +371,14 @@ func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.J
 	}
 	s.jobs[tenantJobKey{tenantID: job.TenantID, jobID: job.ID}] = job
 	return job, nil
+}
+
+func jobTypeAllowed(jobType domain.JobType, allowedTypes map[domain.JobType]struct{}) bool {
+	if len(allowedTypes) == 0 {
+		return true
+	}
+	_, ok := allowedTypes[jobType]
+	return ok
 }
 
 func (s *Store) SaveConversation(ctx context.Context, conversation domain.Conversation) error {

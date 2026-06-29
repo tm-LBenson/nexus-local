@@ -23,7 +23,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | Slice | Build | Gate |
 | --- | --- | --- |
 | 2.1 | Data source records with type, name, root/path, status, last scan, and owner. | Source CRUD is tenant-scoped and audited. |
-| 2.2 | Import folder UI that creates a source scan job. | User can start a folder import from the app, not only PowerShell. |
+| 2.2 | Import folder UI that creates a source scan job. | User can queue a source scan from the app and see it in Activity. |
 | 2.3 | Source scan worker that walks allowed files and creates document jobs. | Large fixture folder imports without blocking the API. |
 | 2.4 | Include/exclude rules for extensions, glob-like paths, hidden folders, and max size. | Test folder shows expected accepted/rejected counts. |
 | 2.5 | Incremental scan with changed/new/deleted detection. | Re-scan updates only changed files and preserves stable records. |
@@ -45,4 +45,3 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 ## First Build Candidate
 
 Start with Slice 2.1, then 2.2. The domain contract should come before the UI so every imported file has a traceable source.
-

@@ -58,7 +58,7 @@ func (w DocumentIngestionWorker) WithTextPipeline(extractor ingest.Extractor, ch
 }
 
 func (w DocumentIngestionWorker) ProcessNext(ctx context.Context) (ProcessResult, error) {
-	job, err := w.repos.ClaimNextQueuedJob(ctx, w.clock.Now())
+	job, err := w.repos.ClaimNextQueuedJob(ctx, w.clock.Now(), domain.JobTypeDocumentIngestion)
 	if err != nil {
 		return ProcessResult{}, err
 	}

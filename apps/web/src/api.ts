@@ -153,6 +153,11 @@ export type DataSourceResponse = {
   source: DataSource;
 };
 
+export type DataSourceScanResponse = {
+  source: DataSource;
+  job: RegisteredJob;
+};
+
 export type DocumentDetailResponse = {
   document: RegisteredDocument;
   jobs: RegisteredJob[];
@@ -352,6 +357,14 @@ export async function archiveDataSource(tenantId: string, sourceId: string) {
   return request<DataSourceResponse>(
     `/v1/data-sources/${encodeURIComponent(sourceId)}?${params.toString()}`,
     { method: 'DELETE' },
+  );
+}
+
+export async function scanDataSource(tenantId: string, sourceId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<DataSourceScanResponse>(
+    `/v1/data-sources/${encodeURIComponent(sourceId)}/scan?${params.toString()}`,
+    { method: 'POST' },
   );
 }
 

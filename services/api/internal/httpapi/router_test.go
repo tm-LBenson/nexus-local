@@ -645,6 +645,27 @@ func TestDataSourceEndpoints(t *testing.T) {
 		t.Fatalf("get status = %d, want %d, body = %s", get.Code, http.StatusOK, get.Body.String())
 	}
 
+	scan := httptest.NewRecorder()
+	scanReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/scan?tenant_id=tenant_1", nil)
+	server.ServeHTTP(scan, scanReq)
+	if scan.Code != http.StatusAccepted {
+		t.Fatalf("scan status = %d, want %d, body = %s", scan.Code, http.StatusAccepted, scan.Body.String())
+	}
+	var scanBody struct {
+		Source dataSourcePayload `json:"source"`
+		Job    jobPayload        `json:"job"`
+	}
+	if err := json.NewDecoder(scan.Body).Decode(&scanBody); err != nil {
+		t.Fatalf("decode scan: %v", err)
+	}
+	if scanBody.Source.ID != "src_http" ||
+		scanBody.Job.Type != "source_scan" ||
+		scanBody.Job.ResourceType != "data_source" ||
+		scanBody.Job.ResourceID != "src_http" ||
+		scanBody.Job.State != "queued" {
+		t.Fatalf("scan body = %#v", scanBody)
+	}
+
 	remove := httptest.NewRecorder()
 	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
 	server.ServeHTTP(remove, removeReq)
@@ -686,17 +707,24 @@ func TestDataSourceEndpoints(t *testing.T) {
 	if err := json.NewDecoder(audit.Body).Decode(&auditBody); err != nil {
 		t.Fatalf("decode audit: %v", err)
 	}
-	if len(auditBody.Events) != 3 {
-		t.Fatalf("audit events len = %d, want 3", len(auditBody.Events))
+	if len(auditBody.Events) != 4 {
+		t.Fatalf("audit events len = %d, want 4", len(auditBody.Events))
 	}
 	hasArchivedAudit := false
+	hasScanAudit := false
 	for _, event := range auditBody.Events {
 		if event.Action == "data_source.archived" && event.ResourceID == "src_http" {
 			hasArchivedAudit = true
 		}
+		if event.Action == "data_source.scan_requested" && event.ResourceID == "src_http" {
+			hasScanAudit = true
+		}
 	}
 	if !hasArchivedAudit {
 		t.Fatalf("audit events = %#v, want archived source event", auditBody.Events)
+	}
+	if !hasScanAudit {
+		t.Fatalf("audit events = %#v, want source scan event", auditBody.Events)
 	}
 }
 

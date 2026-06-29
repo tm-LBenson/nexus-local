@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -395,33 +396,48 @@ func (s *Store) ListJobs(ctx context.Context, tenantID domain.TenantID, limit in
 	return jobs, rows.Err()
 }
 
-func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time) (domain.Job, error) {
+func (s *Store) ClaimNextQueuedJob(ctx context.Context, now time.Time, types ...domain.JobType) (domain.Job, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return domain.Job{}, err
 	}
 	defer tx.Rollback(ctx)
 
+	args := []any{domain.JobStateQueued}
+	where := "state = $1"
+	if len(types) > 0 {
+		placeholders := make([]string, 0, len(types))
+		for _, jobType := range types {
+			args = append(args, jobType)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		where += fmt.Sprintf(" AND type IN (%s)", strings.Join(placeholders, ", "))
+	}
+
+	args = append(args, domain.JobStateRunning, now)
+	runningArg := len(args) - 1
+	nowArg := len(args)
+
 	var job domain.Job
-	err = tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, fmt.Sprintf(`
 		WITH picked AS (
 			SELECT tenant_id, id
 			FROM jobs
-			WHERE state = $1
+			WHERE %s
 			ORDER BY created_at, id
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
 		UPDATE jobs
-		SET state = $2,
+		SET state = $%d,
 		    attempts = jobs.attempts + 1,
 		    error_message = '',
-		    updated_at = $3
+		    updated_at = $%d
 		FROM picked
 		WHERE jobs.tenant_id = picked.tenant_id
 		  AND jobs.id = picked.id
 		RETURNING jobs.id, jobs.tenant_id, jobs.type, jobs.resource_type, jobs.resource_id, jobs.state, jobs.attempts, jobs.error_message, jobs.created_at, jobs.updated_at
-	`, domain.JobStateQueued, domain.JobStateRunning, now).Scan(
+	`, where, runningArg, nowArg), args...).Scan(
 		&job.ID,
 		&job.TenantID,
 		&job.Type,
