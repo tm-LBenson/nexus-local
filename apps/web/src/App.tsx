@@ -4022,7 +4022,7 @@ export function App() {
               )}
               <details className="inlineDetails" open={needsWorkspace}>
                 <summary>New workspace</summary>
-                <form className="inlineForm" onSubmit={submitTenant}>
+                <form className="inlineForm workspaceCreateForm" onSubmit={submitTenant}>
                   <input
                     aria-label="Workspace name"
                     onChange={(event) => setTenantName(event.target.value)}

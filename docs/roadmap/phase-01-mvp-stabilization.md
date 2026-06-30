@@ -39,7 +39,8 @@ The product needs a dependable core loop before broad connectors, governance, or
 - Done: Slice 1.4 audit filters by action/outcome/actor/date.
 - Done: Slice 1.5 backup/restore smoke check in local Docker profile.
 - Done: Slice 1.6 first-run sample flow polish.
-- Next: Phase 1 release-candidate review against the full MVP gate.
+- Done: Phase 1 release-candidate UI pass fixed closed details panels and Settings workspace form layout.
+- Next: Phase 2 source/import workflow hardening.
 
 ## Dependencies
 
@@ -59,4 +60,4 @@ The product needs a dependable core loop before broad connectors, governance, or
 
 ## First Build Candidate
 
-The immediate build priority is the Phase 1 release-candidate review. All listed Phase 1 slices now have implementation coverage, so the next pass should run the full gate, review the fresh-install UI end to end, and turn any remaining gaps into the first MVP release checklist.
+All listed Phase 1 slices now have implementation coverage, and the release gate passes with the first-run sample path, smoke test, and backup/restore round trip. The remaining Phase 1 work is manual regression during real demos; active implementation should move to Phase 2 source/import workflow hardening.

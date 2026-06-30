@@ -975,6 +975,13 @@ h3 {
   gap: 8px;
 }
 
+.workspaceCreateForm {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  max-width: 520px;
+}
+
 .composerActions {
   justify-content: space-between;
 }
@@ -1243,6 +1250,16 @@ h3 {
 .rowMenu[open] summary {
   border-color: #9eb7be;
   background: #eef6f4;
+}
+
+.menuPanel:not([open]) > :not(summary),
+.inlineDetails:not([open]) > :not(summary),
+.rowMenu:not([open]) > :not(summary),
+.sourceTemplatePicker:not([open]) > :not(summary),
+.sourceMountHelper:not([open]) > :not(summary),
+.sourcePlanReviewDetails:not([open]) > :not(summary),
+.settingsDetails:not([open]) > :not(summary) {
+  display: none !important;
 }
 
 .menuFields {
@@ -3074,6 +3091,7 @@ h3 {
   .topbar,
   .attentionPanel,
   .dashboardStartForm,
+  .workspaceCreateForm,
   .workspaceSplit,
   .dashboardSecondary,
   .sampleStepGrid,
