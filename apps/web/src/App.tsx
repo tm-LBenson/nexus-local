@@ -2811,9 +2811,15 @@ export function App() {
                   <input
                     aria-label="Document"
                     accept={supportedDocumentAccept}
+                    className="fileInput"
+                    id="dashboard-document-upload"
                     type="file"
                     onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                   />
+                  <label className="filePicker" htmlFor="dashboard-document-upload">
+                    <strong>{file ? 'Selected' : 'Choose file'}</strong>
+                    <span>{file?.name ?? 'Markdown, text, PDF, CSV, JSON'}</span>
+                  </label>
                   <button
                     disabled={submitting || uploadingSample || !workspaceReady}
                     onClick={() => void uploadSampleDocument()}
@@ -4180,9 +4186,15 @@ export function App() {
               <input
                 aria-label="Document"
                 accept={supportedDocumentAccept}
+                className="fileInput"
+                id="library-document-upload"
                 type="file"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
+              <label className="filePicker" htmlFor="library-document-upload">
+                <strong>{file ? 'Selected' : 'Choose file'}</strong>
+                <span>{file?.name ?? 'Markdown, text, PDF, CSV, JSON'}</span>
+              </label>
               <button
                 disabled={submitting || uploadingSample || !workspaceReady}
                 onClick={() => void uploadSampleDocument()}
