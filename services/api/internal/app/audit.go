@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/store"
@@ -39,8 +40,14 @@ type RecordAuditResult struct {
 }
 
 type ListAuditEventsInput struct {
-	TenantID domain.TenantID
-	Limit    int
+	TenantID    domain.TenantID
+	Limit       int
+	Action      string
+	Outcome     domain.AuditOutcome
+	ActorUserID domain.UserID
+	Query       string
+	From        *time.Time
+	To          *time.Time
 }
 
 type ListAuditEventsResult struct {
@@ -85,7 +92,22 @@ func (s AuditService) List(ctx context.Context, input ListAuditEventsInput) (Lis
 	if strings.TrimSpace(string(input.TenantID)) == "" {
 		return ListAuditEventsResult{}, fmt.Errorf("audit events: %w", domain.ErrInvalidEntity)
 	}
-	events, err := s.repos.ListAuditEvents(ctx, input.TenantID, normalizeAuditLimit(input.Limit))
+	outcome := domain.AuditOutcome(strings.TrimSpace(string(input.Outcome)))
+	if outcome != "" && !outcome.Valid() {
+		return ListAuditEventsResult{}, fmt.Errorf("audit events: %w", domain.ErrInvalidEntity)
+	}
+	if input.From != nil && input.To != nil && input.From.After(*input.To) {
+		return ListAuditEventsResult{}, fmt.Errorf("audit events: %w", domain.ErrInvalidEntity)
+	}
+	events, err := s.repos.ListAuditEvents(ctx, input.TenantID, store.AuditEventFilter{
+		Limit:       normalizeAuditLimit(input.Limit),
+		Action:      strings.TrimSpace(input.Action),
+		Outcome:     outcome,
+		ActorUserID: domain.UserID(strings.TrimSpace(string(input.ActorUserID))),
+		Query:       strings.TrimSpace(input.Query),
+		From:        input.From,
+		To:          input.To,
+	})
 	if err != nil {
 		return ListAuditEventsResult{}, err
 	}

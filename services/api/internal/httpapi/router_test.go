@@ -1904,6 +1904,32 @@ func TestAuditEventsEndpointListsUserActions(t *testing.T) {
 	if actions["conversation.ask"].ResourceID != "conv_http" {
 		t.Fatalf("conversation resource id = %q", actions["conversation.ask"].ResourceID)
 	}
+
+	filtered := httptest.NewRecorder()
+	filteredReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1&action=search.completed&outcome=succeeded&actor_user_id=user_1&query=hit_count&from=2026-06-23&to=2026-06-23&limit=10", nil)
+	server.ServeHTTP(filtered, filteredReq)
+	if filtered.Code != http.StatusOK {
+		t.Fatalf("filtered status = %d, want %d, body = %s", filtered.Code, http.StatusOK, filtered.Body.String())
+	}
+	var filteredBody struct {
+		Events []auditEventPayload `json:"events"`
+	}
+	if err := json.Unmarshal(filtered.Body.Bytes(), &filteredBody); err != nil {
+		t.Fatalf("decode filtered body: %v", err)
+	}
+	if len(filteredBody.Events) != 1 {
+		t.Fatalf("filtered events len = %d, want 1: %#v", len(filteredBody.Events), filteredBody.Events)
+	}
+	if filteredBody.Events[0].Action != "search.completed" {
+		t.Fatalf("filtered action = %q, want search.completed", filteredBody.Events[0].Action)
+	}
+
+	invalidDate := httptest.NewRecorder()
+	invalidDateReq := httptest.NewRequest(http.MethodGet, "/v1/audit-events?tenant_id=tenant_1&from=not-a-date", nil)
+	server.ServeHTTP(invalidDate, invalidDateReq)
+	if invalidDate.Code != http.StatusBadRequest {
+		t.Fatalf("invalid date status = %d, want %d, body = %s", invalidDate.Code, http.StatusBadRequest, invalidDate.Body.String())
+	}
 }
 
 func TestAskConversationStreamEndpoint(t *testing.T) {

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AuditEventFilters,
   AskConversationResponse,
   CurrentUserResponse,
   DataSourceDetailResponse,
@@ -167,8 +168,11 @@ const initialMemberForm = {
 
 const initialAuditFilters = {
   action: '',
+  actor_user_id: '',
+  from: '',
   outcome: '',
   query: '',
+  to: '',
 };
 
 const initialSourceFilters = {
@@ -568,12 +572,21 @@ export function App() {
     () => uniqueSorted(auditEvents?.events.map((event) => event.outcome) ?? []),
     [auditEvents],
   );
+  const auditActorOptions = useMemo(
+    () => uniqueSorted(auditEvents?.events.map((event) => event.actor_user_id) ?? []),
+    [auditEvents],
+  );
   const filteredAuditEvents = useMemo(
     () => filterAuditEvents(auditEvents?.events ?? [], auditFilters),
     [auditEvents, auditFilters],
   );
   const auditFiltersActive = Boolean(
-    auditFilters.action || auditFilters.outcome || auditFilters.query.trim(),
+    auditFilters.action ||
+      auditFilters.outcome ||
+      auditFilters.actor_user_id.trim() ||
+      auditFilters.from ||
+      auditFilters.to ||
+      auditFilters.query.trim(),
   );
   const contentTitle =
     activeView === 'ask'
@@ -863,7 +876,7 @@ export function App() {
     }
   }
 
-  async function refreshAuditEvents(nextTenantID = tenantID) {
+  async function refreshAuditEvents(nextTenantID = tenantID, filters = auditFilters) {
     setError(null);
     if (!nextTenantID) {
       setAuditEvents(null);
@@ -871,7 +884,7 @@ export function App() {
     }
     setLoadingAudit(true);
     try {
-      setAuditEvents(await listAuditEvents(nextTenantID));
+      setAuditEvents(await listAuditEvents(nextTenantID, auditApiFilters(filters)));
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -927,7 +940,7 @@ export function App() {
           getModelTargets(),
           tenantID ? listJobs(tenantID) : Promise.resolve({ jobs: [] }),
           tenantID && canManageTenant
-            ? listAuditEvents(tenantID).catch(() => null)
+            ? listAuditEvents(tenantID, auditApiFilters(auditFilters)).catch(() => null)
             : Promise.resolve(null),
         ]);
       setHealth(healthResult);
@@ -998,7 +1011,7 @@ export function App() {
         listDataSources(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
-        listAuditEvents(nextTenantID).catch(() => null),
+        listAuditEvents(nextTenantID, auditApiFilters(auditFilters)).catch(() => null),
       ]);
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
@@ -1447,7 +1460,9 @@ export function App() {
         getDataSource(tenantID, sourceID, sourceScanEntryOptions(scanEntryFilter, scanEntryOffset)),
         listDataSources(tenantID),
         listJobs(tenantID),
-        canManageTenant ? listAuditEvents(tenantID).catch(() => null) : Promise.resolve(null),
+        canManageTenant
+          ? listAuditEvents(tenantID, auditApiFilters(auditFilters)).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setSourceDetail(detail);
       setSourceEditForm(sourceFormFromSource(detail.source));
@@ -4022,7 +4037,7 @@ export function App() {
                     <em>
                       {auditEvents
                         ? auditFiltersActive
-                          ? `${filteredAuditEvents.length}/${auditEvents.events.length} recent`
+                          ? `${filteredAuditEvents.length}/${auditEvents.events.length} matches`
                           : `${auditEvents.events.length} recent`
                         : 'not loaded'}
                     </em>
@@ -4064,6 +4079,45 @@ export function App() {
                         ))}
                       </select>
                       <input
+                        aria-label="Audit actor filter"
+                        list="audit-actors"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            actor_user_id: event.target.value,
+                          }))
+                        }
+                        placeholder="Actor"
+                        value={auditFilters.actor_user_id}
+                      />
+                      <datalist id="audit-actors">
+                        {auditActorOptions.map((actor) => (
+                          <option key={actor} value={actor} />
+                        ))}
+                      </datalist>
+                      <input
+                        aria-label="Audit from date"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            from: event.target.value,
+                          }))
+                        }
+                        type="date"
+                        value={auditFilters.from}
+                      />
+                      <input
+                        aria-label="Audit to date"
+                        onChange={(event) =>
+                          setAuditFilters((current) => ({
+                            ...current,
+                            to: event.target.value,
+                          }))
+                        }
+                        type="date"
+                        value={auditFilters.to}
+                      />
+                      <input
                         aria-label="Audit text filter"
                         onChange={(event) =>
                           setAuditFilters((current) => ({
@@ -4076,7 +4130,10 @@ export function App() {
                       />
                       <button
                         disabled={!auditFiltersActive}
-                        onClick={() => setAuditFilters(initialAuditFilters)}
+                        onClick={() => {
+                          setAuditFilters(initialAuditFilters);
+                          void refreshAuditEvents(tenantID, initialAuditFilters);
+                        }}
                         type="button"
                       >
                         Clear
@@ -4086,7 +4143,7 @@ export function App() {
                         onClick={() => void refreshAuditEvents()}
                         type="button"
                       >
-                        {loadingAudit ? 'Refreshing' : 'Refresh'}
+                        {loadingAudit ? 'Applying' : 'Apply'}
                       </button>
                     </div>
                     <div className="tableList">
@@ -6684,16 +6741,39 @@ function auditResourceLabel(event: ListAuditEventsResponse['events'][number]) {
   return event.resource_type || event.resource_id || event.id;
 }
 
+function auditApiFilters(filters: typeof initialAuditFilters): AuditEventFilters {
+  return {
+    action: filters.action || undefined,
+    actor_user_id: filters.actor_user_id.trim() || undefined,
+    from: filters.from || undefined,
+    limit: 100,
+    outcome: filters.outcome || undefined,
+    query: filters.query.trim() || undefined,
+    to: filters.to || undefined,
+  };
+}
+
 function filterAuditEvents(
   events: ListAuditEventsResponse['events'],
   filters: typeof initialAuditFilters,
 ) {
   const query = filters.query.trim().toLowerCase();
+  const actorUserID = filters.actor_user_id.trim();
   return events.filter((event) => {
     if (filters.action && event.action !== filters.action) {
       return false;
     }
     if (filters.outcome && event.outcome !== filters.outcome) {
+      return false;
+    }
+    if (actorUserID && event.actor_user_id !== actorUserID) {
+      return false;
+    }
+    const eventDate = dateInputValue(event.created_at);
+    if (filters.from && eventDate && eventDate < filters.from) {
+      return false;
+    }
+    if (filters.to && eventDate && eventDate > filters.to) {
       return false;
     }
     if (!query) {
@@ -6714,6 +6794,14 @@ function filterAuditEvents(
       .toLowerCase();
     return haystack.includes(query);
   });
+}
+
+function dateInputValue(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 function auditMetadataLabel(metadata: Record<string, string>) {

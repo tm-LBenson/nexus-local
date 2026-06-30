@@ -883,14 +883,52 @@ func (s *Store) SaveAuditEvent(ctx context.Context, event domain.AuditEvent) err
 	return err
 }
 
-func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error) {
-	rows, err := s.pool.Query(ctx, `
+func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, filter store.AuditEventFilter) ([]domain.AuditEvent, error) {
+	args := []any{tenantID}
+	clauses := []string{"tenant_id = $1"}
+	if filter.Action != "" {
+		args = append(args, filter.Action)
+		clauses = append(clauses, fmt.Sprintf("action = $%d", len(args)))
+	}
+	if filter.Outcome != "" {
+		args = append(args, string(filter.Outcome))
+		clauses = append(clauses, fmt.Sprintf("outcome = $%d", len(args)))
+	}
+	if filter.ActorUserID != "" {
+		args = append(args, string(filter.ActorUserID))
+		clauses = append(clauses, fmt.Sprintf("actor_user_id = $%d", len(args)))
+	}
+	if filter.From != nil {
+		args = append(args, *filter.From)
+		clauses = append(clauses, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if filter.To != nil {
+		args = append(args, *filter.To)
+		clauses = append(clauses, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	if strings.TrimSpace(filter.Query) != "" {
+		args = append(args, "%"+strings.ToLower(strings.TrimSpace(filter.Query))+"%")
+		queryArg := len(args)
+		clauses = append(clauses, fmt.Sprintf(`(
+			lower(id::text) LIKE $%d OR
+			lower(actor_user_id::text) LIKE $%d OR
+			lower(action::text) LIKE $%d OR
+			lower(resource_type::text) LIKE $%d OR
+			lower(resource_id::text) LIKE $%d OR
+			lower(outcome::text) LIKE $%d OR
+			lower(metadata::text) LIKE $%d
+		)`, queryArg, queryArg, queryArg, queryArg, queryArg, queryArg, queryArg))
+	}
+	args = append(args, filter.Limit)
+	limitArg := len(args)
+
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, actor_user_id, action, resource_type, resource_id, outcome, metadata, created_at
 		FROM audit_events
-		WHERE tenant_id = $1
+		WHERE %s
 		ORDER BY created_at DESC, id
-		LIMIT $2
-	`, tenantID, limit)
+		LIMIT $%d
+	`, strings.Join(clauses, " AND "), limitArg), args...)
 	if err != nil {
 		return nil, err
 	}

@@ -36,7 +36,8 @@ The product needs a dependable core loop before broad connectors, governance, or
 - Done: Slice 1.1 ask streaming feedback, timeout handling, and cancel flow.
 - Done: Slice 1.2 dashboard attention panel with active work, failures, and next actions.
 - Done: Slice 1.3 library action polish for retry/delete/download/detail states.
-- Next: Slice 1.4 audit filters by action/outcome/actor/date.
+- Done: Slice 1.4 audit filters by action/outcome/actor/date.
+- Next: Slice 1.5 backup/restore smoke check in local Docker profile.
 
 ## Dependencies
 
@@ -54,4 +55,4 @@ The product needs a dependable core loop before broad connectors, governance, or
 
 ## First Build Candidate
 
-The immediate build priority is Slice 1.4. The core document workflow is manageable from the Library page, so the next highest-value improvement is making audit review useful for admin and security checks.
+The immediate build priority is Slice 1.5. Admin audit review is now searchable enough for MVP security checks, so the next highest-value improvement is proving backup and restore in the local Docker profile before broader deployment testing.

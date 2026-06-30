@@ -349,7 +349,7 @@ func TestAuditEventsAreTenantScopedAndRecentFirst(t *testing.T) {
 		}
 	}
 
-	events, err := repo.ListAuditEvents(ctx, domain.TenantID("tenant_a"), 1)
+	events, err := repo.ListAuditEvents(ctx, domain.TenantID("tenant_a"), store.AuditEventFilter{Limit: 1})
 	if err != nil {
 		t.Fatalf("list audit events: %v", err)
 	}
@@ -358,6 +358,39 @@ func TestAuditEventsAreTenantScopedAndRecentFirst(t *testing.T) {
 	}
 	if events[0].ID != domain.AuditEventID("audit_2") {
 		t.Fatalf("event id = %s, want audit_2", events[0].ID)
+	}
+}
+
+func TestAuditEventsCanBeFiltered(t *testing.T) {
+	ctx := context.Background()
+	repo := New()
+	from := fixedTime().Add(30 * time.Minute)
+	to := fixedTime().Add(90 * time.Minute)
+	events := []domain.AuditEvent{
+		newTestAuditEventWith(t, domain.TenantID("tenant_a"), domain.AuditEventID("audit_1"), "user_1", "search.completed", domain.AuditOutcomeSucceeded, "search", "search_1", map[string]string{"query": "alpha"}, fixedTime()),
+		newTestAuditEventWith(t, domain.TenantID("tenant_a"), domain.AuditEventID("audit_2"), "user_2", "conversation.ask", domain.AuditOutcomeFailed, "conversation", "conv_1", map[string]string{"model": "qwen"}, fixedTime().Add(time.Hour)),
+		newTestAuditEventWith(t, domain.TenantID("tenant_a"), domain.AuditEventID("audit_3"), "user_2", "document.uploaded", domain.AuditOutcomeSucceeded, "document", "doc_1", map[string]string{"name": "runbook"}, fixedTime().Add(2*time.Hour)),
+	}
+	for _, event := range events {
+		if err := repo.SaveAuditEvent(ctx, event); err != nil {
+			t.Fatalf("save audit %s: %v", event.ID, err)
+		}
+	}
+
+	result, err := repo.ListAuditEvents(ctx, domain.TenantID("tenant_a"), store.AuditEventFilter{
+		Action:      "conversation.ask",
+		Outcome:     domain.AuditOutcomeFailed,
+		ActorUserID: domain.UserID("user_2"),
+		Query:       "qwen",
+		From:        &from,
+		To:          &to,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(result) != 1 || result[0].ID != domain.AuditEventID("audit_2") {
+		t.Fatalf("events = %#v, want audit_2 only", result)
 	}
 }
 
@@ -449,13 +482,21 @@ func newTestScanEntryWithOutcome(t *testing.T, tenantID domain.TenantID, sourceI
 func newTestAuditEvent(t *testing.T, tenantID domain.TenantID, eventID domain.AuditEventID, now time.Time) domain.AuditEvent {
 	t.Helper()
 
+	return newTestAuditEventWith(t, tenantID, eventID, "user_1", "search.completed", domain.AuditOutcomeSucceeded, "search", "", nil, now)
+}
+
+func newTestAuditEventWith(t *testing.T, tenantID domain.TenantID, eventID domain.AuditEventID, actorID domain.UserID, action string, outcome domain.AuditOutcome, resourceType string, resourceID string, metadata map[string]string, now time.Time) domain.AuditEvent {
+	t.Helper()
+
 	event, err := domain.NewAuditEvent(domain.AuditEventCreate{
 		ID:           eventID,
 		TenantID:     tenantID,
-		ActorUserID:  domain.UserID("user_1"),
-		Action:       "search.completed",
-		ResourceType: "search",
-		Outcome:      domain.AuditOutcomeSucceeded,
+		ActorUserID:  actorID,
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Outcome:      outcome,
+		Metadata:     metadata,
 		Now:          now,
 	})
 	if err != nil {

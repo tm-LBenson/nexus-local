@@ -1395,10 +1395,26 @@ func listAuditEventsHandler(service app.AuditService, authorizer internalauth.Au
 			writeError(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
+		from, err := queryTime(r, "from", false)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid from")
+			return
+		}
+		to, err := queryTime(r, "to", true)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid to")
+			return
+		}
 
 		result, err := service.List(r.Context(), app.ListAuditEventsInput{
-			TenantID: tenantID,
-			Limit:    limit,
+			TenantID:    tenantID,
+			Limit:       limit,
+			Action:      r.URL.Query().Get("action"),
+			Outcome:     domain.AuditOutcome(r.URL.Query().Get("outcome")),
+			ActorUserID: domain.UserID(r.URL.Query().Get("actor_user_id")),
+			Query:       r.URL.Query().Get("query"),
+			From:        from,
+			To:          to,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -1567,6 +1583,24 @@ func queryInt(r *http.Request, key string) (int, error) {
 		return 0, nil
 	}
 	return strconv.Atoi(value)
+}
+
+func queryTime(r *http.Request, key string, endOfDay bool) (*time.Time, error) {
+	value := strings.TrimSpace(r.URL.Query().Get(key))
+	if value == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return &parsed, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return nil, err
+	}
+	if endOfDay {
+		parsed = parsed.Add(24*time.Hour - time.Nanosecond)
+	}
+	return &parsed, nil
 }
 
 func scanEntryQuery(r *http.Request) (int, int, domain.DataSourceScanOutcome, error) {

@@ -241,6 +241,16 @@ export type ListAuditEventsResponse = {
   events: AuditEvent[];
 };
 
+export type AuditEventFilters = {
+  action?: string;
+  outcome?: string;
+  actor_user_id?: string;
+  query?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+};
+
 export type SearchHit = {
   document_id: string;
   chunk_id: string;
@@ -562,8 +572,17 @@ export async function listJobs(tenantId: string, limit = 25) {
   return request<ListJobsResponse>(`/v1/jobs?${params.toString()}`);
 }
 
-export async function listAuditEvents(tenantId: string, limit = 50) {
-  const params = new URLSearchParams({ tenant_id: tenantId, limit: String(limit) });
+export async function listAuditEvents(tenantId: string, filters: AuditEventFilters = {}) {
+  const params = new URLSearchParams({
+    tenant_id: tenantId,
+    limit: String(filters.limit ?? 100),
+  });
+  for (const [key, value] of Object.entries(filters)) {
+    if (key === 'limit' || value === undefined || value === '') {
+      continue;
+    }
+    params.set(key, String(value));
+  }
   return request<ListAuditEventsResponse>(`/v1/audit-events?${params.toString()}`);
 }
 

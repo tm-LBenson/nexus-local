@@ -75,7 +75,17 @@ type ConversationRepository interface {
 
 type AuditRepository interface {
 	SaveAuditEvent(ctx context.Context, event domain.AuditEvent) error
-	ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error)
+	ListAuditEvents(ctx context.Context, tenantID domain.TenantID, filter AuditEventFilter) ([]domain.AuditEvent, error)
+}
+
+type AuditEventFilter struct {
+	Limit       int
+	Action      string
+	Outcome     domain.AuditOutcome
+	ActorUserID domain.UserID
+	Query       string
+	From        *time.Time
+	To          *time.Time
 }
 
 type RepositorySet interface {

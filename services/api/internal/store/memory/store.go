@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -678,7 +679,7 @@ func (s *Store) SaveAuditEvent(ctx context.Context, event domain.AuditEvent) err
 	return nil
 }
 
-func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, limit int) ([]domain.AuditEvent, error) {
+func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, filter store.AuditEventFilter) ([]domain.AuditEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -687,7 +688,7 @@ func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, l
 
 	events := make([]domain.AuditEvent, 0)
 	for _, event := range s.auditEvents {
-		if event.TenantID == tenantID {
+		if event.TenantID == tenantID && auditEventMatches(event, filter) {
 			events = append(events, event)
 		}
 	}
@@ -697,8 +698,44 @@ func (s *Store) ListAuditEvents(ctx context.Context, tenantID domain.TenantID, l
 		}
 		return events[i].CreatedAt.After(events[j].CreatedAt)
 	})
-	if limit > 0 && len(events) > limit {
-		events = events[:limit]
+	if filter.Limit > 0 && len(events) > filter.Limit {
+		events = events[:filter.Limit]
 	}
 	return events, nil
+}
+
+func auditEventMatches(event domain.AuditEvent, filter store.AuditEventFilter) bool {
+	if filter.Action != "" && event.Action != filter.Action {
+		return false
+	}
+	if filter.Outcome != "" && event.Outcome != filter.Outcome {
+		return false
+	}
+	if filter.ActorUserID != "" && event.ActorUserID != filter.ActorUserID {
+		return false
+	}
+	if filter.From != nil && event.CreatedAt.Before(*filter.From) {
+		return false
+	}
+	if filter.To != nil && event.CreatedAt.After(*filter.To) {
+		return false
+	}
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	if query == "" {
+		return true
+	}
+	metadata := make([]string, 0, len(event.Metadata)*2)
+	for key, value := range event.Metadata {
+		metadata = append(metadata, key, value)
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		string(event.ID),
+		string(event.ActorUserID),
+		event.Action,
+		event.ResourceType,
+		event.ResourceID,
+		string(event.Outcome),
+		strings.Join(metadata, " "),
+	}, " "))
+	return strings.Contains(haystack, query)
 }
