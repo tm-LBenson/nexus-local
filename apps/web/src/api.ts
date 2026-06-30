@@ -303,6 +303,7 @@ export type AskConversationInput = {
 };
 
 export type AskConversationStreamHandlers = {
+  signal?: AbortSignal;
   onStatus?: (message: string) => void;
   onDelta?: (content: string) => void;
   onDone?: (response: AskConversationResponse) => void;
@@ -612,11 +613,22 @@ export async function askConversationStream(
 ) {
   const streamInactivityTimeoutMs = 180000;
   const controller = new AbortController();
-  let timeoutID = window.setTimeout(() => controller.abort(), streamInactivityTimeoutMs);
+  let timedOut = false;
+  const abortOnTimeout = () => {
+    timedOut = true;
+    controller.abort();
+  };
+  let timeoutID = window.setTimeout(abortOnTimeout, streamInactivityTimeoutMs);
   const resetTimeout = () => {
     window.clearTimeout(timeoutID);
-    timeoutID = window.setTimeout(() => controller.abort(), streamInactivityTimeoutMs);
+    timeoutID = window.setTimeout(abortOnTimeout, streamInactivityTimeoutMs);
   };
+  const abortFromSignal = () => controller.abort();
+  if (handlers.signal?.aborted) {
+    controller.abort();
+  } else {
+    handlers.signal?.addEventListener('abort', abortFromSignal, { once: true });
+  }
 
   try {
     handlers.onStatus?.('Connecting');
@@ -715,11 +727,15 @@ export async function askConversationStream(
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
+      if (!timedOut && handlers.signal?.aborted) {
+        throw new Error('Request canceled.');
+      }
       throw new Error('Model gateway timed out. Check Settings, then test the target.');
     }
     throw err;
   } finally {
     window.clearTimeout(timeoutID);
+    handlers.signal?.removeEventListener('abort', abortFromSignal);
   }
 }
 

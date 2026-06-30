@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AskConversationResponse,
   CurrentUserResponse,
@@ -352,6 +352,7 @@ export function App() {
   const [askPhase, setAskPhase] = useState<AskPhase>('idle');
   const [askStartedAt, setAskStartedAt] = useState<number | null>(null);
   const [askElapsedSeconds, setAskElapsedSeconds] = useState(0);
+  const askAbortRef = useRef<AbortController | null>(null);
   const [currentAskQuestion, setCurrentAskQuestion] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -546,7 +547,8 @@ export function App() {
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
         : 'Idle';
-  const visibleAskAnswer = askResult?.assistant_message.content || streamAnswer;
+  const rawAskAnswer = askResult?.assistant_message.content || streamAnswer;
+  const visibleAskAnswer = askPhase === 'failed' ? '' : rawAskAnswer;
   const visibleAskTitle =
     askResult?.conversation.title ||
     askResult?.conversation.id ||
@@ -1744,6 +1746,9 @@ export function App() {
 
   async function submitAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (asking) {
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1763,6 +1768,8 @@ export function App() {
     setAskElapsedSeconds(0);
     setStreamStatus('Starting');
     let failed = false;
+    const controller = new AbortController();
+    askAbortRef.current = controller;
     try {
       let streamedResult: AskConversationResponse | undefined;
       await askConversationStream({
@@ -1773,6 +1780,7 @@ export function App() {
         question,
         limit: Number(askForm.limit),
       }, {
+        signal: controller.signal,
         onStatus: (message) => {
           setStreamStatus(message);
           setAskPhase(askPhaseFromStatus(message));
@@ -1812,14 +1820,24 @@ export function App() {
       const message = messageFromError(err);
       setAskPhase('failed');
       setStreamStatus(message);
-      setError(message);
+      if (message !== 'Request canceled.') {
+        setError(message);
+      }
     } finally {
+      if (askAbortRef.current === controller) {
+        askAbortRef.current = null;
+      }
       setAsking(false);
       setAskStartedAt(null);
       if (!failed) {
         setStreamStatus('');
       }
     }
+  }
+
+  function cancelAsk() {
+    setStreamStatus('Canceling');
+    askAbortRef.current?.abort();
   }
 
   if (showSetupWizard) {
@@ -2034,9 +2052,19 @@ export function App() {
                         </label>
                       </div>
                     </details>
-                    <button disabled={asking || !workspaceReady} type="submit">
-                      {asking ? 'Asking' : 'Ask'}
-                    </button>
+                    <div className="composerSubmit">
+                      {asking && (
+                        <button className="secondaryButton" onClick={cancelAsk} type="button">
+                          Cancel
+                        </button>
+                      )}
+                      <button
+                        disabled={asking || !workspaceReady || !askForm.question.trim()}
+                        type="submit"
+                      >
+                        {asking ? 'Asking' : 'Ask'}
+                      </button>
+                    </div>
                   </div>
                 </form>
 
@@ -2048,7 +2076,11 @@ export function App() {
                     </div>
                     {showAskProgress && (
                       <div className="answerProgress" role="status" aria-live="polite">
-                        {asking && <span className="spinner" aria-hidden="true"></span>}
+                        {asking ? (
+                          <span className="spinner" aria-hidden="true"></span>
+                        ) : (
+                          <span className="progressDot progressDotFailed" aria-hidden="true"></span>
+                        )}
                         <strong>
                           {askPhase === 'failed'
                             ? 'Request failed'
@@ -2063,9 +2095,9 @@ export function App() {
                         <span>{streamStatus || 'The request did not complete.'}</span>
                       </div>
                     ) : (
-                      <p className={asking ? 'answerText answerTextStreaming' : 'answerText'}>
+                      <div className={asking ? 'answerText answerTextStreaming' : 'answerText'}>
                         {visibleAskAnswer || askWaitingLabel(askPhase)}
-                      </p>
+                      </div>
                     )}
                     {askResult && (
                       <details className="inlineDetails">

@@ -49,6 +49,16 @@ button:hover {
   background: #174554;
 }
 
+.secondaryButton {
+  border-color: #c8d4d5;
+  color: #1d5262;
+  background: #ffffff;
+}
+
+.secondaryButton:hover {
+  background: #f1f6f5;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
@@ -834,6 +844,13 @@ h3 {
   justify-content: space-between;
 }
 
+.composerSubmit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .memberForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr) 112px 76px;
@@ -1165,11 +1182,12 @@ h3 {
   border-top-color: #c8d4d5;
 }
 
-.answerBox p,
+.answerText,
 .searchHit p {
   color: #2f3c43;
   line-height: 1.48;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .answerProgress {
@@ -1203,6 +1221,9 @@ h3 {
 }
 
 .answerText {
+  min-width: 0;
+  min-height: 52px;
+  max-width: 100%;
   white-space: pre-wrap;
 }
 
@@ -1219,6 +1240,19 @@ h3 {
   border-top-color: #1d5262;
   border-radius: 50%;
   animation: spin 0.85s linear infinite;
+}
+
+.progressDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  justify-self: center;
+  border-radius: 50%;
+  background: #69777d;
+}
+
+.progressDotFailed {
+  background: #b84b42;
 }
 
 .compactFailure {
@@ -2855,6 +2889,16 @@ h3 {
   .inlineForm {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .composerSubmit {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .composerSubmit button:only-child {
+    grid-column: 2;
   }
 
   .topActions {
