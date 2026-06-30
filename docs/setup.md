@@ -159,3 +159,11 @@ This requires a reachable OpenAI-compatible model gateway. For an ingestion/sear
 ```powershell
 .\scripts\dev-check.ps1 -Smoke -SkipAsk
 ```
+
+Before a release candidate or serious demo, run the full release gate:
+
+```powershell
+.\nexus.ps1 release-check
+```
+
+That gate runs tests, the production web build, smoke, backup/restore, and then prints the remaining manual UI checklist.

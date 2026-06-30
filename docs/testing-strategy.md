@@ -35,6 +35,16 @@ Use the smoke script against a running stack before calling a build demo-ready:
 
 The script creates a workspace, uploads `fixtures/smoke/nexus-smoke.md`, waits for ingestion, searches for a unique run phrase, asks over the uploaded document, and verifies that conversation history contains the turn. It deletes the temporary document and temporary workspace; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` only when the model gateway is intentionally unavailable and you want to verify ingestion and search by themselves.
 
+## Release Candidate Gate
+
+Use the release check before tagging, demoing, or handing a build to another machine:
+
+```powershell
+.\nexus.ps1 release-check
+```
+
+This command runs API and launcher tests, the web production build, the end-to-end smoke gate, and the backup/restore round trip. It finishes by printing the manual UI checklist that still needs human eyes: setup blocking, first-run sample, dashboard, library, activity, settings, and slow-model answer states.
+
 ## Backup/Restore Gate
 
 Use the fast backup validation after touching backup packaging or before a casual local demo:

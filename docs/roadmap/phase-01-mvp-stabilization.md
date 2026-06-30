@@ -54,6 +54,7 @@ The product needs a dependable core loop before broad connectors, governance, or
 - `npm run build`
 - `.\scripts\dev-check.ps1 -Smoke`
 - `.\scripts\dev-check.ps1 -BackupSmoke -BackupRestoreRoundTrip`
+- `.\nexus.ps1 release-check`
 - Manual browser check for setup, dashboard, library, activity, settings.
 
 ## First Build Candidate

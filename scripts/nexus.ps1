@@ -493,6 +493,7 @@ Commands:
   backup-smoke     Create and validate a temporary backup
   backup-restore-smoke
                    Create, restore, and verify a temporary backup
+  release-check    Run the Phase 1 release gate and print the manual UI checklist
   backup           Create a backup
   restore          Restore from a backup path
   test             Run API tests
@@ -593,6 +594,12 @@ function Invoke-CommandMode($name, [string[]]$arguments = @()) {
     "backup-restore-smoke" {
       Invoke-LocalScript "dev-check.ps1" (@("-BackupSmoke", "-BackupRestoreRoundTrip") + $arguments)
     }
+    "release-check" {
+      Invoke-LocalScript "release-check.ps1" $arguments
+    }
+    "rc" {
+      Invoke-LocalScript "release-check.ps1" $arguments
+    }
     "backup" {
       Invoke-LocalScript "backup.ps1" $arguments
     }
@@ -642,6 +649,7 @@ function Show-Menu {
     Write-Host "12. Stop"
     Write-Host "13. Reset volumes"
     Write-Host "14. API tests"
+    Write-Host "15. Release check"
     Write-Host "H. Help"
     Write-Host "Q. Quit"
     Write-Host ""
@@ -670,6 +678,7 @@ function Show-Menu {
           Pause-Menu
         }
         "14" { Invoke-LocalScript "test.ps1"; Pause-Menu }
+        "15" { Invoke-LocalScript "release-check.ps1"; Pause-Menu }
         "h" { Show-Help; Pause-Menu }
         "help" { Show-Help; Pause-Menu }
         "q" { return }

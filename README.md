@@ -119,6 +119,14 @@ Run an end-to-end smoke test:
 
 The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, deletes the temporary document, and deletes the temporary workspace. Pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
+Run the Phase 1 release gate before tagging or calling a build demo-ready:
+
+```powershell
+.\nexus.ps1 release-check
+```
+
+This runs API/launcher tests, the web production build, the end-to-end smoke gate, and the backup/restore round trip, then prints the manual UI checklist for setup, dashboard, library, activity, settings, and slow-model answer states.
+
 Run a managed-source stress check:
 
 ```powershell
