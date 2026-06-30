@@ -474,6 +474,16 @@ if ($selectedProfile -eq "gpu-local") {
   $defaultModelValue = "Qwen/Qwen2.5-1.5B-Instruct"
 }
 $modelValue = Read-SetupValue "General model ID" (Get-ProvidedOrDefault $GeneralModelId (Get-EnvDefault $existingValues "GENERAL_MODEL_ID" $defaultModelValue)) $GeneralModelId
+$defaultVLLMMaxModelLen = "8192"
+$defaultVLLMGpuMemoryUtilization = "0.80"
+$defaultVLLMDtype = "auto"
+$defaultVLLMMaxNumSeqs = "8"
+if ($selectedProfile -eq "gpu-local") {
+  $defaultVLLMMaxModelLen = "4096"
+  $defaultVLLMGpuMemoryUtilization = "0.70"
+  $defaultVLLMDtype = "float16"
+  $defaultVLLMMaxNumSeqs = "1"
+}
 
 $apiHostPortValue = Assert-PositiveInteger "API host port" (Get-ProvidedOrDefault $ApiHostPort "8080")
 $webHostPortValue = Assert-PositiveInteger "Web host port" (Get-ProvidedOrDefault $WebHostPort "5173")
@@ -621,8 +631,10 @@ Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
 Set-EnvValue $values "MODEL_GATEWAY_API_KEY" $modelGatewayAPIKeyValue
 Set-EnvValue $values "DEFAULT_MODEL_TARGET" "general"
 Set-EnvValue $values "GENERAL_MODEL_ID" $modelValue
-Set-EnvValue $values "VLLM_GPU_MEMORY_UTILIZATION" (Get-EnvDefault $existingValues "VLLM_GPU_MEMORY_UTILIZATION" "0.80")
-Set-EnvValue $values "VLLM_MAX_MODEL_LEN" (Get-EnvDefault $existingValues "VLLM_MAX_MODEL_LEN" "8192")
+Set-EnvValue $values "VLLM_GPU_MEMORY_UTILIZATION" (Get-EnvDefault $existingValues "VLLM_GPU_MEMORY_UTILIZATION" $defaultVLLMGpuMemoryUtilization)
+Set-EnvValue $values "VLLM_MAX_MODEL_LEN" (Get-EnvDefault $existingValues "VLLM_MAX_MODEL_LEN" $defaultVLLMMaxModelLen)
+Set-EnvValue $values "VLLM_DTYPE" (Get-EnvDefault $existingValues "VLLM_DTYPE" $defaultVLLMDtype)
+Set-EnvValue $values "VLLM_MAX_NUM_SEQS" (Get-EnvDefault $existingValues "VLLM_MAX_NUM_SEQS" $defaultVLLMMaxNumSeqs)
 Set-EnvValue $values "HUGGING_FACE_HUB_TOKEN" (Get-EnvDefault $existingValues "HUGGING_FACE_HUB_TOKEN" "")
 Set-EnvValue $values "WORKER_POLL_INTERVAL" "2s"
 Set-EnvValue $values "WORKER_DOCUMENT_CONCURRENCY" (Get-EnvDefault $existingValues "WORKER_DOCUMENT_CONCURRENCY" "1")

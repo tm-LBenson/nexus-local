@@ -82,6 +82,8 @@ Use this when the Windows machine should run the app stack and the bundled vLLM-
 
 This path is more demanding than running a native Windows model server. It is best for a GPU with enough VRAM for the configured model. On an 8 GB GPU, use smaller models or prefer Scenario 1 with a native/local model gateway.
 
+For consumer NVIDIA cards with 8 GB VRAM, keep the bundled vLLM profile conservative: use `VLLM_DTYPE=float16`, `VLLM_MAX_MODEL_LEN=4096`, `VLLM_GPU_MEMORY_UTILIZATION=0.70`, and `VLLM_MAX_NUM_SEQS=1`. If Ask times out while GPU utilization sits near 100%, the model gateway is overloaded rather than the app being down.
+
 ```powershell
 .\scripts\setup.ps1 `
   -Profile gpu-local `
