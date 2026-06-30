@@ -501,9 +501,11 @@ export function App() {
     () => documents?.documents.filter((document) => isActiveDocumentStatus(document.status)) ?? [],
     [documents],
   );
+  const documentCount = documents?.documents.length ?? 0;
   const readyDocumentCount =
     documents?.documents.filter((document) => document.status === 'ready').length ?? 0;
   const processingDocumentCount = activeDocuments.length;
+  const failedDocumentCount = failedDocuments.length;
   const activeJobCount = activeJobs.length;
   const activeSourceScanCount = activeSourceScanJobs.size;
   const activeSourcePreflightCount = activeSourcePreflightJobs.size;
@@ -3344,27 +3346,57 @@ export function App() {
               </div>
             )}
 
+            <div className="documentSummary">
+              <button onClick={() => setActiveView('documents')} type="button">
+                <strong>{documentCount}</strong>
+                <span>Total</span>
+              </button>
+              <button onClick={() => setActiveView('documents')} type="button">
+                <strong>{readyDocumentCount}</strong>
+                <span>Ready</span>
+              </button>
+              <button onClick={() => setActiveView('activity')} type="button">
+                <strong>{processingDocumentCount}</strong>
+                <span>Working</span>
+              </button>
+              <button onClick={() => setActiveView('activity')} type="button">
+                <strong>{failedDocumentCount}</strong>
+                <span>Failed</span>
+              </button>
+            </div>
+
             <div className="tableList">
-              {documents?.documents.map((document) => (
-                <div className="documentRow" key={document.id}>
-                  <button onClick={() => void openDocument(document)} type="button">
-                    <strong>{document.name}</strong>
-                  </button>
-                  <span className={stateClass(document.status)}>{document.status}</span>
-                  <em>{document.id}</em>
-                  <small>{formatBytes(document.size_bytes)}</small>
-                  <details className="rowMenu">
-                    <summary>More</summary>
-                    <div className="rowMenuActions">
+              {documents?.documents.map((document) => {
+                const active = activeIngestionDocumentIDs.has(document.id);
+                const selected = documentDetail?.document.id === document.id;
+                return (
+                  <div
+                    className={selected ? 'documentRow selectedRow' : 'documentRow'}
+                    key={document.id}
+                  >
+                    <button onClick={() => void openDocument(document)} type="button">
+                      <strong>{document.name}</strong>
+                      <small>{documentStatusHint(document, active)}</small>
+                    </button>
+                    <span className={stateClass(active ? 'running' : document.status)}>
+                      {active ? 'working' : document.status}
+                    </span>
+                    <em title={document.id}>{formatDateTime(document.updated_at)}</em>
+                    <small>{formatBytes(document.size_bytes)}</small>
+                    <div className="documentActions">
                       <button
                         disabled={loadingDocumentID === document.id}
                         onClick={() => void openDocument(document)}
                         type="button"
                       >
-                        {loadingDocumentID === document.id ? 'Loading' : 'Details'}
+                        {loadingDocumentID === document.id
+                          ? 'Loading'
+                          : selected
+                            ? 'Open'
+                            : 'Details'}
                       </button>
                       <button
-                        disabled={downloadingDocumentID === document.id}
+                        disabled={downloadingDocumentID === document.id || active}
                         onClick={() => void downloadDocumentSource(document)}
                         type="button"
                       >
@@ -3372,32 +3404,34 @@ export function App() {
                       </button>
                       {document.status === 'failed' && (
                         <button
-                          disabled={
-                            retryingDocumentID === document.id ||
-                            activeIngestionDocumentIDs.has(document.id)
-                          }
+                          disabled={retryingDocumentID === document.id || active}
                           onClick={() => void retryDocumentIngestion(document.id)}
                           type="button"
                         >
                           {retryingDocumentID === document.id
                             ? 'Retrying'
-                            : activeIngestionDocumentIDs.has(document.id)
+                            : active
                               ? 'Queued'
                               : 'Retry'}
                         </button>
                       )}
-                      <button
-                        className="dangerButton"
-                        disabled={deletingDocumentID === document.id}
-                        onClick={() => void removeDocument(document.id, document.name)}
-                        type="button"
-                      >
-                        {deletingDocumentID === document.id ? 'Deleting' : 'Delete'}
-                      </button>
+                      <details className="rowMenu compactRowMenu">
+                        <summary>More</summary>
+                        <div className="rowMenuActions">
+                          <button
+                            className="dangerButton"
+                            disabled={deletingDocumentID === document.id || active}
+                            onClick={() => void removeDocument(document.id, document.name)}
+                            type="button"
+                          >
+                            {deletingDocumentID === document.id ? 'Deleting' : 'Delete'}
+                          </button>
+                        </div>
+                      </details>
                     </div>
-                  </details>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
               {documents && documents.documents.length === 0 && <p className="muted">No documents</p>}
             </div>
 
@@ -3434,6 +3468,10 @@ export function App() {
                     )}
                   </div>
                 </div>
+                <div className="documentStatusPanel">
+                  <strong>{documentStatusTitle(documentDetail)}</strong>
+                  <span>{documentStatusDetail(documentDetail)}</span>
+                </div>
                 {documentDetail.document.status === 'failed' &&
                   documentFailureMessage(documentDetail) && (
                     <div className="failureNotice">
@@ -3468,8 +3506,8 @@ export function App() {
                   <div className="tableList">
                     {documentDetail.jobs.map((job) => (
                       <div className="jobRow" key={job.id}>
-                        <strong>{job.type}</strong>
-                        <span className={stateClass(job.state)}>{job.state}</span>
+                        <strong>{jobTypeLabel(job)}</strong>
+                        <span className={stateClass(job.state)}>{titleCase(job.state)}</span>
                         <em className={job.error_message ? 'jobError' : ''} title={jobTitle(job)}>
                           {jobDetail(job)}
                         </em>
@@ -6511,6 +6549,64 @@ function isActiveJobState(state: string) {
 
 function isActiveDocumentStatus(status: string) {
   return ['uploaded', 'processing'].includes(status);
+}
+
+function documentStatusHint(
+  document: ListDocumentsResponse['documents'][number],
+  active: boolean,
+) {
+  if (active) {
+    return 'Ingestion running';
+  }
+  switch (document.status) {
+    case 'ready':
+      return `Ready ${formatDateTime(document.updated_at)}`;
+    case 'failed':
+      return `Failed ${formatDateTime(document.updated_at)}`;
+    case 'uploaded':
+      return 'Queued for ingestion';
+    case 'processing':
+      return 'Parsing and indexing';
+    default:
+      return titleCase(document.status);
+  }
+}
+
+function documentStatusTitle(detail: DocumentDetailResponse) {
+  if (hasActiveIngestionJob(detail)) {
+    return 'Ingestion running';
+  }
+  switch (detail.document.status) {
+    case 'ready':
+      return 'Ready for ask and search';
+    case 'failed':
+      return 'Needs attention';
+    case 'uploaded':
+      return 'Queued for ingestion';
+    case 'processing':
+      return 'Processing';
+    default:
+      return titleCase(detail.document.status);
+  }
+}
+
+function documentStatusDetail(detail: DocumentDetailResponse) {
+  const latestJob = detail.jobs[0];
+  if (detail.document.status === 'failed') {
+    return documentFailureMessage(detail) || 'Retry after fixing the source or parser issue.';
+  }
+  if (hasActiveIngestionJob(detail)) {
+    return latestJob
+      ? `${jobTypeLabel(latestJob)} ${titleCase(latestJob.state)}`
+      : 'Worker is active';
+  }
+  if (detail.document.status === 'ready') {
+    return `Indexed ${formatDateTime(detail.document.updated_at)}`;
+  }
+  if (latestJob) {
+    return jobDetail(latestJob);
+  }
+  return `Updated ${formatDateTime(detail.document.updated_at)}`;
 }
 
 function documentFailureMessage(detail: DocumentDetailResponse) {

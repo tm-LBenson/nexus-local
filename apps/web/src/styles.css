@@ -1397,6 +1397,39 @@ h3 {
   font-weight: 800;
 }
 
+.documentSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.documentSummary button {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-height: 48px;
+  border-color: #d8e2e2;
+  padding: 7px 9px;
+  color: #172026;
+  background: #f8fbfa;
+}
+
+.documentSummary button:hover {
+  background: #eef6f4;
+}
+
+.documentSummary strong {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.documentSummary span {
+  color: #69777d;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
 .tableList,
 .resultStack {
   display: grid;
@@ -1519,7 +1552,7 @@ h3 {
 }
 
 .documentRow {
-  grid-template-columns: minmax(0, 1fr) 110px minmax(150px, 220px) 86px 78px;
+  grid-template-columns: minmax(0, 1fr) 96px minmax(132px, 160px) 78px minmax(244px, auto);
   gap: 10px;
 }
 
@@ -1553,6 +1586,8 @@ h3 {
 }
 
 .documentRow > button:first-child {
+  display: grid;
+  gap: 2px;
   min-height: 34px;
   border: 0;
   padding: 0;
@@ -1564,6 +1599,27 @@ h3 {
 .documentRow > button:first-child:hover {
   color: #1d5262;
   background: transparent;
+}
+
+.documentRow > button:first-child small {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.documentActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.documentActions > button,
+.compactRowMenu > summary {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 0.8rem;
 }
 
 .sourceRow > button:first-child {
@@ -1857,6 +1913,28 @@ h3 {
   gap: 12px;
   border-top: 1px solid #e2e9e9;
   padding-top: 14px;
+}
+
+.documentStatusPanel {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8e2e2;
+  border-left: 3px solid #9bc8b7;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #f8fbfa;
+}
+
+.documentStatusPanel strong {
+  color: #172026;
+  font-size: 0.92rem;
+}
+
+.documentStatusPanel span {
+  color: #5d6a71;
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .failureNotice {
@@ -3040,6 +3118,12 @@ h3 {
     flex-wrap: wrap;
   }
 
+  .documentActions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
   .menuFields {
     position: static;
     width: auto;
@@ -3060,6 +3144,7 @@ h3 {
   }
 
   .documentRow,
+  .documentSummary,
   .conversationRow,
   .jobRow,
   .auditRow,
