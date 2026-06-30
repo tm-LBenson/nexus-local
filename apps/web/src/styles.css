@@ -1513,7 +1513,7 @@ h3 {
 
 .workspaceTable .dataHeader,
 .workspaceTable .tenantRow {
-  grid-template-columns: minmax(0, 1fr) 100px 76px;
+  grid-template-columns: minmax(0, 1fr) 100px 76px 86px;
   gap: 10px;
 }
 

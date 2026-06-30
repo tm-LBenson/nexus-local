@@ -12,6 +12,7 @@ import (
 )
 
 var ErrLastOwner = errors.New("cannot remove the last owner")
+var ErrTenantNotEmpty = errors.New("workspace still has active documents or sources")
 
 type TenantIDs interface {
 	NewTenantID() domain.TenantID
@@ -79,6 +80,14 @@ type DeleteTenantMemberInput struct {
 type DeleteTenantMemberResult struct {
 	Tenant domain.Tenant
 	Member TenantMemberSummary
+}
+
+type DeleteTenantInput struct {
+	TenantID domain.TenantID
+}
+
+type DeleteTenantResult struct {
+	Tenant domain.Tenant
 }
 
 func NewTenantService(repos store.RepositorySet, ids TenantIDs, clock Clock) TenantService {
@@ -247,6 +256,40 @@ func (s TenantService) DeleteTenantMember(ctx context.Context, input DeleteTenan
 	return DeleteTenantMemberResult{
 		Tenant: tenant,
 		Member: removed,
+	}, nil
+}
+
+func (s TenantService) DeleteTenant(ctx context.Context, input DeleteTenantInput) (DeleteTenantResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DeleteTenantResult{}, err
+	}
+	tenant, err := s.repos.GetTenant(ctx, input.TenantID)
+	if err != nil {
+		return DeleteTenantResult{}, err
+	}
+	documents, err := s.repos.ListDocuments(ctx, input.TenantID)
+	if err != nil {
+		return DeleteTenantResult{}, err
+	}
+	for _, document := range documents {
+		if document.Status != domain.DocumentStatusDeleted {
+			return DeleteTenantResult{}, ErrTenantNotEmpty
+		}
+	}
+	sources, err := s.repos.ListDataSources(ctx, input.TenantID)
+	if err != nil {
+		return DeleteTenantResult{}, err
+	}
+	for _, source := range sources {
+		if source.Status != domain.DataSourceStatusArchived {
+			return DeleteTenantResult{}, ErrTenantNotEmpty
+		}
+	}
+	if err := s.repos.DeleteTenant(ctx, input.TenantID); err != nil {
+		return DeleteTenantResult{}, err
+	}
+	return DeleteTenantResult{
+		Tenant: tenant,
 	}, nil
 }
 

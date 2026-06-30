@@ -241,6 +241,129 @@ func TestDeleteTenantMemberProtectsLastOwner(t *testing.T) {
 	}
 }
 
+func TestDeleteTenantRemovesWorkspaceRows(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewTenantService(repos, tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Smoke Workspace",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	document, err := domain.NewDocument(domain.DocumentCreate{
+		ID:         domain.DocumentID("doc_deleted"),
+		TenantID:   domain.TenantID("tenant_fixed"),
+		OwnerID:    domain.UserID("owner_1"),
+		Name:       "deleted.md",
+		StorageKey: "tenants/tenant_fixed/documents/doc_deleted/deleted.md",
+		SizeBytes:  12,
+		Now:        fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("document: %v", err)
+	}
+	if err := document.Transition(domain.DocumentStatusDeleted, fixedClock{}.Now()); err != nil {
+		t.Fatalf("delete document transition: %v", err)
+	}
+	if err := repos.SaveDocument(ctx, document); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+
+	result, err := service.DeleteTenant(ctx, DeleteTenantInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+	})
+	if err != nil {
+		t.Fatalf("delete tenant: %v", err)
+	}
+	if result.Tenant.Name != "Smoke Workspace" {
+		t.Fatalf("deleted tenant name = %q", result.Tenant.Name)
+	}
+	if _, err := repos.GetTenant(ctx, domain.TenantID("tenant_fixed")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("get tenant err = %v, want ErrNotFound", err)
+	}
+	memberships, err := repos.ListMembershipsForUser(ctx, domain.UserID("owner_1"))
+	if err != nil {
+		t.Fatalf("list memberships: %v", err)
+	}
+	if len(memberships) != 0 {
+		t.Fatalf("memberships len = %d, want 0", len(memberships))
+	}
+	documents, err := repos.ListDocuments(ctx, domain.TenantID("tenant_fixed"))
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if len(documents) != 0 {
+		t.Fatalf("documents len = %d, want 0", len(documents))
+	}
+}
+
+func TestDeleteTenantRejectsActiveDocumentsOrSources(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	service := NewTenantService(repos, tenantIDs{}, fixedClock{})
+	if _, err := service.CreateTenant(ctx, CreateTenantInput{
+		Principal: internalauth.Principal{
+			UserID: domain.UserID("owner_1"),
+			Email:  "owner@example.test",
+		},
+		Name: "Active Workspace",
+	}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	document, err := domain.NewDocument(domain.DocumentCreate{
+		ID:         domain.DocumentID("doc_active"),
+		TenantID:   domain.TenantID("tenant_fixed"),
+		OwnerID:    domain.UserID("owner_1"),
+		Name:       "active.md",
+		StorageKey: "tenants/tenant_fixed/documents/doc_active/active.md",
+		SizeBytes:  12,
+		Now:        fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("document: %v", err)
+	}
+	if err := repos.SaveDocument(ctx, document); err != nil {
+		t.Fatalf("save document: %v", err)
+	}
+	_, err = service.DeleteTenant(ctx, DeleteTenantInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+	})
+	if !errors.Is(err, ErrTenantNotEmpty) {
+		t.Fatalf("err = %v, want ErrTenantNotEmpty", err)
+	}
+	if err := document.Transition(domain.DocumentStatusDeleted, fixedClock{}.Now()); err != nil {
+		t.Fatalf("delete document transition: %v", err)
+	}
+	if err := repos.SaveDocument(ctx, document); err != nil {
+		t.Fatalf("save deleted document: %v", err)
+	}
+	source, err := domain.NewDataSource(domain.DataSourceCreate{
+		ID:       domain.DataSourceID("src_active"),
+		TenantID: domain.TenantID("tenant_fixed"),
+		OwnerID:  domain.UserID("owner_1"),
+		Type:     domain.DataSourceTypeFolder,
+		Name:     "Active Source",
+		RootPath: "/sources/primary",
+		Now:      fixedClock{}.Now(),
+	})
+	if err != nil {
+		t.Fatalf("source: %v", err)
+	}
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+	_, err = service.DeleteTenant(ctx, DeleteTenantInput{
+		TenantID: domain.TenantID("tenant_fixed"),
+	})
+	if !errors.Is(err, ErrTenantNotEmpty) {
+		t.Fatalf("err = %v, want ErrTenantNotEmpty", err)
+	}
+}
+
 type tenantIDs struct{}
 
 func (tenantIDs) NewTenantID() domain.TenantID {

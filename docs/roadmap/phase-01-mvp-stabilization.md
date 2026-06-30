@@ -28,6 +28,7 @@ The product needs a dependable core loop before broad connectors, governance, or
 | 1.4 | Audit filters by action/outcome/actor/date in Settings. | Admin can find recent sensitive actions without scanning all rows. |
 | 1.5 | Backup/restore smoke check in local Docker profile. | Restore instructions are verified against a test backup. |
 | 1.6 | First-run sample flow polish. | New user can create a workspace, import a sample, search, and ask without external docs. |
+| 1.7 | Workspace deletion and smoke cleanup. | Empty/test workspaces can be deleted, and the smoke gate removes its temporary workspace. |
 
 ## Dependencies
 
@@ -45,5 +46,4 @@ The product needs a dependable core loop before broad connectors, governance, or
 
 ## First Build Candidate
 
-Start with Slice 1.1. The user already observed slow one-token-at-a-time responses and weak loading states. Improving this gives immediate value and makes future testing less confusing.
-
+The immediate build priority is Slice 1.1. The user already observed slow one-token-at-a-time responses and weak loading states. Workspace deletion and smoke cleanup are being handled first because they remove noisy test data before the next hands-on run.

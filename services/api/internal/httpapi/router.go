@@ -47,6 +47,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
 	mux.HandleFunc("GET /v1/me", currentUserHandler(deps.Tenants))
 	mux.HandleFunc("POST /v1/tenants", createTenantHandler(deps.Tenants))
+	mux.HandleFunc("DELETE /v1/tenants/{tenant_id}", deleteTenantHandler(deps.Tenants, deps.Authorizer))
 	mux.HandleFunc("GET /v1/tenants/{tenant_id}/members", listTenantMembersHandler(deps.Tenants, deps.Authorizer))
 	mux.HandleFunc("POST /v1/tenants/{tenant_id}/members", addTenantMemberHandler(deps.Tenants, deps.Authorizer))
 	mux.HandleFunc("DELETE /v1/tenants/{tenant_id}/members/{user_id}", deleteTenantMemberHandler(deps.Tenants, deps.Authorizer))
@@ -586,6 +587,26 @@ func deleteTenantMemberHandler(service app.TenantService, authorizer internalaut
 	}
 }
 
+func deleteTenantHandler(service app.TenantService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.PathValue("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageTenant); !ok {
+			return
+		}
+
+		result, err := service.DeleteTenant(r.Context(), app.DeleteTenantInput{
+			TenantID: tenantID,
+		})
+		if err != nil {
+			writeTenantMemberError(w, "delete tenant", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, envelope{
+			"tenant": encodeTenant(result.Tenant),
+		})
+	}
+}
+
 func writeTenantMemberError(w http.ResponseWriter, action string, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, domain.ErrInvalidEntity) {
@@ -595,6 +616,9 @@ func writeTenantMemberError(w http.ResponseWriter, action string, err error) {
 		status = http.StatusNotFound
 	}
 	if errors.Is(err, app.ErrLastOwner) {
+		status = http.StatusConflict
+	}
+	if errors.Is(err, app.ErrTenantNotEmpty) {
 		status = http.StatusConflict
 	}
 	writeError(w, status, fmt.Sprintf("%s: %v", action, err))

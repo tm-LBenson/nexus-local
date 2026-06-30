@@ -318,7 +318,17 @@ try {
   }
 
   if ($workspaceCreated) {
-    Warn "cleanup workspace" "left $workspaceID; workspace deletion is not implemented yet"
+    if ($KeepDocument) {
+      Warn "cleanup workspace" "left $workspaceID because -KeepDocument was set"
+    } else {
+      try {
+        $encodedTenant = UrlEncode $workspaceID
+        Invoke-Json "DELETE" "$apiBase/v1/tenants/$encodedTenant" | Out-Null
+        Pass "cleanup workspace" "deleted $workspaceID"
+      } catch {
+        Warn "cleanup workspace" $_.Exception.Message
+      }
+    }
   }
 
   if (Test-Path -LiteralPath $tempPath) {

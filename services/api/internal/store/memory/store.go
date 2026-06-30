@@ -105,6 +105,59 @@ func (s *Store) GetTenant(ctx context.Context, id domain.TenantID) (domain.Tenan
 	return tenant, nil
 }
 
+func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tenants[id]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.tenants, id)
+	for key := range s.memberships {
+		if key.tenantID == id {
+			delete(s.memberships, key)
+		}
+	}
+	for key := range s.documents {
+		if key.tenantID == id {
+			delete(s.documents, key)
+		}
+	}
+	for key := range s.dataSources {
+		if key.tenantID == id {
+			delete(s.dataSources, key)
+		}
+	}
+	for key := range s.scanEntries {
+		if key.tenantID == id {
+			delete(s.scanEntries, key)
+		}
+	}
+	for key := range s.jobs {
+		if key.tenantID == id {
+			delete(s.jobs, key)
+		}
+	}
+	for key := range s.conversations {
+		if key.tenantID == id {
+			delete(s.conversations, key)
+		}
+	}
+	for key := range s.messages {
+		if key.tenantID == id {
+			delete(s.messages, key)
+		}
+	}
+	for key := range s.auditEvents {
+		if key.tenantID == id {
+			delete(s.auditEvents, key)
+		}
+	}
+	return nil
+}
+
 func (s *Store) SaveUser(ctx context.Context, user domain.User) error {
 	if err := ctx.Err(); err != nil {
 		return err

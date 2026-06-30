@@ -352,6 +352,12 @@ export async function createTenant(input: { name: string }) {
   });
 }
 
+export async function deleteTenant(tenantId: string) {
+  return request<{ tenant: Tenant }>(`/v1/tenants/${encodeURIComponent(tenantId)}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function listTenantMembers(tenantId: string) {
   return request<ListTenantMembersResponse>(
     `/v1/tenants/${encodeURIComponent(tenantId)}/members`,

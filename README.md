@@ -117,7 +117,7 @@ Run an end-to-end smoke test:
 .\scripts\dev-check.ps1 -Smoke
 ```
 
-The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, and deletes the temporary document. The workspace remains until workspace deletion exists; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
+The smoke test creates a temporary workspace, uploads a checked-in fixture document, waits for worker ingestion, searches the indexed chunks, asks a question through the configured model gateway, verifies conversation history, deletes the temporary document, and deletes the temporary workspace. Pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` for an ingestion/search-only check when no OpenAI-compatible model gateway is configured.
 
 Run a managed-source stress check:
 
@@ -260,6 +260,7 @@ Useful endpoints during development:
 - `GET /readyz`
 - `GET /v1/me`
 - `POST /v1/tenants`
+- `DELETE /v1/tenants/{tenant_id}`
 - `GET /v1/tenants/{tenant_id}/members`
 - `POST /v1/tenants/{tenant_id}/members`
 - `DELETE /v1/tenants/{tenant_id}/members/{user_id}`

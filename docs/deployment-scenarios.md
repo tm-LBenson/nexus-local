@@ -275,7 +275,7 @@ When the model gateway is configured and reachable:
 .\scripts\dev-check.ps1 -Smoke
 ```
 
-The full smoke gate creates a temporary workspace, uploads a fixture document, waits for ingestion, searches, asks a question, verifies conversation history, and cleans up the temporary document.
+The full smoke gate creates a temporary workspace, uploads a fixture document, waits for ingestion, searches, asks a question, verifies conversation history, and cleans up the temporary document and workspace.
 
 ## External References
 

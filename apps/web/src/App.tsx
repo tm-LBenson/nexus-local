@@ -27,6 +27,7 @@ import {
   dataSourceScanEntriesExportUrl,
   deleteConversation,
   deleteDocument,
+  deleteTenant,
   deleteTenantMember,
   downloadDocument,
   getDataSource,
@@ -367,6 +368,7 @@ export function App() {
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [removingMemberID, setRemovingMemberID] = useState('');
+  const [deletingTenantID, setDeletingTenantID] = useState('');
   const [deletingDocumentID, setDeletingDocumentID] = useState('');
   const [downloadingDocumentID, setDownloadingDocumentID] = useState('');
   const [loadingSourceID, setLoadingSourceID] = useState('');
@@ -1511,6 +1513,29 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setCreatingTenant(false);
+    }
+  }
+
+  async function removeTenant(membership: CurrentUserResponse['memberships'][number]) {
+    const confirmed = window.confirm(
+      `Delete workspace "${membership.tenant.name}"?\n\nDelete documents and archive sources first. This removes the workspace record, conversations, jobs, and audit rows.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDeletingTenantID(membership.tenant.id);
+    setError(null);
+    try {
+      await deleteTenant(membership.tenant.id);
+      const nextUser = await getCurrentUser();
+      setCurrentUser(nextUser);
+      if (membership.tenant.id === tenantID) {
+        await switchTenant(nextUser.memberships[0]?.tenant.id ?? '');
+      }
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDeletingTenantID('');
     }
   }
 
@@ -3707,6 +3732,7 @@ export function App() {
                   <span>Name</span>
                   <span>Role</span>
                   <span></span>
+                  <span></span>
                 </div>
                 {currentUser?.memberships.map((membership) => (
                   <div
@@ -3726,6 +3752,17 @@ export function App() {
                       type="button"
                     >
                       {membership.tenant.id === tenantID ? 'Open' : 'Use'}
+                    </button>
+                    <button
+                      className="dangerButton"
+                      disabled={
+                        deletingTenantID === membership.tenant.id ||
+                        !['owner', 'admin'].includes(membership.role)
+                      }
+                      onClick={() => void removeTenant(membership)}
+                      type="button"
+                    >
+                      {deletingTenantID === membership.tenant.id ? 'Deleting' : 'Delete'}
                     </button>
                   </div>
                 ))}
@@ -4830,6 +4867,9 @@ function friendlyErrorMessage(message: string) {
   }
   if (lower.includes('failed to fetch')) {
     return 'Cannot reach the API. Check that Nexus Local is running.';
+  }
+  if (lower.includes('workspace still has active documents or sources')) {
+    return 'Delete documents and archive sources before deleting this workspace.';
   }
   return message;
 }

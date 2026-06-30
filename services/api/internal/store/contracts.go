@@ -13,6 +13,7 @@ var ErrNotFound = errors.New("not found")
 type TenantRepository interface {
 	SaveTenant(ctx context.Context, tenant domain.Tenant) error
 	GetTenant(ctx context.Context, id domain.TenantID) (domain.Tenant, error)
+	DeleteTenant(ctx context.Context, id domain.TenantID) error
 }
 
 type UserRepository interface {

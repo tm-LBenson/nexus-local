@@ -329,6 +329,79 @@ func TestTenantMemberEndpoints(t *testing.T) {
 	}
 }
 
+func TestDeleteTenantEndpoint(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/tenants", bytes.NewBufferString(`{"name":"Temporary Workspace"}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+	}
+
+	remove := httptest.NewRecorder()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/tenants/tenant_http", nil)
+	server.ServeHTTP(remove, removeReq)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", remove.Code, remove.Body.String())
+	}
+	var body struct {
+		Tenant tenantPayload `json:"tenant"`
+	}
+	if err := json.NewDecoder(remove.Body).Decode(&body); err != nil {
+		t.Fatalf("decode delete: %v", err)
+	}
+	if body.Tenant.Name != "Temporary Workspace" {
+		t.Fatalf("tenant name = %q", body.Tenant.Name)
+	}
+
+	current := httptest.NewRecorder()
+	currentReq := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+	server.ServeHTTP(current, currentReq)
+	if current.Code != http.StatusOK {
+		t.Fatalf("current status = %d, body = %s", current.Code, current.Body.String())
+	}
+	var currentBody struct {
+		Memberships []membershipPayload `json:"memberships"`
+	}
+	if err := json.NewDecoder(current.Body).Decode(&currentBody); err != nil {
+		t.Fatalf("decode current user: %v", err)
+	}
+	if len(currentBody.Memberships) != 0 {
+		t.Fatalf("memberships len = %d, want 0", len(currentBody.Memberships))
+	}
+}
+
+func TestDeleteTenantEndpointRejectsActiveDocument(t *testing.T) {
+	server := newTestServer(t)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/tenants", bytes.NewBufferString(`{"name":"Temporary Workspace"}`))
+	server.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+	}
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/v1/documents/register", bytes.NewBufferString(`{
+		"tenant_id": "tenant_http",
+		"name": "Active.md",
+		"storage_key": "tenants/tenant_http/documents/doc_http/Active.md",
+		"size_bytes": 42
+	}`))
+	server.ServeHTTP(register, registerReq)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, body = %s", register.Code, register.Body.String())
+	}
+
+	remove := httptest.NewRecorder()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/tenants/tenant_http", nil)
+	server.ServeHTTP(remove, removeReq)
+	if remove.Code != http.StatusConflict {
+		t.Fatalf("delete status = %d, want %d, body = %s", remove.Code, http.StatusConflict, remove.Body.String())
+	}
+}
+
 func TestRegisterDocumentEndpoint(t *testing.T) {
 	server := newTestServer(t)
 

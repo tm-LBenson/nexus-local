@@ -63,6 +63,45 @@ func (s *Store) GetTenant(ctx context.Context, id domain.TenantID) (domain.Tenan
 	return tenant, nil
 }
 
+func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	var exists bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id = $1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		err = store.ErrNotFound
+		return err
+	}
+
+	for _, statement := range []string{
+		`DELETE FROM messages WHERE tenant_id = $1`,
+		`DELETE FROM conversations WHERE tenant_id = $1`,
+		`DELETE FROM data_source_scan_entries WHERE tenant_id = $1`,
+		`DELETE FROM data_sources WHERE tenant_id = $1`,
+		`DELETE FROM jobs WHERE tenant_id = $1`,
+		`DELETE FROM documents WHERE tenant_id = $1`,
+		`DELETE FROM audit_events WHERE tenant_id = $1`,
+		`DELETE FROM memberships WHERE tenant_id = $1`,
+		`DELETE FROM tenants WHERE id = $1`,
+	} {
+		if _, err = tx.Exec(ctx, statement, id); err != nil {
+			return err
+		}
+	}
+	err = tx.Commit(ctx)
+	return err
+}
+
 func (s *Store) SaveUser(ctx context.Context, user domain.User) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO users (id, email, name, created_at, updated_at)
