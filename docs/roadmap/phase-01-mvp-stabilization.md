@@ -37,7 +37,8 @@ The product needs a dependable core loop before broad connectors, governance, or
 - Done: Slice 1.2 dashboard attention panel with active work, failures, and next actions.
 - Done: Slice 1.3 library action polish for retry/delete/download/detail states.
 - Done: Slice 1.4 audit filters by action/outcome/actor/date.
-- Next: Slice 1.5 backup/restore smoke check in local Docker profile.
+- Done: Slice 1.5 backup/restore smoke check in local Docker profile.
+- Next: Slice 1.6 first-run sample flow polish.
 
 ## Dependencies
 
@@ -51,8 +52,9 @@ The product needs a dependable core loop before broad connectors, governance, or
 - `go test ./...`
 - `npm run build`
 - `.\scripts\dev-check.ps1 -Smoke`
+- `.\scripts\dev-check.ps1 -BackupSmoke -BackupRestoreRoundTrip`
 - Manual browser check for setup, dashboard, library, activity, settings.
 
 ## First Build Candidate
 
-The immediate build priority is Slice 1.5. Admin audit review is now searchable enough for MVP security checks, so the next highest-value improvement is proving backup and restore in the local Docker profile before broader deployment testing.
+The immediate build priority is Slice 1.6. Backup and restore now have a local round-trip gate, so the next highest-value improvement is polishing the first-run sample flow for a fresh user who needs a quick successful import, search, and ask path.

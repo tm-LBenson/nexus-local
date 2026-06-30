@@ -34,3 +34,19 @@ Use the smoke script against a running stack before calling a build demo-ready:
 ```
 
 The script creates a workspace, uploads `fixtures/smoke/nexus-smoke.md`, waits for ingestion, searches for a unique run phrase, asks over the uploaded document, and verifies that conversation history contains the turn. It deletes the temporary document and temporary workspace; pass `-TenantId` to reuse an existing workspace. Use `-SkipAsk` only when the model gateway is intentionally unavailable and you want to verify ingestion and search by themselves.
+
+## Backup/Restore Gate
+
+Use the fast backup validation after touching backup packaging or before a casual local demo:
+
+```powershell
+.\scripts\dev-check.ps1 -BackupSmoke
+```
+
+Use the full local restore round trip before a release candidate or after changing restore behavior:
+
+```powershell
+.\scripts\dev-check.ps1 -BackupSmoke -BackupRestoreRoundTrip
+```
+
+The round trip creates a temporary workspace/document, backs it up, deletes it, restores the backup, verifies the restored document metadata, object download, and search index, then deletes the temporary workspace again.

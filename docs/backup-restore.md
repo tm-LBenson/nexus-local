@@ -62,6 +62,20 @@ The same check is available through the launcher:
 
 The smoke check creates a temporary backup, verifies the manifest, checks that the Postgres dump and MinIO/Qdrant archives can be read, runs restore preflight validation, and removes the temporary backup unless `-KeepBackup` is passed.
 
+To prove a live local stack can restore usable app data, run the round-trip gate:
+
+```powershell
+.\scripts\dev-check.ps1 -BackupSmoke -BackupRestoreRoundTrip
+```
+
+or through the launcher:
+
+```powershell
+.\nexus.ps1 backup-restore-smoke
+```
+
+The round-trip gate creates a temporary workspace and document, verifies ingestion/search/download, creates a backup, deletes that temporary workspace, restores the backup with `-Force`, verifies the restored document, search index, and object content, then deletes the temporary workspace again. Existing local data is included in the temporary backup and should be preserved by the restore, but this still stops services and overwrites the selected local stack while it runs. Use it before release/demo builds and on disposable stacks when changing restore behavior.
+
 To validate an existing backup without restoring it:
 
 ```powershell
@@ -101,5 +115,6 @@ The script does not overwrite `.env`. If `env.snapshot` is present, review it ma
 - Run a backup before destructive maintenance or upgrades.
 - Keep at least one backup off the NAS or host running the stack.
 - Run `.\nexus.ps1 backup-smoke` after backup/restore script changes or before a demo build.
+- Run `.\nexus.ps1 backup-restore-smoke` before trusting a release candidate or changed restore flow.
 - Test restore on a disposable profile before trusting a backup routine.
 - Treat desktop GPU or rented GPU nodes as replaceable compute; back up the NAS or server that owns Postgres, MinIO, and Qdrant.

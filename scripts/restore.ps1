@@ -36,6 +36,17 @@ function Invoke-DockerOutput($arguments) {
   return $output
 }
 
+function Require-BackupFile($path) {
+  if (-not (Test-Path $path)) {
+    throw "Required backup file is missing: $path"
+  }
+  $item = Get-Item -LiteralPath $path
+  if ($item.Length -le 0) {
+    throw "Required backup file is empty: $path"
+  }
+  return $item
+}
+
 function Get-ServiceContainer($composeArgs, $service) {
   $rawID = Invoke-DockerOutput ($composeArgs + @("ps", "-q", $service)) | Select-Object -First 1
   $id = ""
@@ -74,15 +85,21 @@ $postgresDump = Join-Path $backupFullPath "postgres.dump"
 $minioArchive = Join-Path $backupFullPath "minio-data.tgz"
 $qdrantArchive = Join-Path $backupFullPath "qdrant-storage.tgz"
 
-foreach ($requiredFile in @($postgresDump, $minioArchive, $qdrantArchive)) {
-  if (-not (Test-Path $requiredFile)) {
-    throw "Required backup file is missing: $requiredFile"
-  }
-}
+Require-BackupFile $postgresDump | Out-Null
+Require-BackupFile $minioArchive | Out-Null
+Require-BackupFile $qdrantArchive | Out-Null
 
 $manifest = $null
 if (Test-Path $manifestPath) {
   $manifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json
+  if ([int]$manifest.version -ne 1) {
+    throw "Unexpected backup manifest version: $($manifest.version)"
+  }
+  if ($manifest.components.postgres -ne "postgres.dump" -or
+      $manifest.components.minio -ne "minio-data.tgz" -or
+      $manifest.components.qdrant -ne "qdrant-storage.tgz") {
+    throw "Backup manifest component names are not recognized."
+  }
 }
 if (-not $Profile) {
   if ($manifest -and $manifest.profile) {
@@ -92,6 +109,9 @@ if (-not $Profile) {
   }
 }
 $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $envFile
+if ($manifest -and $manifest.profile -and [string]$manifest.profile -ne $selectedProfile) {
+  throw "Backup profile '$($manifest.profile)' does not match selected profile '$selectedProfile'."
+}
 
 $composeConfig = Get-NexusComposeConfig -Root $root -EnvFile $envFile -Profile $selectedProfile
 $composeArgs = $composeConfig.Args

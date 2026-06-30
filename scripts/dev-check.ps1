@@ -21,6 +21,7 @@ param(
   [string]$Profile = "",
   [string]$BackupOutputDir = "",
   [switch]$KeepBackup,
+  [switch]$BackupRestoreRoundTrip,
   [switch]$KeepSourceStressFixture,
   [switch]$KeepSourceStressSource,
   [switch]$SkipSourceStressDocumentReady
@@ -252,12 +253,23 @@ if ($BackupSmoke) {
   try {
     $backupParams = @{
       Profile = $composeConfig.Profile
+      ApiUrl = $ApiUrl
     }
     if (-not [string]::IsNullOrWhiteSpace($BackupOutputDir)) {
       $backupParams.OutputDir = $BackupOutputDir
     }
     if ($KeepBackup) {
       $backupParams.KeepBackup = $true
+    }
+    if ($BackupRestoreRoundTrip) {
+      $backupParams.RestoreRoundTrip = $true
+      $backupParams.TimeoutSeconds = $SmokeTimeoutSeconds
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserId)) {
+      $backupParams.UserId = $UserId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserEmail)) {
+      $backupParams.UserEmail = $UserEmail
     }
     & $backupSmokeScript @backupParams
   } catch {

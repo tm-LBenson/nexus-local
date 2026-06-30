@@ -137,6 +137,14 @@ Run a non-destructive backup/restore preflight:
 
 This creates a temporary backup, verifies the Postgres dump and MinIO/Qdrant archives, runs restore validation without overwriting data, then deletes the temporary backup unless `-KeepBackup` is passed.
 
+Run the full local restore round trip before release/demo builds:
+
+```powershell
+.\nexus.ps1 backup-restore-smoke
+```
+
+That gate creates a temporary workspace and document, backs it up, deletes it, restores the backup, verifies the restored document, search index, and object content, then cleans the temporary workspace again.
+
 Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint, notes, or technical docs folder:
 
 ```powershell
