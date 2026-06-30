@@ -60,7 +60,20 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
 type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
+type SourceFilterValues = {
+  health: string;
+  query: string;
+  schedule: string;
+  type: string;
+};
 type SourceBulkAction = 'preflight' | 'plan' | 'scan';
+type SourceSavedView = {
+  id: string;
+  name: string;
+  filters: SourceFilterValues;
+  created_at: string;
+  updated_at: string;
+};
 type SourcePlanSampleFilter = 'all' | 'would_import' | 'skipped' | 'failed';
 
 type ScanMetric = {
@@ -145,6 +158,7 @@ type SourceTemplate = SourceFormValues & {
 };
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
+const sourceSavedViewsStorageKey = 'nexus-local.sourceSavedViews';
 const scanEntryPageSize = 100;
 const sourcePlanSamplePageSize = 12;
 const sourcePlanLargeImportFileThreshold = 500;
@@ -176,12 +190,20 @@ const initialAuditFilters = {
   to: '',
 };
 
-const initialSourceFilters = {
+const initialSourceFilters: SourceFilterValues = {
   health: '',
   query: '',
   schedule: '',
   type: '',
 };
+
+const sourcePresetViews: Array<{ id: string; label: string; filters: SourceFilterValues }> = [
+  { id: 'all', label: 'All', filters: initialSourceFilters },
+  { id: 'review', label: 'Needs review', filters: { ...initialSourceFilters, health: 'review' } },
+  { id: 'blocked', label: 'Blocked', filters: { ...initialSourceFilters, health: 'blocked' } },
+  { id: 'overdue', label: 'Overdue', filters: { ...initialSourceFilters, schedule: 'overdue' } },
+  { id: 'scheduled', label: 'Scheduled', filters: { ...initialSourceFilters, schedule: 'scheduled' } },
+];
 
 const initialSourceForm: SourceFormValues = {
   type: 'synced_folder',
@@ -354,6 +376,11 @@ export function App() {
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
+  const [sourceSavedViewsByTenant, setSourceSavedViewsByTenant] = useState<
+    Record<string, SourceSavedView[]>
+  >(readSourceSavedViewStore);
+  const [sourceViewName, setSourceViewName] = useState('');
+  const [sourceViewNotice, setSourceViewNotice] = useState('');
   const [sourceBulkAction, setSourceBulkAction] = useState<SourceBulkAction | ''>('');
   const [sourceBulkResult, setSourceBulkResult] = useState('');
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
@@ -500,6 +527,14 @@ export function App() {
     ],
   );
   const sourceFiltersActive = sourceFilterSetIsActive(sourceFilters);
+  const sourceSavedViews = useMemo(
+    () => (tenantID ? sourceSavedViewsByTenant[tenantID] ?? [] : []),
+    [sourceSavedViewsByTenant, tenantID],
+  );
+  const activeSourceSavedView = useMemo(
+    () => sourceSavedViews.find((view) => sourceFiltersEqual(view.filters, sourceFilters)),
+    [sourceSavedViews, sourceFilters],
+  );
   const sourceBulkActionCounts = useMemo(
     () =>
       sourceBulkEligibilityCounts(
@@ -868,6 +903,64 @@ export function App() {
     }
     window.localStorage.setItem(setupWizardStorageKey, setupFingerprint);
     setSetupAcknowledgedKey(setupFingerprint);
+  }
+
+  function applySourceFilters(nextFilters: SourceFilterValues) {
+    setSourceFilters(normalizeSourceFilters(nextFilters));
+    setSourceViewNotice('');
+    setSourceBulkResult('');
+  }
+
+  function saveSourceView() {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    const name = sourceViewName.trim();
+    if (!name) {
+      setSourceViewNotice('Name the view');
+      return;
+    }
+    if (!sourceFiltersActive) {
+      setSourceViewNotice('Set filters first');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const matchingIndex = sourceSavedViews.findIndex(
+      (view) => view.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    const nextView: SourceSavedView = {
+      created_at: matchingIndex >= 0 ? sourceSavedViews[matchingIndex].created_at : now,
+      filters: normalizeSourceFilters(sourceFilters),
+      id: matchingIndex >= 0 ? sourceSavedViews[matchingIndex].id : newSourceSavedViewID(),
+      name,
+      updated_at: now,
+    };
+    const nextViews =
+      matchingIndex >= 0
+        ? sourceSavedViews.map((view, index) => (index === matchingIndex ? nextView : view))
+        : [nextView, ...sourceSavedViews].slice(0, 18);
+    persistSourceSavedViews(nextViews);
+    setSourceViewName('');
+    setSourceViewNotice(`Saved ${name}`);
+  }
+
+  function removeSourceView(viewID: string) {
+    const view = sourceSavedViews.find((savedView) => savedView.id === viewID);
+    persistSourceSavedViews(sourceSavedViews.filter((savedView) => savedView.id !== viewID));
+    setSourceViewNotice(view ? `Removed ${sourceSavedViewLabel(view)}` : 'Removed view');
+  }
+
+  function persistSourceSavedViews(nextViews: SourceSavedView[]) {
+    if (!tenantID) {
+      return;
+    }
+    setSourceSavedViewsByTenant((current) => {
+      const next = { ...current, [tenantID]: nextViews };
+      writeSourceSavedViewStore(next);
+      return next;
+    });
   }
 
   async function refreshDocuments(nextTenantID = tenantID) {
@@ -2770,11 +2863,66 @@ export function App() {
                 <input
                   aria-label="Filter sources"
                   onChange={(event) =>
-                    setSourceFilters((current) => ({ ...current, query: event.target.value }))
+                    applySourceFilters({ ...sourceFilters, query: event.target.value })
                   }
                   placeholder="Filter sources"
                   value={sourceFilters.query}
                 />
+                <details className="menuPanel compactMenu sourceViewMenu">
+                  <summary>{activeSourceSavedView ? sourceSavedViewLabel(activeSourceSavedView) : 'Views'}</summary>
+                  <div className="menuFields sourceViewFields">
+                    <div className="sourcePresetGrid">
+                      {sourcePresetViews.map((view) => (
+                        <button
+                          className={sourceFiltersEqual(view.filters, sourceFilters) ? 'selected' : ''}
+                          key={view.id}
+                          onClick={() => applySourceFilters(view.filters)}
+                          type="button"
+                        >
+                          {view.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="sourceViewSave">
+                      <input
+                        aria-label="Source view name"
+                        onChange={(event) => setSourceViewName(event.target.value)}
+                        placeholder="View name"
+                        value={sourceViewName}
+                      />
+                      <button
+                        disabled={!sourceFiltersActive || !sourceViewName.trim()}
+                        onClick={saveSourceView}
+                        type="button"
+                      >
+                        Save
+                      </button>
+                    </div>
+                    {sourceSavedViews.length > 0 && (
+                      <div className="sourceSavedViewList">
+                        {sourceSavedViews.map((view) => (
+                          <div className="sourceSavedViewRow" key={view.id}>
+                            <button
+                              className={sourceFiltersEqual(view.filters, sourceFilters) ? 'selected' : ''}
+                              onClick={() => applySourceFilters(view.filters)}
+                              type="button"
+                            >
+                              {sourceSavedViewLabel(view)}
+                            </button>
+                            <button
+                              aria-label={`Remove ${sourceSavedViewLabel(view)}`}
+                              onClick={() => removeSourceView(view.id)}
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {sourceViewNotice && <span className="syncStatus">{sourceViewNotice}</span>}
+                  </div>
+                </details>
                 <details className="menuPanel compactMenu sourceFilterMenu">
                   <summary>{sourceFiltersActive ? 'Filters on' : 'Filters'}</summary>
                   <div className="menuFields">
@@ -2783,10 +2931,10 @@ export function App() {
                       <select
                         aria-label="Source health filter"
                         onChange={(event) =>
-                          setSourceFilters((current) => ({
-                            ...current,
+                          applySourceFilters({
+                            ...sourceFilters,
                             health: event.target.value,
-                          }))
+                          })
                         }
                         value={sourceFilters.health}
                       >
@@ -2803,10 +2951,10 @@ export function App() {
                       <select
                         aria-label="Source type filter"
                         onChange={(event) =>
-                          setSourceFilters((current) => ({
-                            ...current,
+                          applySourceFilters({
+                            ...sourceFilters,
                             type: event.target.value,
-                          }))
+                          })
                         }
                         value={sourceFilters.type}
                       >
@@ -2823,10 +2971,10 @@ export function App() {
                       <select
                         aria-label="Source schedule filter"
                         onChange={(event) =>
-                          setSourceFilters((current) => ({
-                            ...current,
+                          applySourceFilters({
+                            ...sourceFilters,
                             schedule: event.target.value,
-                          }))
+                          })
                         }
                         value={sourceFilters.schedule}
                       >
@@ -2838,7 +2986,7 @@ export function App() {
                     </label>
                     <button
                       disabled={!sourceFiltersActive}
-                      onClick={() => setSourceFilters(initialSourceFilters)}
+                      onClick={() => applySourceFilters(initialSourceFilters)}
                       type="button"
                     >
                       Clear
@@ -6193,6 +6341,86 @@ function sourceFilterSetIsActive(filters: typeof initialSourceFilters) {
   return Boolean(
     filters.health || filters.query.trim() || filters.schedule || filters.type,
   );
+}
+
+function sourceFiltersEqual(left: SourceFilterValues, right: SourceFilterValues) {
+  return (
+    left.health === right.health &&
+    left.query.trim() === right.query.trim() &&
+    left.schedule === right.schedule &&
+    left.type === right.type
+  );
+}
+
+function normalizeSourceFilters(filters: Partial<SourceFilterValues>): SourceFilterValues {
+  return {
+    health: typeof filters.health === 'string' ? filters.health : '',
+    query: typeof filters.query === 'string' ? filters.query : '',
+    schedule: typeof filters.schedule === 'string' ? filters.schedule : '',
+    type: typeof filters.type === 'string' ? filters.type : '',
+  };
+}
+
+function sourceSavedViewLabel(view: SourceSavedView) {
+  return view.name.trim() || 'Untitled view';
+}
+
+function newSourceSavedViewID() {
+  return `view_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readSourceSavedViewStore(): Record<string, SourceSavedView[]> {
+  try {
+    const raw = window.localStorage.getItem(sourceSavedViewsStorageKey);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    const store: Record<string, SourceSavedView[]> = {};
+    for (const [tenantID, views] of Object.entries(parsed)) {
+      if (!Array.isArray(views)) {
+        continue;
+      }
+      const safeViews = views
+        .map((view) => sanitizeSourceSavedView(view))
+        .filter((view): view is SourceSavedView => view !== null)
+        .slice(0, 18);
+      if (safeViews.length > 0) {
+        store[tenantID] = safeViews;
+      }
+    }
+    return store;
+  } catch {
+    return {};
+  }
+}
+
+function sanitizeSourceSavedView(value: unknown): SourceSavedView | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const raw = value as Partial<SourceSavedView>;
+  if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
+    return null;
+  }
+  return {
+    created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
+    filters: normalizeSourceFilters(raw.filters ?? {}),
+    id: raw.id,
+    name: raw.name,
+    updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : '',
+  };
+}
+
+function writeSourceSavedViewStore(store: Record<string, SourceSavedView[]>) {
+  try {
+    window.localStorage.setItem(sourceSavedViewsStorageKey, JSON.stringify(store));
+  } catch {
+    // Saved views are a convenience; lack of local storage should not block core workflows.
+  }
 }
 
 function sourceBulkEligibilityCounts(

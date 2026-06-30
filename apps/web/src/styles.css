@@ -1028,8 +1028,42 @@ h3 {
 }
 
 .sourceFilterMenu .menuFields,
+.sourceViewMenu .menuFields,
 .sourceBulkMenu .menuFields {
   width: min(300px, calc(100vw - 44px));
+}
+
+.sourcePresetGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sourcePresetGrid button,
+.sourceSavedViewRow button {
+  min-width: 0;
+}
+
+.sourcePresetGrid .selected,
+.sourceSavedViewRow .selected {
+  border-color: #87adb2;
+  background: #e7f3f1;
+  color: #153f49;
+}
+
+.sourceViewSave,
+.sourceSavedViewRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.sourceSavedViewList {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #e2e9e9;
+  padding-top: 8px;
 }
 
 .sourceBulkFields button {
