@@ -24,6 +24,10 @@ func (g RandomIDs) NewDataSourceID() domain.DataSourceID {
 	return domain.DataSourceID("src_" + randomHex(g.reader, 16))
 }
 
+func (g RandomIDs) NewSourceViewID() domain.SourceViewID {
+	return domain.SourceViewID("view_" + randomHex(g.reader, 16))
+}
+
 func (g RandomIDs) NewTenantID() domain.TenantID {
 	return domain.TenantID("tenant_" + randomHex(g.reader, 12))
 }

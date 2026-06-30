@@ -19,6 +19,7 @@ type Store struct {
 	memberships   map[membershipKey]domain.Membership
 	documents     map[tenantDocumentKey]domain.Document
 	dataSources   map[tenantDataSourceKey]domain.DataSource
+	sourceViews   map[tenantSourceViewKey]domain.SourceView
 	scanEntries   map[tenantScanEntryKey]domain.DataSourceScanEntry
 	jobs          map[tenantJobKey]domain.Job
 	conversations map[tenantConversationKey]domain.Conversation
@@ -39,6 +40,11 @@ type tenantDocumentKey struct {
 type tenantDataSourceKey struct {
 	tenantID     domain.TenantID
 	dataSourceID domain.DataSourceID
+}
+
+type tenantSourceViewKey struct {
+	tenantID     domain.TenantID
+	sourceViewID domain.SourceViewID
 }
 
 type tenantScanEntryKey struct {
@@ -75,6 +81,7 @@ func New() *Store {
 		memberships:   map[membershipKey]domain.Membership{},
 		documents:     map[tenantDocumentKey]domain.Document{},
 		dataSources:   map[tenantDataSourceKey]domain.DataSource{},
+		sourceViews:   map[tenantSourceViewKey]domain.SourceView{},
 		scanEntries:   map[tenantScanEntryKey]domain.DataSourceScanEntry{},
 		jobs:          map[tenantJobKey]domain.Job{},
 		conversations: map[tenantConversationKey]domain.Conversation{},
@@ -129,6 +136,11 @@ func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
 	for key := range s.dataSources {
 		if key.tenantID == id {
 			delete(s.dataSources, key)
+		}
+	}
+	for key := range s.sourceViews {
+		if key.tenantID == id {
+			delete(s.sourceViews, key)
 		}
 	}
 	for key := range s.scanEntries {
@@ -345,6 +357,69 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		return sources[i].UpdatedAt.After(sources[j].UpdatedAt)
 	})
 	return sources, nil
+}
+
+func (s *Store) SaveSourceView(ctx context.Context, view domain.SourceView) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sourceViews[tenantSourceViewKey{
+		tenantID:     view.TenantID,
+		sourceViewID: view.ID,
+	}] = view
+	return nil
+}
+
+func (s *Store) GetSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) (domain.SourceView, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.SourceView{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	view, ok := s.sourceViews[tenantSourceViewKey{tenantID: tenantID, sourceViewID: id}]
+	if !ok {
+		return domain.SourceView{}, store.ErrNotFound
+	}
+	return view, nil
+}
+
+func (s *Store) ListSourceViews(ctx context.Context, tenantID domain.TenantID) ([]domain.SourceView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	views := make([]domain.SourceView, 0)
+	for _, view := range s.sourceViews {
+		if view.TenantID == tenantID {
+			views = append(views, view)
+		}
+	}
+	sort.Slice(views, func(i, j int) bool {
+		left := strings.ToLower(views[i].Name)
+		right := strings.ToLower(views[j].Name)
+		if left == right {
+			return views[i].ID < views[j].ID
+		}
+		return left < right
+	})
+	return views, nil
+}
+
+func (s *Store) DeleteSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := tenantSourceViewKey{tenantID: tenantID, sourceViewID: id}
+	if _, ok := s.sourceViews[key]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.sourceViews, key)
+	return nil
 }
 
 func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error) {

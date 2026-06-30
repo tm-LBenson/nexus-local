@@ -32,6 +32,7 @@ type Dependencies struct {
 	Tenants       app.TenantService
 	Documents     app.DocumentService
 	DataSources   app.DataSourceService
+	SourceViews   app.SourceViewService
 	Jobs          app.JobService
 	Audit         app.AuditService
 	Search        app.SearchService
@@ -73,6 +74,10 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/data-sources/{source_id}", getDataSourceHandler(deps.DataSources, deps.Authorizer))
 	mux.HandleFunc("PATCH /v1/data-sources/{source_id}", updateDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("DELETE /v1/data-sources/{source_id}", archiveDataSourceHandler(deps.DataSources, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("GET /v1/source-views", listSourceViewsHandler(deps.SourceViews, deps.Authorizer))
+	mux.HandleFunc("POST /v1/source-views", createSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("PATCH /v1/source-views/{view_id}", updateSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("DELETE /v1/source-views/{view_id}", deleteSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("GET /v1/audit-events", listAuditEventsHandler(deps.Audit, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer, deps.Audit))
@@ -263,6 +268,19 @@ type dataSourceRequest struct {
 	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
 }
 
+type sourceViewFiltersRequest struct {
+	Health   string `json:"health"`
+	Query    string `json:"query"`
+	Schedule string `json:"schedule"`
+	Type     string `json:"type"`
+}
+
+type sourceViewRequest struct {
+	TenantID string                   `json:"tenant_id"`
+	Name     string                   `json:"name"`
+	Filters  sourceViewFiltersRequest `json:"filters"`
+}
+
 type createTenantRequest struct {
 	Name string `json:"name"`
 }
@@ -365,6 +383,23 @@ type dataSourceScanEntryPagePayload struct {
 	Offset  int    `json:"offset"`
 	Outcome string `json:"outcome,omitempty"`
 	HasMore bool   `json:"has_more"`
+}
+
+type sourceViewFiltersPayload struct {
+	Health   string `json:"health"`
+	Query    string `json:"query"`
+	Schedule string `json:"schedule"`
+	Type     string `json:"type"`
+}
+
+type sourceViewPayload struct {
+	ID        string                   `json:"id"`
+	TenantID  string                   `json:"tenant_id"`
+	OwnerID   string                   `json:"owner_id"`
+	Name      string                   `json:"name"`
+	Filters   sourceViewFiltersPayload `json:"filters"`
+	CreatedAt string                   `json:"created_at"`
+	UpdatedAt string                   `json:"updated_at"`
 }
 
 type jobPayload struct {
@@ -1278,6 +1313,144 @@ func writeDataSourceError(w http.ResponseWriter, action string, err error) {
 	writeError(w, status, fmt.Sprintf("%s: %v", action, err))
 }
 
+func listSourceViewsHandler(service app.SourceViewService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		result, err := service.List(r.Context(), app.ListSourceViewsInput{TenantID: tenantID})
+		if err != nil {
+			writeSourceViewError(w, "list source views", err)
+			return
+		}
+		views := make([]sourceViewPayload, 0, len(result.Views))
+		for _, view := range result.Views {
+			views = append(views, encodeSourceView(view))
+		}
+		writeJSON(w, http.StatusOK, envelope{"views": views})
+	}
+}
+
+func createSourceViewHandler(service app.SourceViewService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req sourceViewRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.Create(r.Context(), app.CreateSourceViewInput{
+			TenantID: tenantID,
+			OwnerID:  principal.UserID,
+			Name:     req.Name,
+			Filters:  sourceViewFiltersInput(req.Filters),
+		})
+		if err != nil {
+			writeSourceViewError(w, "create source view", err)
+			return
+		}
+		recordSourceViewAudit(r.Context(), audit, tenantID, principal.UserID, "source_view.created", result.View)
+		writeJSON(w, http.StatusCreated, envelope{"view": encodeSourceView(result.View)})
+	}
+}
+
+func updateSourceViewHandler(service app.SourceViewService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req sourceViewRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.Update(r.Context(), app.UpdateSourceViewInput{
+			TenantID:     tenantID,
+			SourceViewID: domain.SourceViewID(r.PathValue("view_id")),
+			Name:         req.Name,
+			Filters:      sourceViewFiltersInput(req.Filters),
+		})
+		if err != nil {
+			writeSourceViewError(w, "update source view", err)
+			return
+		}
+		recordSourceViewAudit(r.Context(), audit, tenantID, principal.UserID, "source_view.updated", result.View)
+		writeJSON(w, http.StatusOK, envelope{"view": encodeSourceView(result.View)})
+	}
+}
+
+func deleteSourceViewHandler(service app.SourceViewService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		viewID := domain.SourceViewID(r.PathValue("view_id"))
+		if err := service.Delete(r.Context(), app.DeleteSourceViewInput{
+			TenantID:     tenantID,
+			SourceViewID: viewID,
+		}); err != nil {
+			writeSourceViewError(w, "delete source view", err)
+			return
+		}
+		recordAudit(r.Context(), audit, app.RecordAuditInput{
+			TenantID:     tenantID,
+			ActorUserID:  principal.UserID,
+			Action:       "source_view.deleted",
+			ResourceType: "source_view",
+			ResourceID:   string(viewID),
+			Outcome:      domain.AuditOutcomeSucceeded,
+			Metadata:     map[string]string{},
+		})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func sourceViewFiltersInput(filters sourceViewFiltersRequest) app.SourceViewFiltersInput {
+	return app.SourceViewFiltersInput{
+		Health:   filters.Health,
+		Query:    filters.Query,
+		Schedule: filters.Schedule,
+		Type:     filters.Type,
+	}
+}
+
+func writeSourceViewError(w http.ResponseWriter, action string, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, domain.ErrInvalidEntity) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, domain.ErrInvalidStateTransition) {
+		status = http.StatusConflict
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	writeError(w, status, fmt.Sprintf("%s: %v", action, err))
+}
+
+func recordSourceViewAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, action string, view domain.SourceView) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       action,
+		ResourceType: "source_view",
+		ResourceID:   string(view.ID),
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Metadata: map[string]string{
+			"name": view.Name,
+		},
+	})
+}
+
 func recordDataSourceAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, action string, source domain.DataSource, outcome domain.AuditOutcome) {
 	recordAudit(ctx, audit, app.RecordAuditInput{
 		TenantID:     tenantID,
@@ -1829,6 +2002,23 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 		LastScanFailed:      source.LastScanFailed,
 		CreatedAt:           source.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:           source.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeSourceView(view domain.SourceView) sourceViewPayload {
+	return sourceViewPayload{
+		ID:       string(view.ID),
+		TenantID: string(view.TenantID),
+		OwnerID:  string(view.OwnerID),
+		Name:     view.Name,
+		Filters: sourceViewFiltersPayload{
+			Health:   view.Filters.Health,
+			Query:    view.Filters.Query,
+			Schedule: view.Filters.Schedule,
+			Type:     string(view.Filters.Type),
+		},
+		CreatedAt: view.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: view.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

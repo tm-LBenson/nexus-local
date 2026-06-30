@@ -186,7 +186,7 @@ func newIntegrationStore(t *testing.T, ctx context.Context) *Store {
 		t.Fatalf("migrate: %v", err)
 	}
 	if _, err := repo.pool.Exec(ctx, `
-		TRUNCATE tenants, users, memberships, documents, jobs, messages, conversations, audit_events, data_sources, data_source_scan_entries
+		TRUNCATE tenants, users, memberships, documents, jobs, messages, conversations, audit_events, data_sources, data_source_scan_entries, source_views
 	`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}

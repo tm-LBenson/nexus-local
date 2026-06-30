@@ -58,6 +58,7 @@ func main() {
 	dataSourceService := app.NewDataSourceService(repos, ids, clock).
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
+	sourceViewService := app.NewSourceViewService(repos, ids, clock)
 	jobService := app.NewJobService(repos)
 	auditService := app.NewAuditService(repos, ids, clock)
 	searchService := app.NewSearchService(embedder, vectorIndex)
@@ -71,6 +72,7 @@ func main() {
 			Tenants:       tenantService,
 			Documents:     documentService,
 			DataSources:   dataSourceService,
+			SourceViews:   sourceViewService,
 			Jobs:          jobService,
 			Audit:         auditService,
 			Search:        searchService,

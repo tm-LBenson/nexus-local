@@ -1423,6 +1423,83 @@ func TestDataSourceEndpointCanRetryFailedDocuments(t *testing.T) {
 	}
 }
 
+func TestSourceViewEndpointRoundTrip(t *testing.T) {
+	server := newTestServer(t)
+
+	createResp := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/source-views", strings.NewReader(`{
+		"tenant_id": "tenant_1",
+		"name": "Blocked",
+		"filters": {
+			"health": "blocked",
+			"query": "oidc",
+			"schedule": "",
+			"type": "synced_folder"
+		}
+	}`))
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var createBody struct {
+		View sourceViewPayload `json:"view"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if createBody.View.ID != "view_http" || createBody.View.Filters.Health != "blocked" {
+		t.Fatalf("created view = %#v", createBody.View)
+	}
+
+	listResp := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/source-views?tenant_id=tenant_1", nil)
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listBody struct {
+		Views []sourceViewPayload `json:"views"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listBody.Views) != 1 || listBody.Views[0].Name != "Blocked" {
+		t.Fatalf("listed views = %#v", listBody.Views)
+	}
+
+	updateResp := httptest.NewRecorder()
+	updateReq := httptest.NewRequest(http.MethodPatch, "/v1/source-views/view_http", strings.NewReader(`{
+		"tenant_id": "tenant_1",
+		"name": "Needs Review",
+		"filters": {
+			"health": "review",
+			"query": "",
+			"schedule": "overdue",
+			"type": ""
+		}
+	}`))
+	server.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body = %s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+	var updateBody struct {
+		View sourceViewPayload `json:"view"`
+	}
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updateBody); err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+	if updateBody.View.Name != "Needs Review" || updateBody.View.Filters.Schedule != "overdue" {
+		t.Fatalf("updated view = %#v", updateBody.View)
+	}
+
+	deleteResp := httptest.NewRecorder()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/source-views/view_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d, body = %s", deleteResp.Code, http.StatusNoContent, deleteResp.Body.String())
+	}
+}
+
 func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 
@@ -2308,6 +2385,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 	search := app.NewSearchService(embedder, vectorIndex)
 	conversations := app.NewConversationService(repos, ids, httpClock{}, search, httpModelGateway{})
 	tenants := app.NewTenantService(repos, ids, httpClock{})
+	sourceViews := app.NewSourceViewService(repos, ids, httpClock{})
 
 	return NewRouter(cfg, Dependencies{
 		ModelRouter:   router,
@@ -2315,6 +2393,7 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 		Tenants:       tenants,
 		Documents:     documents,
 		DataSources:   dataSources,
+		SourceViews:   sourceViews,
 		Jobs:          jobs,
 		Audit:         audit,
 		Search:        search,
@@ -2336,6 +2415,10 @@ func (httpIDs) NewDocumentID() domain.DocumentID {
 
 func (httpIDs) NewDataSourceID() domain.DataSourceID {
 	return domain.DataSourceID("src_http")
+}
+
+func (httpIDs) NewSourceViewID() domain.SourceViewID {
+	return domain.SourceViewID("view_http")
 }
 
 func (httpIDs) NewTenantID() domain.TenantID {

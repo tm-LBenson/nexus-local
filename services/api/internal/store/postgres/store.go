@@ -88,6 +88,7 @@ func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
 		`DELETE FROM conversations WHERE tenant_id = $1`,
 		`DELETE FROM data_source_scan_entries WHERE tenant_id = $1`,
 		`DELETE FROM data_sources WHERE tenant_id = $1`,
+		`DELETE FROM source_views WHERE tenant_id = $1`,
 		`DELETE FROM jobs WHERE tenant_id = $1`,
 		`DELETE FROM documents WHERE tenant_id = $1`,
 		`DELETE FROM audit_events WHERE tenant_id = $1`,
@@ -398,6 +399,99 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()
+}
+
+func (s *Store) SaveSourceView(ctx context.Context, view domain.SourceView) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO source_views (
+			tenant_id, id, owner_id, name, health_filter, query_filter, schedule_filter, type_filter,
+			created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET owner_id = EXCLUDED.owner_id,
+		    name = EXCLUDED.name,
+		    health_filter = EXCLUDED.health_filter,
+		    query_filter = EXCLUDED.query_filter,
+		    schedule_filter = EXCLUDED.schedule_filter,
+		    type_filter = EXCLUDED.type_filter,
+		    updated_at = EXCLUDED.updated_at
+	`, view.TenantID, view.ID, view.OwnerID, view.Name, view.Filters.Health, view.Filters.Query, view.Filters.Schedule, view.Filters.Type, view.CreatedAt, view.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) (domain.SourceView, error) {
+	var view domain.SourceView
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, owner_id, name, health_filter, query_filter, schedule_filter, type_filter,
+		       created_at, updated_at
+		FROM source_views
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&view.ID,
+		&view.TenantID,
+		&view.OwnerID,
+		&view.Name,
+		&view.Filters.Health,
+		&view.Filters.Query,
+		&view.Filters.Schedule,
+		&view.Filters.Type,
+		&view.CreatedAt,
+		&view.UpdatedAt,
+	)
+	if err != nil {
+		return domain.SourceView{}, translateErr(err)
+	}
+	return view, nil
+}
+
+func (s *Store) ListSourceViews(ctx context.Context, tenantID domain.TenantID) ([]domain.SourceView, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, owner_id, name, health_filter, query_filter, schedule_filter, type_filter,
+		       created_at, updated_at
+		FROM source_views
+		WHERE tenant_id = $1
+		ORDER BY lower(name), id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	views := make([]domain.SourceView, 0)
+	for rows.Next() {
+		var view domain.SourceView
+		if err := rows.Scan(
+			&view.ID,
+			&view.TenantID,
+			&view.OwnerID,
+			&view.Name,
+			&view.Filters.Health,
+			&view.Filters.Query,
+			&view.Filters.Schedule,
+			&view.Filters.Type,
+			&view.CreatedAt,
+			&view.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, rows.Err()
+}
+
+func (s *Store) DeleteSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM source_views
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error) {

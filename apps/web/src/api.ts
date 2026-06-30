@@ -130,6 +130,23 @@ export type DataSource = {
   updated_at: string;
 };
 
+export type SourceViewFilters = {
+  health: string;
+  query: string;
+  schedule: string;
+  type: string;
+};
+
+export type SourceView = {
+  id: string;
+  tenant_id: string;
+  owner_id: string;
+  name: string;
+  filters: SourceViewFilters;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RegisteredJob = {
   id: string;
   tenant_id: string;
@@ -188,6 +205,14 @@ export type ListDocumentsResponse = {
 
 export type ListDataSourcesResponse = {
   sources: DataSource[];
+};
+
+export type ListSourceViewsResponse = {
+  views: SourceView[];
+};
+
+export type SourceViewResponse = {
+  view: SourceView;
 };
 
 export type DataSourceResponse = {
@@ -403,6 +428,43 @@ export async function listDocuments(tenantId: string) {
 export async function listDataSources(tenantId: string) {
   const params = new URLSearchParams({ tenant_id: tenantId });
   return request<ListDataSourcesResponse>(`/v1/data-sources?${params.toString()}`);
+}
+
+export async function listSourceViews(tenantId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<ListSourceViewsResponse>(`/v1/source-views?${params.toString()}`);
+}
+
+export async function createSourceView(input: {
+  tenant_id: string;
+  name: string;
+  filters: SourceViewFilters;
+}) {
+  return request<SourceViewResponse>('/v1/source-views', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateSourceView(
+  viewId: string,
+  input: {
+    tenant_id: string;
+    name: string;
+    filters: SourceViewFilters;
+  },
+) {
+  return request<SourceViewResponse>(`/v1/source-views/${encodeURIComponent(viewId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteSourceView(tenantId: string, viewId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<void>(`/v1/source-views/${encodeURIComponent(viewId)}?${params.toString()}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function createDataSource(input: {
@@ -789,6 +851,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     throw await errorFromResponse(response);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;

@@ -44,6 +44,13 @@ type DataSourceRepository interface {
 	ListDataSourceScanEntryPage(ctx context.Context, tenantID domain.TenantID, sourceID domain.DataSourceID, filter DataSourceScanEntryFilter) (DataSourceScanEntryPage, error)
 }
 
+type SourceViewRepository interface {
+	SaveSourceView(ctx context.Context, view domain.SourceView) error
+	GetSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) (domain.SourceView, error)
+	ListSourceViews(ctx context.Context, tenantID domain.TenantID) ([]domain.SourceView, error)
+	DeleteSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) error
+}
+
 type DataSourceScanEntryFilter struct {
 	Outcome domain.DataSourceScanOutcome
 	Limit   int
@@ -94,6 +101,7 @@ type RepositorySet interface {
 	MembershipRepository
 	DocumentRepository
 	DataSourceRepository
+	SourceViewRepository
 	JobRepository
 	ConversationRepository
 	AuditRepository

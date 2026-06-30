@@ -17,6 +17,7 @@ import {
   Readiness,
   RegisterDocumentResponse,
   SearchDocumentsResponse,
+  SourceView,
   addTenantMember,
   archiveDataSource,
   askConversationStream,
@@ -24,10 +25,12 @@ import {
   cancelDataSourceScan,
   checkModelTarget,
   createDataSource,
+  createSourceView,
   createTenant,
   dataSourceScanEntriesExportUrl,
   deleteConversation,
   deleteDocument,
+  deleteSourceView,
   deleteTenant,
   deleteTenantMember,
   downloadDocument,
@@ -43,6 +46,7 @@ import {
   listAuditEvents,
   listDocuments,
   listJobs,
+  listSourceViews,
   listTenantMembers,
   planDataSource,
   preflightDataSource,
@@ -51,6 +55,7 @@ import {
   retryDocument,
   scanDataSource,
   searchDocuments,
+  updateSourceView,
   updateDataSource,
   uploadDocument,
 } from './api';
@@ -67,13 +72,7 @@ type SourceFilterValues = {
   type: string;
 };
 type SourceBulkAction = 'preflight' | 'plan' | 'scan' | 'retry_failures' | 'reindex';
-type SourceSavedView = {
-  id: string;
-  name: string;
-  filters: SourceFilterValues;
-  created_at: string;
-  updated_at: string;
-};
+type SourceSavedView = SourceView;
 type SourcePlanSampleFilter = 'all' | 'would_import' | 'skipped' | 'failed';
 
 type ScanMetric = {
@@ -167,7 +166,6 @@ type SourcePolicyProfile = Pick<
 };
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
-const sourceSavedViewsStorageKey = 'nexus-local.sourceSavedViews';
 const scanEntryPageSize = 100;
 const sourcePlanSamplePageSize = 12;
 const sourcePlanLargeImportFileThreshold = 500;
@@ -444,11 +442,11 @@ export function App() {
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
-  const [sourceSavedViewsByTenant, setSourceSavedViewsByTenant] = useState<
-    Record<string, SourceSavedView[]>
-  >(readSourceSavedViewStore);
+  const [sourceSavedViews, setSourceSavedViews] = useState<SourceSavedView[]>([]);
   const [sourceViewName, setSourceViewName] = useState('');
   const [sourceViewNotice, setSourceViewNotice] = useState('');
+  const [savingSourceView, setSavingSourceView] = useState(false);
+  const [deletingSourceViewID, setDeletingSourceViewID] = useState('');
   const [sourceBulkAction, setSourceBulkAction] = useState<SourceBulkAction | ''>('');
   const [sourceBulkResult, setSourceBulkResult] = useState('');
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
@@ -595,10 +593,6 @@ export function App() {
     ],
   );
   const sourceFiltersActive = sourceFilterSetIsActive(sourceFilters);
-  const sourceSavedViews = useMemo(
-    () => (tenantID ? sourceSavedViewsByTenant[tenantID] ?? [] : []),
-    [sourceSavedViewsByTenant, tenantID],
-  );
   const activeSourceSavedView = useMemo(
     () => sourceSavedViews.find((view) => sourceFiltersEqual(view.filters, sourceFilters)),
     [sourceSavedViews, sourceFilters],
@@ -900,6 +894,7 @@ export function App() {
     if (!initialTenantID) {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
+      setSourceSavedViews([]);
       setJobs({ jobs: [] });
       setAuditEvents(null);
       setConversations({ conversations: [] });
@@ -907,14 +902,22 @@ export function App() {
       return { targets: targetsResult.targets };
     }
 
-    const [documentsResult, dataSourcesResult, jobsResult, conversationsResult] = await Promise.all([
+    const [
+      documentsResult,
+      dataSourcesResult,
+      sourceViewsResult,
+      jobsResult,
+      conversationsResult,
+    ] = await Promise.all([
       listDocuments(initialTenantID),
       listDataSources(initialTenantID),
+      listSourceViews(initialTenantID),
       listJobs(initialTenantID),
       listConversations(initialTenantID),
     ]);
     setDocuments(documentsResult);
     setDataSources(dataSourcesResult);
+    setSourceSavedViews(sourceViewsResult.views);
     setJobs(jobsResult);
     setConversations(conversationsResult);
     return { targets: targetsResult.targets };
@@ -979,7 +982,7 @@ export function App() {
     setSourceBulkResult('');
   }
 
-  function saveSourceView() {
+  async function saveSourceView() {
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -994,41 +997,46 @@ export function App() {
       return;
     }
 
-    const now = new Date().toISOString();
-    const matchingIndex = sourceSavedViews.findIndex(
+    const matchingView = sourceSavedViews.find(
       (view) => view.name.trim().toLowerCase() === name.toLowerCase(),
     );
-    const nextView: SourceSavedView = {
-      created_at: matchingIndex >= 0 ? sourceSavedViews[matchingIndex].created_at : now,
-      filters: normalizeSourceFilters(sourceFilters),
-      id: matchingIndex >= 0 ? sourceSavedViews[matchingIndex].id : newSourceSavedViewID(),
-      name,
-      updated_at: now,
-    };
-    const nextViews =
-      matchingIndex >= 0
-        ? sourceSavedViews.map((view, index) => (index === matchingIndex ? nextView : view))
-        : [nextView, ...sourceSavedViews].slice(0, 18);
-    persistSourceSavedViews(nextViews);
-    setSourceViewName('');
-    setSourceViewNotice(`Saved ${name}`);
-  }
-
-  function removeSourceView(viewID: string) {
-    const view = sourceSavedViews.find((savedView) => savedView.id === viewID);
-    persistSourceSavedViews(sourceSavedViews.filter((savedView) => savedView.id !== viewID));
-    setSourceViewNotice(view ? `Removed ${sourceSavedViewLabel(view)}` : 'Removed view');
-  }
-
-  function persistSourceSavedViews(nextViews: SourceSavedView[]) {
-    if (!tenantID) {
-      return;
+    setSavingSourceView(true);
+    setError(null);
+    try {
+      const input = {
+        tenant_id: tenantID,
+        name,
+        filters: normalizeSourceFilters(sourceFilters),
+      };
+      const result = matchingView
+        ? await updateSourceView(matchingView.id, input)
+        : await createSourceView(input);
+      setSourceSavedViews((current) => {
+        const withoutCurrent = current.filter((view) => view.id !== result.view.id);
+        return sortSourceViews([result.view, ...withoutCurrent]);
+      });
+      setSourceViewName('');
+      setSourceViewNotice(`Saved ${name}`);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setSavingSourceView(false);
     }
-    setSourceSavedViewsByTenant((current) => {
-      const next = { ...current, [tenantID]: nextViews };
-      writeSourceSavedViewStore(next);
-      return next;
-    });
+  }
+
+  async function removeSourceView(viewID: string) {
+    const view = sourceSavedViews.find((savedView) => savedView.id === viewID);
+    setDeletingSourceViewID(viewID);
+    setError(null);
+    try {
+      await deleteSourceView(tenantID, viewID);
+      setSourceSavedViews((current) => current.filter((savedView) => savedView.id !== viewID));
+      setSourceViewNotice(view ? `Removed ${sourceSavedViewLabel(view)}` : 'Removed view');
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDeletingSourceViewID('');
+    }
   }
 
   async function refreshDocuments(nextTenantID = tenantID) {
@@ -1052,6 +1060,20 @@ export function App() {
     }
     try {
       setDataSources(await listDataSources(nextTenantID));
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function refreshSourceViews(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setSourceSavedViews([]);
+      return;
+    }
+    try {
+      const result = await listSourceViews(nextTenantID);
+      setSourceSavedViews(result.views);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -1117,19 +1139,22 @@ export function App() {
     if (!nextTenantID) {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
+      setSourceSavedViews([]);
       setJobs({ jobs: [] });
       setConversations({ conversations: [] });
       return;
     }
     try {
-      const [documentsResult, dataSourcesResult, jobsResult, conversationsResult] = await Promise.all([
+      const [documentsResult, dataSourcesResult, sourceViewsResult, jobsResult, conversationsResult] = await Promise.all([
         listDocuments(nextTenantID),
         listDataSources(nextTenantID),
+        listSourceViews(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
       ]);
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
+      setSourceSavedViews(sourceViewsResult.views);
       setJobs(jobsResult);
       setConversations(conversationsResult);
     } catch (err) {
@@ -1194,6 +1219,7 @@ export function App() {
     setSourceDetail(null);
     setDocumentDetail(null);
     setDataSources(null);
+    setSourceSavedViews([]);
     setSearchResult(null);
     setTenantMembers(null);
     setAuditEvents(null);
@@ -1205,6 +1231,7 @@ export function App() {
     if (!nextTenantID) {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
+      setSourceSavedViews([]);
       setSourceDetail(null);
       setJobs({ jobs: [] });
       setTenantMembers(null);
@@ -1213,15 +1240,17 @@ export function App() {
       return;
     }
     try {
-      const [documentsResult, dataSourcesResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
+      const [documentsResult, dataSourcesResult, sourceViewsResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
         listDocuments(nextTenantID),
         listDataSources(nextTenantID),
+        listSourceViews(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
         listAuditEvents(nextTenantID, auditApiFilters(auditFilters)).catch(() => null),
       ]);
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
+      setSourceSavedViews(sourceViewsResult.views);
       setJobs(jobsResult);
       setConversations(conversationsResult);
       setAuditEvents(auditResult);
@@ -2827,7 +2856,7 @@ export function App() {
                     {sourceListCountLabel(dataSources?.sources.length ?? 0, filteredSources.length)}
                   </span>
                   <button
-                    onClick={() => void Promise.all([refreshDataSources(), refreshJobs()])}
+                    onClick={() => void Promise.all([refreshDataSources(), refreshSourceViews(), refreshJobs()])}
                     type="button"
                   >
                     Refresh
@@ -3003,11 +3032,11 @@ export function App() {
                         value={sourceViewName}
                       />
                       <button
-                        disabled={!sourceFiltersActive || !sourceViewName.trim()}
-                        onClick={saveSourceView}
+                        disabled={!sourceFiltersActive || !sourceViewName.trim() || savingSourceView}
+                        onClick={() => void saveSourceView()}
                         type="button"
                       >
-                        Save
+                        {savingSourceView ? 'Saving' : 'Save'}
                       </button>
                     </div>
                     {sourceSavedViews.length > 0 && (
@@ -3023,10 +3052,11 @@ export function App() {
                             </button>
                             <button
                               aria-label={`Remove ${sourceSavedViewLabel(view)}`}
-                              onClick={() => removeSourceView(view.id)}
+                              disabled={deletingSourceViewID === view.id}
+                              onClick={() => void removeSourceView(view.id)}
                               type="button"
                             >
-                              Remove
+                              {deletingSourceViewID === view.id ? 'Removing' : 'Remove'}
                             </button>
                           </div>
                         ))}
@@ -6499,62 +6529,18 @@ function sourceSavedViewLabel(view: SourceSavedView) {
   return view.name.trim() || 'Untitled view';
 }
 
-function newSourceSavedViewID() {
-  return `view_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function readSourceSavedViewStore(): Record<string, SourceSavedView[]> {
-  try {
-    const raw = window.localStorage.getItem(sourceSavedViewsStorageKey);
-    if (!raw) {
-      return {};
+function sortSourceViews(views: SourceSavedView[]) {
+  return [...views].sort((left, right) => {
+    const nameCompare = sourceSavedViewLabel(left).localeCompare(
+      sourceSavedViewLabel(right),
+      undefined,
+      { sensitivity: 'base' },
+    );
+    if (nameCompare !== 0) {
+      return nameCompare;
     }
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
-    }
-    const store: Record<string, SourceSavedView[]> = {};
-    for (const [tenantID, views] of Object.entries(parsed)) {
-      if (!Array.isArray(views)) {
-        continue;
-      }
-      const safeViews = views
-        .map((view) => sanitizeSourceSavedView(view))
-        .filter((view): view is SourceSavedView => view !== null)
-        .slice(0, 18);
-      if (safeViews.length > 0) {
-        store[tenantID] = safeViews;
-      }
-    }
-    return store;
-  } catch {
-    return {};
-  }
-}
-
-function sanitizeSourceSavedView(value: unknown): SourceSavedView | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  const raw = value as Partial<SourceSavedView>;
-  if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
-    return null;
-  }
-  return {
-    created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
-    filters: normalizeSourceFilters(raw.filters ?? {}),
-    id: raw.id,
-    name: raw.name,
-    updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : '',
-  };
-}
-
-function writeSourceSavedViewStore(store: Record<string, SourceSavedView[]>) {
-  try {
-    window.localStorage.setItem(sourceSavedViewsStorageKey, JSON.stringify(store));
-  } catch {
-    // Saved views are a convenience; lack of local storage should not block core workflows.
-  }
+    return left.id.localeCompare(right.id);
+  });
 }
 
 function sourceBulkEligibilityCounts(
