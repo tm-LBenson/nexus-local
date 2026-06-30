@@ -1085,12 +1085,14 @@ h3 {
   font-size: 0.86rem;
 }
 
-.sourceTemplatePicker {
+.sourceTemplatePicker,
+.sourcePolicyPicker {
   grid-column: 1 / -1;
   position: relative;
 }
 
-.sourceTemplatePicker summary {
+.sourceTemplatePicker summary,
+.sourcePolicyPicker summary {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
@@ -1105,16 +1107,19 @@ h3 {
   cursor: pointer;
 }
 
-.sourceTemplatePicker summary::-webkit-details-marker {
+.sourceTemplatePicker summary::-webkit-details-marker,
+.sourcePolicyPicker summary::-webkit-details-marker {
   display: none;
 }
 
-.sourceTemplatePicker[open] summary {
+.sourceTemplatePicker[open] summary,
+.sourcePolicyPicker[open] summary {
   border-color: #9eb7be;
   background: #eef6f4;
 }
 
-.sourceTemplateGrid {
+.sourceTemplateGrid,
+.sourcePolicyGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -1125,7 +1130,8 @@ h3 {
   background: #fbfdfc;
 }
 
-.sourceTemplateGrid button {
+.sourceTemplateGrid button,
+.sourcePolicyGrid button {
   display: grid;
   gap: 4px;
   justify-items: start;
@@ -1136,30 +1142,37 @@ h3 {
   text-align: left;
 }
 
-.sourceTemplateGrid button:hover {
+.sourceTemplateGrid button:hover,
+.sourcePolicyGrid button:hover {
   background: #eef6f4;
 }
 
 .sourceTemplateGrid strong,
 .sourceTemplateGrid span,
-.sourceTemplateGrid small {
+.sourceTemplateGrid small,
+.sourcePolicyGrid strong,
+.sourcePolicyGrid span,
+.sourcePolicyGrid small {
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
-.sourceTemplateGrid strong {
+.sourceTemplateGrid strong,
+.sourcePolicyGrid strong {
   font-size: 0.86rem;
 }
 
-.sourceTemplateGrid span {
+.sourceTemplateGrid span,
+.sourcePolicyGrid span {
   color: #0a684c;
   font-size: 0.74rem;
   font-weight: 850;
   text-transform: uppercase;
 }
 
-.sourceTemplateGrid small {
+.sourceTemplateGrid small,
+.sourcePolicyGrid small {
   color: #69777d;
   font-size: 0.76rem;
   font-weight: 750;
@@ -1310,6 +1323,7 @@ h3 {
 .inlineDetails:not([open]) > :not(summary),
 .rowMenu:not([open]) > :not(summary),
 .sourceTemplatePicker:not([open]) > :not(summary),
+.sourcePolicyPicker:not([open]) > :not(summary),
 .sourceMountHelper:not([open]) > :not(summary),
 .sourcePlanReviewDetails:not([open]) > :not(summary),
 .settingsDetails:not([open]) > :not(summary) {
@@ -3414,7 +3428,8 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .sourceTemplateGrid {
+  .sourceTemplateGrid,
+  .sourcePolicyGrid {
     grid-template-columns: 1fr;
   }
 }

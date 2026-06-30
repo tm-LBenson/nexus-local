@@ -157,6 +157,15 @@ type SourceTemplate = SourceFormValues & {
   detail: string;
 };
 
+type SourcePolicyProfile = Pick<
+  SourceFormValues,
+  'include_patterns' | 'exclude_patterns' | 'scan_interval_minutes'
+> & {
+  id: string;
+  label: string;
+  detail: string;
+};
+
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
 const sourceSavedViewsStorageKey = 'nexus-local.sourceSavedViews';
 const scanEntryPageSize = 100;
@@ -308,6 +317,65 @@ const sourceTemplates: SourceTemplate[] = [
     ),
     exclude_patterns: commonDocumentExcludes,
     scan_interval_minutes: '10080',
+  },
+];
+
+const sourcePolicyProfiles: SourcePolicyProfile[] = [
+  {
+    id: 'general-docs',
+    label: 'General docs',
+    detail: 'Office files, PDFs, notes, tables, transcripts',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '1440',
+  },
+  {
+    id: 'support-exports',
+    label: 'Support exports',
+    detail: 'Cases, logs, CSV, HTML, JSON exports',
+    include_patterns: ['**/*.json', '**/*.csv', '**/*.tsv', '**/*.html', '**/*.htm', '**/*.txt', '**/*.md'].join(
+      '\n',
+    ),
+    exclude_patterns: [
+      '**/attachments/**',
+      '**/raw/**',
+      '**/tmp/**',
+      '**/temp/**',
+      '**/node_modules/**',
+    ].join('\n'),
+    scan_interval_minutes: '0',
+  },
+  {
+    id: 'knowledge-base',
+    label: 'Knowledge base',
+    detail: 'Docs portals, help centers, runbooks',
+    include_patterns: ['**/*.html', '**/*.htm', '**/*.md', '**/*.txt', '**/*.pdf', '**/*.docx'].join(
+      '\n',
+    ),
+    exclude_patterns: ['**/assets/**', '**/images/**', '**/static/**', '**/archive/**'].join('\n'),
+    scan_interval_minutes: '1440',
+  },
+  {
+    id: 'runbooks',
+    label: 'Runbooks',
+    detail: 'Procedures with slower weekly refresh',
+    include_patterns: ['**/*.md', '**/*.txt', '**/*.pdf', '**/*.docx', '**/*.csv', '**/*.json'].join(
+      '\n',
+    ),
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '10080',
+  },
+  {
+    id: 'governance-records',
+    label: 'Governance',
+    detail: 'Policy, audit, spreadsheet, and PDF records',
+    include_patterns: ['**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.csv', '**/*.md', '**/*.txt'].join(
+      '\n',
+    ),
+    exclude_patterns: ['**/draft/**', '**/Draft/**', '**/archive/**', '**/Archive/**', '**/~$*'].join(
+      '\n',
+    ),
+    scan_interval_minutes: '1440',
   },
 ];
 
@@ -1342,6 +1410,26 @@ export function App() {
       exclude_patterns: template.exclude_patterns,
       scan_interval_minutes: template.scan_interval_minutes,
     });
+  }
+
+  function sourceFormWithPolicy(
+    form: SourceFormValues,
+    profile: SourcePolicyProfile,
+  ): SourceFormValues {
+    return {
+      ...form,
+      include_patterns: profile.include_patterns,
+      exclude_patterns: profile.exclude_patterns,
+      scan_interval_minutes: profile.scan_interval_minutes,
+    };
+  }
+
+  function applySourcePolicy(profile: SourcePolicyProfile) {
+    setSourceForm((current) => sourceFormWithPolicy(current, profile));
+  }
+
+  function applySourceEditPolicy(profile: SourcePolicyProfile) {
+    setSourceEditForm((current) => sourceFormWithPolicy(current, profile));
   }
 
   async function submitDataSource(event: FormEvent<HTMLFormElement>) {
@@ -2766,6 +2854,22 @@ export function App() {
                       ))}
                     </div>
                   </details>
+                  <details className="sourcePolicyPicker">
+                    <summary>Policies</summary>
+                    <div className="sourcePolicyGrid">
+                      {sourcePolicyProfiles.map((profile) => (
+                        <button
+                          key={profile.id}
+                          onClick={() => applySourcePolicy(profile)}
+                          type="button"
+                        >
+                          <strong>{profile.label}</strong>
+                          <span>{sourceScheduleLabel(Number(profile.scan_interval_minutes))}</span>
+                          <small>{profile.detail}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                   <input
                     aria-label="Source name"
                     onChange={(event) =>
@@ -3587,6 +3691,26 @@ export function App() {
                   <details className="inlineDetails">
                     <summary>Edit</summary>
                     <form className="sourceForm sourceEditForm" onSubmit={submitSourceUpdate}>
+                      <details className="sourcePolicyPicker">
+                        <summary>Policies</summary>
+                        <div className="sourcePolicyGrid">
+                          {sourcePolicyProfiles.map((profile) => (
+                            <button
+                              disabled={
+                                sourceDetail.source.status === 'archived' ||
+                                savingSourceID === sourceDetail.source.id
+                              }
+                              key={profile.id}
+                              onClick={() => applySourceEditPolicy(profile)}
+                              type="button"
+                            >
+                              <strong>{profile.label}</strong>
+                              <span>{sourceScheduleLabel(Number(profile.scan_interval_minutes))}</span>
+                              <small>{profile.detail}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </details>
                       <input
                         aria-label="Edit source name"
                         disabled={
