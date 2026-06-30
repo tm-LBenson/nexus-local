@@ -30,6 +30,13 @@ The product needs a dependable core loop before broad connectors, governance, or
 | 1.6 | First-run sample flow polish. | New user can create a workspace, import a sample, search, and ask without external docs. |
 | 1.7 | Workspace deletion and smoke cleanup. | Empty/test workspaces can be deleted, and the smoke gate removes its temporary workspace. |
 
+## Current Status
+
+- Done: Slice 1.7 workspace deletion and smoke cleanup.
+- Done: Slice 1.1 ask streaming feedback, timeout handling, and cancel flow.
+- Done: Slice 1.2 dashboard attention panel with active work, failures, and next actions.
+- Next: Slice 1.3 library action polish for retry/delete/download/detail states.
+
 ## Dependencies
 
 - Current document upload and worker ingestion.
@@ -46,4 +53,4 @@ The product needs a dependable core loop before broad connectors, governance, or
 
 ## First Build Candidate
 
-The immediate build priority is Slice 1.1. The user already observed slow one-token-at-a-time responses and weak loading states. Workspace deletion and smoke cleanup are being handled first because they remove noisy test data before the next hands-on run.
+The immediate build priority is Slice 1.3. The user has a working local run path now, so the next highest-value improvement is making document recovery and management feel dependable from the Library page.

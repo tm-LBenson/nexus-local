@@ -4233,8 +4233,51 @@ function DashboardAttentionPanel({
   const hasFailures = failedDocuments.length > 0 || otherFailedJobs.length > 0;
   const activeAttentionCount = Math.max(activeJobs.length, processingDocumentCount);
   const hasActive = activeAttentionCount > 0;
+  const visibleFailedDocuments = failedDocuments.slice(0, 2);
+  const visibleFailedJobs = otherFailedJobs.slice(0, Math.max(0, 2 - visibleFailedDocuments.length));
+  const visibleActiveDocuments = activeDocuments.slice(0, 2);
+  const visibleActiveJobs = otherActiveJobs.slice(0, Math.max(0, 3 - visibleActiveDocuments.length));
   const totalAttention =
     failedDocuments.length + otherFailedJobs.length + activeAttentionCount;
+  const visibleAttentionCount = hasFailures
+    ? visibleFailedDocuments.length + visibleFailedJobs.length
+    : hasActive
+      ? visibleActiveDocuments.length + visibleActiveJobs.length
+      : 0;
+  const hiddenAttentionCount = Math.max(0, totalAttention - visibleAttentionCount);
+  const firstFailedDocument = failedDocuments[0];
+  const firstFailedJob = otherFailedJobs[0];
+  const nextAction = hasFailures
+    ? {
+        label: 'Blocked',
+        title: 'Review failures',
+        detail: firstFailedDocument?.name ?? jobDetail(firstFailedJob),
+        button: firstFailedDocument ? 'Open' : 'Activity',
+        onClick: () => (firstFailedDocument ? onOpenDocument(firstFailedDocument) : onViewActivity()),
+      }
+    : hasActive
+      ? {
+          label: 'Active',
+          title: 'Track progress',
+          detail: `${activeAttentionCount} ${activeAttentionCount === 1 ? 'item' : 'items'} running`,
+          button: 'Activity',
+          onClick: onViewActivity,
+        }
+      : readyDocumentCount === 0
+        ? {
+            label: 'Next',
+            title: 'Add context',
+            detail: 'No ready documents',
+            button: 'Library',
+            onClick: onViewLibrary,
+          }
+        : {
+            label: 'Ready',
+            title: 'Ask or search',
+            detail: `${readyDocumentCount} ${readyDocumentCount === 1 ? 'document' : 'documents'} ready`,
+            button: 'Library',
+            onClick: onViewLibrary,
+          };
 
   return (
     <section
@@ -4261,36 +4304,20 @@ function DashboardAttentionPanel({
         </button>
       </div>
 
-      <div className="attentionFeed">
-        {failedDocuments.slice(0, 2).map((document) => (
-          <button
-            className="attentionItem attentionItemFailed"
-            key={document.id}
-            onClick={() => onOpenDocument(document)}
-            type="button"
-          >
-            <strong>{document.name}</strong>
-            <span className={stateClass(document.status)}>{document.status}</span>
-            <em>Open</em>
+      <div className="attentionBody">
+        <div className="attentionNext">
+          <span>{nextAction.label}</span>
+          <strong>{nextAction.title}</strong>
+          <em title={nextAction.detail}>{nextAction.detail}</em>
+          <button onClick={nextAction.onClick} type="button">
+            {nextAction.button}
           </button>
-        ))}
-        {otherFailedJobs.slice(0, 2).map((job) => (
-          <button
-            className="attentionItem attentionItemFailed"
-            key={job.id}
-            onClick={onViewActivity}
-            title={jobTitle(job)}
-            type="button"
-          >
-            <strong>{job.type}</strong>
-            <span className={stateClass(job.state)}>{job.state}</span>
-            <em>{jobDetail(job)}</em>
-          </button>
-        ))}
-        {!hasFailures &&
-          activeDocuments.slice(0, 2).map((document) => (
+        </div>
+
+        <div className="attentionFeed">
+          {visibleFailedDocuments.map((document) => (
             <button
-              className="attentionItem"
+              className="attentionItem attentionItemFailed"
               key={document.id}
               onClick={() => onOpenDocument(document)}
               type="button"
@@ -4300,26 +4327,58 @@ function DashboardAttentionPanel({
               <em>Open</em>
             </button>
           ))}
-        {!hasFailures &&
-          otherActiveJobs.slice(0, 3).map((job) => (
+          {visibleFailedJobs.map((job) => (
             <button
-              className="attentionItem"
+              className="attentionItem attentionItemFailed"
               key={job.id}
               onClick={onViewActivity}
               title={jobTitle(job)}
               type="button"
             >
-              <strong>{job.type}</strong>
+              <strong>{jobTypeLabel(job)}</strong>
               <span className={stateClass(job.state)}>{job.state}</span>
-              <em>{formatDateTime(job.updated_at)}</em>
+              <em>{jobDetail(job)}</em>
             </button>
           ))}
-        {!hasFailures && !hasActive && (
-          <div className="attentionReady">
-            <strong>Ready</strong>
-            <span>{readyDocumentCount > 0 ? 'Knowledge base idle' : 'Add documents to begin'}</span>
-          </div>
-        )}
+          {!hasFailures &&
+            visibleActiveDocuments.map((document) => (
+              <button
+                className="attentionItem"
+                key={document.id}
+                onClick={() => onOpenDocument(document)}
+                type="button"
+              >
+                <strong>{document.name}</strong>
+                <span className={stateClass(document.status)}>{document.status}</span>
+                <em>Open</em>
+              </button>
+            ))}
+          {!hasFailures &&
+            visibleActiveJobs.map((job) => (
+              <button
+                className="attentionItem"
+                key={job.id}
+                onClick={onViewActivity}
+                title={jobTitle(job)}
+                type="button"
+              >
+                <strong>{jobTypeLabel(job)}</strong>
+                <span className={stateClass(job.state)}>{job.state}</span>
+                <em>{formatDateTime(job.updated_at)}</em>
+              </button>
+            ))}
+          {hiddenAttentionCount > 0 && (
+            <button className="attentionMore" onClick={onViewActivity} type="button">
+              {hiddenAttentionCount} more
+            </button>
+          )}
+          {!hasFailures && !hasActive && (
+            <div className="attentionReady">
+              <strong>Ready</strong>
+              <span>{readyDocumentCount > 0 ? 'Knowledge base idle' : 'Add documents'}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="attentionActions">
@@ -4332,6 +4391,21 @@ function DashboardAttentionPanel({
       </div>
     </section>
   );
+}
+
+function jobTypeLabel(job: ListJobsResponse['jobs'][number]) {
+  switch (job.type) {
+    case 'document_ingestion':
+      return 'Document ingestion';
+    case 'source_scan':
+      return 'Source scan';
+    case 'source_preflight':
+      return 'Source check';
+    case 'source_plan':
+      return 'Source plan';
+    default:
+      return titleCase(job.type.replace(/_/g, ' '));
+  }
 }
 
 function DocumentSelect({

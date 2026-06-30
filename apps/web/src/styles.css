@@ -680,6 +680,61 @@ h3 {
   text-transform: uppercase;
 }
 
+.attentionBody {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.attentionNext {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 58px;
+  border: 1px solid #d8e2e2;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: #f8fbfa;
+}
+
+.attentionNext span {
+  grid-column: 1;
+  color: #69777d;
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.attentionNext strong,
+.attentionNext em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attentionNext strong {
+  color: #172026;
+  font-size: 0.92rem;
+}
+
+.attentionNext em {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.attentionNext button {
+  grid-row: 1 / 4;
+  grid-column: 2;
+  min-height: 34px;
+  padding: 0 11px;
+}
+
 .attentionFeed {
   display: grid;
   gap: 6px;
@@ -706,6 +761,20 @@ h3 {
 
 .attentionItem:hover {
   background: #f8fbfa;
+}
+
+.attentionMore {
+  justify-self: start;
+  min-height: 30px;
+  border-color: #d8e2e2;
+  padding: 0 10px;
+  color: #1d5262;
+  background: #ffffff;
+  font-size: 0.78rem;
+}
+
+.attentionMore:hover {
+  background: #f1f6f5;
 }
 
 .attentionItemFailed {
@@ -2916,9 +2985,14 @@ h3 {
   }
 
   .attentionSummary,
+  .attentionBody,
   .attentionItem,
   .attentionReady {
     grid-template-columns: 1fr;
+  }
+
+  .attentionNext {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .attentionActions {
