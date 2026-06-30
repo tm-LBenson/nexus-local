@@ -147,6 +147,19 @@ export type SourceView = {
   updated_at: string;
 };
 
+export type SourcePolicyProfile = {
+  id: string;
+  tenant_id: string;
+  owner_id: string;
+  name: string;
+  detail: string;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  scan_interval_minutes: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RegisteredJob = {
   id: string;
   tenant_id: string;
@@ -213,6 +226,14 @@ export type ListSourceViewsResponse = {
 
 export type SourceViewResponse = {
   view: SourceView;
+};
+
+export type ListSourcePolicyProfilesResponse = {
+  profiles: SourcePolicyProfile[];
+};
+
+export type SourcePolicyProfileResponse = {
+  profile: SourcePolicyProfile;
 };
 
 export type DataSourceResponse = {
@@ -465,6 +486,55 @@ export async function deleteSourceView(tenantId: string, viewId: string) {
   return request<void>(`/v1/source-views/${encodeURIComponent(viewId)}?${params.toString()}`, {
     method: 'DELETE',
   });
+}
+
+export async function listSourcePolicyProfiles(tenantId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<ListSourcePolicyProfilesResponse>(
+    `/v1/source-policy-profiles?${params.toString()}`,
+  );
+}
+
+export async function createSourcePolicyProfile(input: {
+  tenant_id: string;
+  name: string;
+  detail: string;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  scan_interval_minutes: number;
+}) {
+  return request<SourcePolicyProfileResponse>('/v1/source-policy-profiles', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateSourcePolicyProfile(
+  profileId: string,
+  input: {
+    tenant_id: string;
+    name: string;
+    detail: string;
+    include_patterns: string[];
+    exclude_patterns: string[];
+    scan_interval_minutes: number;
+  },
+) {
+  return request<SourcePolicyProfileResponse>(
+    `/v1/source-policy-profiles/${encodeURIComponent(profileId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteSourcePolicyProfile(tenantId: string, profileId: string) {
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return request<void>(
+    `/v1/source-policy-profiles/${encodeURIComponent(profileId)}?${params.toString()}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function createDataSource(input: {

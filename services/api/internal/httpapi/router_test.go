@@ -1500,6 +1500,79 @@ func TestSourceViewEndpointRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSourcePolicyProfileEndpointRoundTrip(t *testing.T) {
+	server := newTestServer(t)
+
+	createResp := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/source-policy-profiles", strings.NewReader(`{
+		"tenant_id": "tenant_1",
+		"name": "Support exports",
+		"detail": "Cases and logs",
+		"include_patterns": ["**/*.json", "**/*.csv"],
+		"exclude_patterns": ["**/tmp/**"],
+		"scan_interval_minutes": 1440
+	}`))
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var createBody struct {
+		Profile sourcePolicyProfilePayload `json:"profile"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if createBody.Profile.ID != "policy_http" || createBody.Profile.IncludePatterns[0] != "**/*.json" {
+		t.Fatalf("created profile = %#v", createBody.Profile)
+	}
+
+	listResp := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/source-policy-profiles?tenant_id=tenant_1", nil)
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listBody struct {
+		Profiles []sourcePolicyProfilePayload `json:"profiles"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listBody.Profiles) != 1 || listBody.Profiles[0].Name != "Support exports" {
+		t.Fatalf("listed profiles = %#v", listBody.Profiles)
+	}
+
+	updateResp := httptest.NewRecorder()
+	updateReq := httptest.NewRequest(http.MethodPatch, "/v1/source-policy-profiles/policy_http", strings.NewReader(`{
+		"tenant_id": "tenant_1",
+		"name": "Support logs",
+		"detail": "Refined",
+		"include_patterns": ["**/*.txt"],
+		"exclude_patterns": [],
+		"scan_interval_minutes": 0
+	}`))
+	server.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body = %s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+	var updateBody struct {
+		Profile sourcePolicyProfilePayload `json:"profile"`
+	}
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updateBody); err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+	if updateBody.Profile.Name != "Support logs" || updateBody.Profile.IncludePatterns[0] != "**/*.txt" {
+		t.Fatalf("updated profile = %#v", updateBody.Profile)
+	}
+
+	deleteResp := httptest.NewRecorder()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/source-policy-profiles/policy_http?tenant_id=tenant_1", nil)
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d, body = %s", deleteResp.Code, http.StatusNoContent, deleteResp.Body.String())
+	}
+}
+
 func TestCreateDataSourceEndpointRejectsInvalidInput(t *testing.T) {
 	server := newTestServer(t)
 
@@ -2386,20 +2459,22 @@ func newTestServerWithConfigAndSeed(t *testing.T, authCfg config.Config, seed fu
 	conversations := app.NewConversationService(repos, ids, httpClock{}, search, httpModelGateway{})
 	tenants := app.NewTenantService(repos, ids, httpClock{})
 	sourceViews := app.NewSourceViewService(repos, ids, httpClock{})
+	sourcePolicyProfiles := app.NewSourcePolicyProfileService(repos, ids, httpClock{})
 
 	return NewRouter(cfg, Dependencies{
-		ModelRouter:   router,
-		ModelGateway:  httpModelGateway{},
-		Tenants:       tenants,
-		Documents:     documents,
-		DataSources:   dataSources,
-		SourceViews:   sourceViews,
-		Jobs:          jobs,
-		Audit:         audit,
-		Search:        search,
-		Conversations: conversations,
-		Authenticator: internalauth.NewAuthenticator(cfg),
-		Authorizer:    internalauth.NewAuthorizer(cfg, repos),
+		ModelRouter:          router,
+		ModelGateway:         httpModelGateway{},
+		Tenants:              tenants,
+		Documents:            documents,
+		DataSources:          dataSources,
+		SourceViews:          sourceViews,
+		SourcePolicyProfiles: sourcePolicyProfiles,
+		Jobs:                 jobs,
+		Audit:                audit,
+		Search:               search,
+		Conversations:        conversations,
+		Authenticator:        internalauth.NewAuthenticator(cfg),
+		Authorizer:           internalauth.NewAuthorizer(cfg, repos),
 	})
 }
 
@@ -2419,6 +2494,10 @@ func (httpIDs) NewDataSourceID() domain.DataSourceID {
 
 func (httpIDs) NewSourceViewID() domain.SourceViewID {
 	return domain.SourceViewID("view_http")
+}
+
+func (httpIDs) NewSourcePolicyProfileID() domain.SourcePolicyProfileID {
+	return domain.SourcePolicyProfileID("policy_http")
 }
 
 func (httpIDs) NewTenantID() domain.TenantID {

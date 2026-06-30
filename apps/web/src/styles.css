@@ -1130,6 +1130,24 @@ h3 {
   background: #fbfdfc;
 }
 
+.sourcePolicySave {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.sourcePolicySave .syncStatus {
+  grid-column: 1 / -1;
+}
+
+.sourcePolicyCard {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
 .sourceTemplateGrid button,
 .sourcePolicyGrid button {
   display: grid;
@@ -1145,6 +1163,17 @@ h3 {
 .sourceTemplateGrid button:hover,
 .sourcePolicyGrid button:hover {
   background: #eef6f4;
+}
+
+.sourcePolicyGrid .sourcePolicyRemove {
+  min-height: 32px;
+  padding: 6px 10px;
+  color: #7b2f22;
+  background: #fffaf7;
+}
+
+.sourcePolicyGrid .sourcePolicyRemove:hover {
+  background: #fff0e8;
 }
 
 .sourceTemplateGrid strong,
@@ -3430,6 +3459,10 @@ h3 {
 
   .sourceTemplateGrid,
   .sourcePolicyGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sourcePolicySave {
     grid-template-columns: 1fr;
   }
 }

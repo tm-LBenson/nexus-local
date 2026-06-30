@@ -83,6 +83,8 @@ Startup selects the adapter with `PERSISTENCE_BACKEND`. `RUN_MIGRATIONS=true` ap
 
 `GET /v1/source-views?tenant_id=<tenant_id>` lists tenant-scoped saved source-list views. `POST /v1/source-views` creates a shared view with `tenant_id`, `name`, and `filters` containing optional `health`, `query`, `schedule`, and `type` fields. `PATCH /v1/source-views/<view_id>` updates a shared view. `DELETE /v1/source-views/<view_id>?tenant_id=<tenant_id>` deletes a shared view. Readers can list views; document upload/source-management permission is required to create, update, or delete them. Source-view changes are audited.
 
+`GET /v1/source-policy-profiles?tenant_id=<tenant_id>` lists tenant-scoped source import policy profiles. `POST /v1/source-policy-profiles` creates a shared include/exclude/schedule bundle with `tenant_id`, `name`, optional `detail`, `include_patterns`, `exclude_patterns`, and `scan_interval_minutes`. `PATCH /v1/source-policy-profiles/<profile_id>` updates a shared policy profile. `DELETE /v1/source-policy-profiles/<profile_id>?tenant_id=<tenant_id>` deletes a shared policy profile. Readers can list policy profiles; document upload/source-management permission is required to create, update, or delete them. Policy-profile changes are audited.
+
 `GET /v1/jobs?tenant_id=<tenant_id>` lists recent tenant activity for uploaded documents and background work. Results are newest-updated first, default to 25 jobs, and cap at 100. Failed jobs include `error_message` with the ingestion or worker failure reason.
 
 `GET /v1/audit-events?tenant_id=<tenant_id>` lists recent tenant audit events for administrative review. Results are newest first, default to 50 events, and cap at 200. Events include actor, action, resource type, resource ID, outcome, metadata, and creation time.
@@ -96,6 +98,12 @@ Current audited actions:
 - `data_source.updated`
 - `data_source.archived`
 - `data_source.documents_deleted`
+- `source_view.created`
+- `source_view.updated`
+- `source_view.deleted`
+- `source_policy_profile.created`
+- `source_policy_profile.updated`
+- `source_policy_profile.deleted`
 - `search.completed`
 - `conversation.ask`
 

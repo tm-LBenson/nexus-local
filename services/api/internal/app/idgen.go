@@ -28,6 +28,10 @@ func (g RandomIDs) NewSourceViewID() domain.SourceViewID {
 	return domain.SourceViewID("view_" + randomHex(g.reader, 16))
 }
 
+func (g RandomIDs) NewSourcePolicyProfileID() domain.SourcePolicyProfileID {
+	return domain.SourcePolicyProfileID("policy_" + randomHex(g.reader, 16))
+}
+
 func (g RandomIDs) NewTenantID() domain.TenantID {
 	return domain.TenantID("tenant_" + randomHex(g.reader, 12))
 }

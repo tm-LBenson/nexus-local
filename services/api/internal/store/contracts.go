@@ -51,6 +51,13 @@ type SourceViewRepository interface {
 	DeleteSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) error
 }
 
+type SourcePolicyProfileRepository interface {
+	SaveSourcePolicyProfile(ctx context.Context, profile domain.SourcePolicyProfile) error
+	GetSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) (domain.SourcePolicyProfile, error)
+	ListSourcePolicyProfiles(ctx context.Context, tenantID domain.TenantID) ([]domain.SourcePolicyProfile, error)
+	DeleteSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) error
+}
+
 type DataSourceScanEntryFilter struct {
 	Outcome domain.DataSourceScanOutcome
 	Limit   int
@@ -102,6 +109,7 @@ type RepositorySet interface {
 	DocumentRepository
 	DataSourceRepository
 	SourceViewRepository
+	SourcePolicyProfileRepository
 	JobRepository
 	ConversationRepository
 	AuditRepository

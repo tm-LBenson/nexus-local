@@ -59,6 +59,7 @@ func main() {
 		WithObjectStore(objectStore).
 		WithVectorIndex(vectorIndex)
 	sourceViewService := app.NewSourceViewService(repos, ids, clock)
+	sourcePolicyProfileService := app.NewSourcePolicyProfileService(repos, ids, clock)
 	jobService := app.NewJobService(repos)
 	auditService := app.NewAuditService(repos, ids, clock)
 	searchService := app.NewSearchService(embedder, vectorIndex)
@@ -67,18 +68,19 @@ func main() {
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(cfg, httpapi.Dependencies{
-			ModelRouter:   modelRouter,
-			ModelGateway:  modelGateway,
-			Tenants:       tenantService,
-			Documents:     documentService,
-			DataSources:   dataSourceService,
-			SourceViews:   sourceViewService,
-			Jobs:          jobService,
-			Audit:         auditService,
-			Search:        searchService,
-			Conversations: conversationService,
-			Authenticator: authenticator,
-			Authorizer:    authorizer,
+			ModelRouter:          modelRouter,
+			ModelGateway:         modelGateway,
+			Tenants:              tenantService,
+			Documents:            documentService,
+			DataSources:          dataSourceService,
+			SourceViews:          sourceViewService,
+			SourcePolicyProfiles: sourcePolicyProfileService,
+			Jobs:                 jobService,
+			Audit:                auditService,
+			Search:               searchService,
+			Conversations:        conversationService,
+			Authenticator:        authenticator,
+			Authorizer:           authorizer,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

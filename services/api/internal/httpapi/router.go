@@ -27,18 +27,19 @@ import (
 type envelope map[string]any
 
 type Dependencies struct {
-	ModelRouter   *providers.ModelRouter
-	ModelGateway  providers.ModelGateway
-	Tenants       app.TenantService
-	Documents     app.DocumentService
-	DataSources   app.DataSourceService
-	SourceViews   app.SourceViewService
-	Jobs          app.JobService
-	Audit         app.AuditService
-	Search        app.SearchService
-	Conversations app.ConversationService
-	Authenticator internalauth.Authenticator
-	Authorizer    internalauth.Authorizer
+	ModelRouter          *providers.ModelRouter
+	ModelGateway         providers.ModelGateway
+	Tenants              app.TenantService
+	Documents            app.DocumentService
+	DataSources          app.DataSourceService
+	SourceViews          app.SourceViewService
+	SourcePolicyProfiles app.SourcePolicyProfileService
+	Jobs                 app.JobService
+	Audit                app.AuditService
+	Search               app.SearchService
+	Conversations        app.ConversationService
+	Authenticator        internalauth.Authenticator
+	Authorizer           internalauth.Authorizer
 }
 
 func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
@@ -78,6 +79,10 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /v1/source-views", createSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("PATCH /v1/source-views/{view_id}", updateSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("DELETE /v1/source-views/{view_id}", deleteSourceViewHandler(deps.SourceViews, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("GET /v1/source-policy-profiles", listSourcePolicyProfilesHandler(deps.SourcePolicyProfiles, deps.Authorizer))
+	mux.HandleFunc("POST /v1/source-policy-profiles", createSourcePolicyProfileHandler(deps.SourcePolicyProfiles, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("PATCH /v1/source-policy-profiles/{profile_id}", updateSourcePolicyProfileHandler(deps.SourcePolicyProfiles, deps.Authorizer, deps.Audit))
+	mux.HandleFunc("DELETE /v1/source-policy-profiles/{profile_id}", deleteSourcePolicyProfileHandler(deps.SourcePolicyProfiles, deps.Authorizer, deps.Audit))
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(deps.Jobs, deps.Authorizer))
 	mux.HandleFunc("GET /v1/audit-events", listAuditEventsHandler(deps.Audit, deps.Authorizer))
 	mux.HandleFunc("POST /v1/search", searchHandler(deps.Search, deps.Authorizer, deps.Audit))
@@ -281,6 +286,15 @@ type sourceViewRequest struct {
 	Filters  sourceViewFiltersRequest `json:"filters"`
 }
 
+type sourcePolicyProfileRequest struct {
+	TenantID            string   `json:"tenant_id"`
+	Name                string   `json:"name"`
+	Detail              string   `json:"detail"`
+	IncludePatterns     []string `json:"include_patterns"`
+	ExcludePatterns     []string `json:"exclude_patterns"`
+	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
+}
+
 type createTenantRequest struct {
 	Name string `json:"name"`
 }
@@ -400,6 +414,19 @@ type sourceViewPayload struct {
 	Filters   sourceViewFiltersPayload `json:"filters"`
 	CreatedAt string                   `json:"created_at"`
 	UpdatedAt string                   `json:"updated_at"`
+}
+
+type sourcePolicyProfilePayload struct {
+	ID                  string   `json:"id"`
+	TenantID            string   `json:"tenant_id"`
+	OwnerID             string   `json:"owner_id"`
+	Name                string   `json:"name"`
+	Detail              string   `json:"detail"`
+	IncludePatterns     []string `json:"include_patterns"`
+	ExcludePatterns     []string `json:"exclude_patterns"`
+	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
+	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
 }
 
 type jobPayload struct {
@@ -1451,6 +1478,141 @@ func recordSourceViewAudit(ctx context.Context, audit app.AuditService, tenantID
 	})
 }
 
+func listSourcePolicyProfilesHandler(service app.SourcePolicyProfileService, authorizer internalauth.Authorizer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		if _, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionReadDocuments); !ok {
+			return
+		}
+		result, err := service.List(r.Context(), app.ListSourcePolicyProfilesInput{TenantID: tenantID})
+		if err != nil {
+			writeSourcePolicyProfileError(w, "list source policy profiles", err)
+			return
+		}
+		profiles := make([]sourcePolicyProfilePayload, 0, len(result.Profiles))
+		for _, profile := range result.Profiles {
+			profiles = append(profiles, encodeSourcePolicyProfile(profile))
+		}
+		writeJSON(w, http.StatusOK, envelope{"profiles": profiles})
+	}
+}
+
+func createSourcePolicyProfileHandler(service app.SourcePolicyProfileService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req sourcePolicyProfileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.Create(r.Context(), app.CreateSourcePolicyProfileInput{
+			TenantID:            tenantID,
+			OwnerID:             principal.UserID,
+			Name:                req.Name,
+			Detail:              req.Detail,
+			IncludePatterns:     req.IncludePatterns,
+			ExcludePatterns:     req.ExcludePatterns,
+			ScanIntervalMinutes: req.ScanIntervalMinutes,
+		})
+		if err != nil {
+			writeSourcePolicyProfileError(w, "create source policy profile", err)
+			return
+		}
+		recordSourcePolicyProfileAudit(r.Context(), audit, tenantID, principal.UserID, "source_policy_profile.created", result.Profile)
+		writeJSON(w, http.StatusCreated, envelope{"profile": encodeSourcePolicyProfile(result.Profile)})
+	}
+}
+
+func updateSourcePolicyProfileHandler(service app.SourcePolicyProfileService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req sourcePolicyProfileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		tenantID := domain.TenantID(req.TenantID)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		result, err := service.Update(r.Context(), app.UpdateSourcePolicyProfileInput{
+			TenantID:              tenantID,
+			SourcePolicyProfileID: domain.SourcePolicyProfileID(r.PathValue("profile_id")),
+			Name:                  req.Name,
+			Detail:                req.Detail,
+			IncludePatterns:       req.IncludePatterns,
+			ExcludePatterns:       req.ExcludePatterns,
+			ScanIntervalMinutes:   req.ScanIntervalMinutes,
+		})
+		if err != nil {
+			writeSourcePolicyProfileError(w, "update source policy profile", err)
+			return
+		}
+		recordSourcePolicyProfileAudit(r.Context(), audit, tenantID, principal.UserID, "source_policy_profile.updated", result.Profile)
+		writeJSON(w, http.StatusOK, envelope{"profile": encodeSourcePolicyProfile(result.Profile)})
+	}
+}
+
+func deleteSourcePolicyProfileHandler(service app.SourcePolicyProfileService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		if !ok {
+			return
+		}
+		profileID := domain.SourcePolicyProfileID(r.PathValue("profile_id"))
+		if err := service.Delete(r.Context(), app.DeleteSourcePolicyProfileInput{
+			TenantID:              tenantID,
+			SourcePolicyProfileID: profileID,
+		}); err != nil {
+			writeSourcePolicyProfileError(w, "delete source policy profile", err)
+			return
+		}
+		recordAudit(r.Context(), audit, app.RecordAuditInput{
+			TenantID:     tenantID,
+			ActorUserID:  principal.UserID,
+			Action:       "source_policy_profile.deleted",
+			ResourceType: "source_policy_profile",
+			ResourceID:   string(profileID),
+			Outcome:      domain.AuditOutcomeSucceeded,
+			Metadata:     map[string]string{},
+		})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func writeSourcePolicyProfileError(w http.ResponseWriter, action string, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, domain.ErrInvalidEntity) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, domain.ErrInvalidStateTransition) {
+		status = http.StatusConflict
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	writeError(w, status, fmt.Sprintf("%s: %v", action, err))
+}
+
+func recordSourcePolicyProfileAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, action string, profile domain.SourcePolicyProfile) {
+	recordAudit(ctx, audit, app.RecordAuditInput{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		Action:       action,
+		ResourceType: "source_policy_profile",
+		ResourceID:   string(profile.ID),
+		Outcome:      domain.AuditOutcomeSucceeded,
+		Metadata: map[string]string{
+			"name": profile.Name,
+		},
+	})
+}
+
 func recordDataSourceAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorUserID domain.UserID, action string, source domain.DataSource, outcome domain.AuditOutcome) {
 	recordAudit(ctx, audit, app.RecordAuditInput{
 		TenantID:     tenantID,
@@ -2019,6 +2181,21 @@ func encodeSourceView(view domain.SourceView) sourceViewPayload {
 		},
 		CreatedAt: view.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: view.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func encodeSourcePolicyProfile(profile domain.SourcePolicyProfile) sourcePolicyProfilePayload {
+	return sourcePolicyProfilePayload{
+		ID:                  string(profile.ID),
+		TenantID:            string(profile.TenantID),
+		OwnerID:             string(profile.OwnerID),
+		Name:                profile.Name,
+		Detail:              profile.Detail,
+		IncludePatterns:     profile.IncludePatterns,
+		ExcludePatterns:     profile.ExcludePatterns,
+		ScanIntervalMinutes: profile.ScanIntervalMinutes,
+		CreatedAt:           profile.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:           profile.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

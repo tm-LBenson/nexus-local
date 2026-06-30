@@ -14,17 +14,18 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
-	tenants       map[domain.TenantID]domain.Tenant
-	users         map[domain.UserID]domain.User
-	memberships   map[membershipKey]domain.Membership
-	documents     map[tenantDocumentKey]domain.Document
-	dataSources   map[tenantDataSourceKey]domain.DataSource
-	sourceViews   map[tenantSourceViewKey]domain.SourceView
-	scanEntries   map[tenantScanEntryKey]domain.DataSourceScanEntry
-	jobs          map[tenantJobKey]domain.Job
-	conversations map[tenantConversationKey]domain.Conversation
-	messages      map[tenantMessageKey]domain.Message
-	auditEvents   map[tenantAuditEventKey]domain.AuditEvent
+	tenants        map[domain.TenantID]domain.Tenant
+	users          map[domain.UserID]domain.User
+	memberships    map[membershipKey]domain.Membership
+	documents      map[tenantDocumentKey]domain.Document
+	dataSources    map[tenantDataSourceKey]domain.DataSource
+	sourceViews    map[tenantSourceViewKey]domain.SourceView
+	policyProfiles map[tenantSourcePolicyProfileKey]domain.SourcePolicyProfile
+	scanEntries    map[tenantScanEntryKey]domain.DataSourceScanEntry
+	jobs           map[tenantJobKey]domain.Job
+	conversations  map[tenantConversationKey]domain.Conversation
+	messages       map[tenantMessageKey]domain.Message
+	auditEvents    map[tenantAuditEventKey]domain.AuditEvent
 }
 
 type membershipKey struct {
@@ -45,6 +46,11 @@ type tenantDataSourceKey struct {
 type tenantSourceViewKey struct {
 	tenantID     domain.TenantID
 	sourceViewID domain.SourceViewID
+}
+
+type tenantSourcePolicyProfileKey struct {
+	tenantID  domain.TenantID
+	profileID domain.SourcePolicyProfileID
 }
 
 type tenantScanEntryKey struct {
@@ -76,17 +82,18 @@ type tenantAuditEventKey struct {
 
 func New() *Store {
 	return &Store{
-		tenants:       map[domain.TenantID]domain.Tenant{},
-		users:         map[domain.UserID]domain.User{},
-		memberships:   map[membershipKey]domain.Membership{},
-		documents:     map[tenantDocumentKey]domain.Document{},
-		dataSources:   map[tenantDataSourceKey]domain.DataSource{},
-		sourceViews:   map[tenantSourceViewKey]domain.SourceView{},
-		scanEntries:   map[tenantScanEntryKey]domain.DataSourceScanEntry{},
-		jobs:          map[tenantJobKey]domain.Job{},
-		conversations: map[tenantConversationKey]domain.Conversation{},
-		messages:      map[tenantMessageKey]domain.Message{},
-		auditEvents:   map[tenantAuditEventKey]domain.AuditEvent{},
+		tenants:        map[domain.TenantID]domain.Tenant{},
+		users:          map[domain.UserID]domain.User{},
+		memberships:    map[membershipKey]domain.Membership{},
+		documents:      map[tenantDocumentKey]domain.Document{},
+		dataSources:    map[tenantDataSourceKey]domain.DataSource{},
+		sourceViews:    map[tenantSourceViewKey]domain.SourceView{},
+		policyProfiles: map[tenantSourcePolicyProfileKey]domain.SourcePolicyProfile{},
+		scanEntries:    map[tenantScanEntryKey]domain.DataSourceScanEntry{},
+		jobs:           map[tenantJobKey]domain.Job{},
+		conversations:  map[tenantConversationKey]domain.Conversation{},
+		messages:       map[tenantMessageKey]domain.Message{},
+		auditEvents:    map[tenantAuditEventKey]domain.AuditEvent{},
 	}
 }
 
@@ -141,6 +148,11 @@ func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
 	for key := range s.sourceViews {
 		if key.tenantID == id {
 			delete(s.sourceViews, key)
+		}
+	}
+	for key := range s.policyProfiles {
+		if key.tenantID == id {
+			delete(s.policyProfiles, key)
 		}
 	}
 	for key := range s.scanEntries {
@@ -419,6 +431,69 @@ func (s *Store) DeleteSourceView(ctx context.Context, tenantID domain.TenantID, 
 		return store.ErrNotFound
 	}
 	delete(s.sourceViews, key)
+	return nil
+}
+
+func (s *Store) SaveSourcePolicyProfile(ctx context.Context, profile domain.SourcePolicyProfile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policyProfiles[tenantSourcePolicyProfileKey{
+		tenantID:  profile.TenantID,
+		profileID: profile.ID,
+	}] = profile
+	return nil
+}
+
+func (s *Store) GetSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) (domain.SourcePolicyProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.SourcePolicyProfile{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	profile, ok := s.policyProfiles[tenantSourcePolicyProfileKey{tenantID: tenantID, profileID: id}]
+	if !ok {
+		return domain.SourcePolicyProfile{}, store.ErrNotFound
+	}
+	return profile, nil
+}
+
+func (s *Store) ListSourcePolicyProfiles(ctx context.Context, tenantID domain.TenantID) ([]domain.SourcePolicyProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	profiles := make([]domain.SourcePolicyProfile, 0)
+	for _, profile := range s.policyProfiles {
+		if profile.TenantID == tenantID {
+			profiles = append(profiles, profile)
+		}
+	}
+	sort.Slice(profiles, func(i, j int) bool {
+		left := strings.ToLower(profiles[i].Name)
+		right := strings.ToLower(profiles[j].Name)
+		if left == right {
+			return profiles[i].ID < profiles[j].ID
+		}
+		return left < right
+	})
+	return profiles, nil
+}
+
+func (s *Store) DeleteSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := tenantSourcePolicyProfileKey{tenantID: tenantID, profileID: id}
+	if _, ok := s.policyProfiles[key]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.policyProfiles, key)
 	return nil
 }
 

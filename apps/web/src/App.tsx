@@ -17,6 +17,7 @@ import {
   Readiness,
   RegisterDocumentResponse,
   SearchDocumentsResponse,
+  SourcePolicyProfile as PersistedSourcePolicyProfile,
   SourceView,
   addTenantMember,
   archiveDataSource,
@@ -25,12 +26,14 @@ import {
   cancelDataSourceScan,
   checkModelTarget,
   createDataSource,
+  createSourcePolicyProfile,
   createSourceView,
   createTenant,
   dataSourceScanEntriesExportUrl,
   deleteConversation,
   deleteDocument,
   deleteSourceView,
+  deleteSourcePolicyProfile,
   deleteTenant,
   deleteTenantMember,
   downloadDocument,
@@ -47,6 +50,7 @@ import {
   listDocuments,
   listJobs,
   listSourceViews,
+  listSourcePolicyProfiles,
   listTenantMembers,
   planDataSource,
   preflightDataSource,
@@ -55,6 +59,7 @@ import {
   retryDocument,
   scanDataSource,
   searchDocuments,
+  updateSourcePolicyProfile,
   updateSourceView,
   updateDataSource,
   uploadDocument,
@@ -163,6 +168,7 @@ type SourcePolicyProfile = Pick<
   id: string;
   label: string;
   detail: string;
+  persisted?: boolean;
 };
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
@@ -318,7 +324,7 @@ const sourceTemplates: SourceTemplate[] = [
   },
 ];
 
-const sourcePolicyProfiles: SourcePolicyProfile[] = [
+const builtinSourcePolicyProfiles: SourcePolicyProfile[] = [
   {
     id: 'general-docs',
     label: 'General docs',
@@ -443,6 +449,12 @@ export function App() {
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
   const [sourceSavedViews, setSourceSavedViews] = useState<SourceSavedView[]>([]);
+  const [customSourcePolicyProfiles, setCustomSourcePolicyProfiles] = useState<SourcePolicyProfile[]>([]);
+  const [sourcePolicyName, setSourcePolicyName] = useState('');
+  const [sourcePolicyDetail, setSourcePolicyDetail] = useState('');
+  const [sourcePolicyNotice, setSourcePolicyNotice] = useState('');
+  const [savingSourcePolicyProfile, setSavingSourcePolicyProfile] = useState(false);
+  const [deletingSourcePolicyProfileID, setDeletingSourcePolicyProfileID] = useState('');
   const [sourceViewName, setSourceViewName] = useState('');
   const [sourceViewNotice, setSourceViewNotice] = useState('');
   const [savingSourceView, setSavingSourceView] = useState(false);
@@ -596,6 +608,10 @@ export function App() {
   const activeSourceSavedView = useMemo(
     () => sourceSavedViews.find((view) => sourceFiltersEqual(view.filters, sourceFilters)),
     [sourceSavedViews, sourceFilters],
+  );
+  const sourcePolicyProfiles = useMemo(
+    () => [...builtinSourcePolicyProfiles, ...customSourcePolicyProfiles],
+    [customSourcePolicyProfiles],
   );
   const sourceBulkActionCounts = useMemo(
     () =>
@@ -895,6 +911,7 @@ export function App() {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
       setSourceSavedViews([]);
+      setCustomSourcePolicyProfiles([]);
       setJobs({ jobs: [] });
       setAuditEvents(null);
       setConversations({ conversations: [] });
@@ -906,18 +923,21 @@ export function App() {
       documentsResult,
       dataSourcesResult,
       sourceViewsResult,
+      sourcePolicyProfilesResult,
       jobsResult,
       conversationsResult,
     ] = await Promise.all([
       listDocuments(initialTenantID),
       listDataSources(initialTenantID),
       listSourceViews(initialTenantID),
+      listSourcePolicyProfiles(initialTenantID),
       listJobs(initialTenantID),
       listConversations(initialTenantID),
     ]);
     setDocuments(documentsResult);
     setDataSources(dataSourcesResult);
     setSourceSavedViews(sourceViewsResult.views);
+    setCustomSourcePolicyProfiles(sortSourcePolicyProfiles(sourcePolicyProfilesResult.profiles.map(sourcePolicyProfileToOption)));
     setJobs(jobsResult);
     setConversations(conversationsResult);
     return { targets: targetsResult.targets };
@@ -1039,6 +1059,67 @@ export function App() {
     }
   }
 
+  async function saveSourcePolicyProfile(form: SourceFormValues) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    const name = sourcePolicyName.trim();
+    if (!name) {
+      setSourcePolicyNotice('Name the policy');
+      return;
+    }
+    const includePatterns = patternLinesToList(form.include_patterns);
+    const excludePatterns = patternLinesToList(form.exclude_patterns);
+    const scanIntervalMinutes = Number(form.scan_interval_minutes);
+    const matchingProfile = customSourcePolicyProfiles.find(
+      (profile) => profile.label.trim().toLowerCase() === name.toLowerCase(),
+    );
+    setSavingSourcePolicyProfile(true);
+    setError(null);
+    try {
+      const input = {
+        tenant_id: tenantID,
+        name,
+        detail: sourcePolicyDetail.trim(),
+        include_patterns: includePatterns,
+        exclude_patterns: excludePatterns,
+        scan_interval_minutes: scanIntervalMinutes,
+      };
+      const result =
+        matchingProfile && matchingProfile.persisted
+          ? await updateSourcePolicyProfile(matchingProfile.id, input)
+          : await createSourcePolicyProfile(input);
+      const option = sourcePolicyProfileToOption(result.profile);
+      setCustomSourcePolicyProfiles((current) => {
+        const withoutCurrent = current.filter((profile) => profile.id !== option.id);
+        return sortSourcePolicyProfiles([option, ...withoutCurrent]);
+      });
+      setSourcePolicyName('');
+      setSourcePolicyDetail('');
+      setSourcePolicyNotice(`Saved ${name}`);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setSavingSourcePolicyProfile(false);
+    }
+  }
+
+  async function removeSourcePolicyProfile(profileID: string) {
+    const profile = customSourcePolicyProfiles.find((item) => item.id === profileID);
+    setDeletingSourcePolicyProfileID(profileID);
+    setError(null);
+    try {
+      await deleteSourcePolicyProfile(tenantID, profileID);
+      setCustomSourcePolicyProfiles((current) => current.filter((item) => item.id !== profileID));
+      setSourcePolicyNotice(profile ? `Removed ${profile.label}` : 'Removed policy');
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setDeletingSourcePolicyProfileID('');
+    }
+  }
+
   async function refreshDocuments(nextTenantID = tenantID) {
     setError(null);
     if (!nextTenantID) {
@@ -1074,6 +1155,20 @@ export function App() {
     try {
       const result = await listSourceViews(nextTenantID);
       setSourceSavedViews(result.views);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  async function refreshSourcePolicyProfiles(nextTenantID = tenantID) {
+    setError(null);
+    if (!nextTenantID) {
+      setCustomSourcePolicyProfiles([]);
+      return;
+    }
+    try {
+      const result = await listSourcePolicyProfiles(nextTenantID);
+      setCustomSourcePolicyProfiles(sortSourcePolicyProfiles(result.profiles.map(sourcePolicyProfileToOption)));
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -1140,21 +1235,31 @@ export function App() {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
       setSourceSavedViews([]);
+      setCustomSourcePolicyProfiles([]);
       setJobs({ jobs: [] });
       setConversations({ conversations: [] });
       return;
     }
     try {
-      const [documentsResult, dataSourcesResult, sourceViewsResult, jobsResult, conversationsResult] = await Promise.all([
+      const [
+        documentsResult,
+        dataSourcesResult,
+        sourceViewsResult,
+        sourcePolicyProfilesResult,
+        jobsResult,
+        conversationsResult,
+      ] = await Promise.all([
         listDocuments(nextTenantID),
         listDataSources(nextTenantID),
         listSourceViews(nextTenantID),
+        listSourcePolicyProfiles(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
       ]);
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
       setSourceSavedViews(sourceViewsResult.views);
+      setCustomSourcePolicyProfiles(sortSourcePolicyProfiles(sourcePolicyProfilesResult.profiles.map(sourcePolicyProfileToOption)));
       setJobs(jobsResult);
       setConversations(conversationsResult);
     } catch (err) {
@@ -1220,6 +1325,7 @@ export function App() {
     setDocumentDetail(null);
     setDataSources(null);
     setSourceSavedViews([]);
+    setCustomSourcePolicyProfiles([]);
     setSearchResult(null);
     setTenantMembers(null);
     setAuditEvents(null);
@@ -1232,6 +1338,7 @@ export function App() {
       setDocuments({ documents: [] });
       setDataSources({ sources: [] });
       setSourceSavedViews([]);
+      setCustomSourcePolicyProfiles([]);
       setSourceDetail(null);
       setJobs({ jobs: [] });
       setTenantMembers(null);
@@ -1240,10 +1347,19 @@ export function App() {
       return;
     }
     try {
-      const [documentsResult, dataSourcesResult, sourceViewsResult, jobsResult, conversationsResult, auditResult] = await Promise.all([
+      const [
+        documentsResult,
+        dataSourcesResult,
+        sourceViewsResult,
+        sourcePolicyProfilesResult,
+        jobsResult,
+        conversationsResult,
+        auditResult,
+      ] = await Promise.all([
         listDocuments(nextTenantID),
         listDataSources(nextTenantID),
         listSourceViews(nextTenantID),
+        listSourcePolicyProfiles(nextTenantID),
         listJobs(nextTenantID),
         listConversations(nextTenantID),
         listAuditEvents(nextTenantID, auditApiFilters(auditFilters)).catch(() => null),
@@ -1251,6 +1367,7 @@ export function App() {
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
       setSourceSavedViews(sourceViewsResult.views);
+      setCustomSourcePolicyProfiles(sortSourcePolicyProfiles(sourcePolicyProfilesResult.profiles.map(sourcePolicyProfileToOption)));
       setJobs(jobsResult);
       setConversations(conversationsResult);
       setAuditEvents(auditResult);
@@ -1459,6 +1576,38 @@ export function App() {
 
   function applySourceEditPolicy(profile: SourcePolicyProfile) {
     setSourceEditForm((current) => sourceFormWithPolicy(current, profile));
+  }
+
+  function renderSourcePolicyProfile(
+    profile: SourcePolicyProfile,
+    onApply: (profile: SourcePolicyProfile) => void,
+    disabled = false,
+  ) {
+    const removing = deletingSourcePolicyProfileID === profile.id;
+    return (
+      <div className="sourcePolicyCard" key={profile.id}>
+        <button
+          className="sourcePolicyApply"
+          disabled={disabled || removing}
+          onClick={() => onApply(profile)}
+          type="button"
+        >
+          <strong>{profile.label}</strong>
+          <span>{sourceScheduleLabel(Number(profile.scan_interval_minutes))}</span>
+          <small>{profile.detail || (profile.persisted ? 'Custom policy' : 'Built in')}</small>
+        </button>
+        {profile.persisted && (
+          <button
+            className="sourcePolicyRemove"
+            disabled={removing || savingSourcePolicyProfile}
+            onClick={() => void removeSourcePolicyProfile(profile.id)}
+            type="button"
+          >
+            {removing ? 'Removing' : 'Remove'}
+          </button>
+        )}
+      </div>
+    );
   }
 
   async function submitDataSource(event: FormEvent<HTMLFormElement>) {
@@ -2856,7 +3005,14 @@ export function App() {
                     {sourceListCountLabel(dataSources?.sources.length ?? 0, filteredSources.length)}
                   </span>
                   <button
-                    onClick={() => void Promise.all([refreshDataSources(), refreshSourceViews(), refreshJobs()])}
+                    onClick={() =>
+                      void Promise.all([
+                        refreshDataSources(),
+                        refreshSourceViews(),
+                        refreshSourcePolicyProfiles(),
+                        refreshJobs(),
+                      ])
+                    }
                     type="button"
                   >
                     Refresh
@@ -2885,18 +3041,32 @@ export function App() {
                   </details>
                   <details className="sourcePolicyPicker">
                     <summary>Policies</summary>
+                    <div className="sourcePolicySave">
+                      <input
+                        aria-label="Policy profile name"
+                        onChange={(event) => setSourcePolicyName(event.target.value)}
+                        placeholder="Policy name"
+                        value={sourcePolicyName}
+                      />
+                      <input
+                        aria-label="Policy profile note"
+                        onChange={(event) => setSourcePolicyDetail(event.target.value)}
+                        placeholder="Note"
+                        value={sourcePolicyDetail}
+                      />
+                      <button
+                        disabled={!tenantID || !sourcePolicyName.trim() || savingSourcePolicyProfile}
+                        onClick={() => void saveSourcePolicyProfile(sourceForm)}
+                        type="button"
+                      >
+                        {savingSourcePolicyProfile ? 'Saving' : 'Save'}
+                      </button>
+                      {sourcePolicyNotice && <span className="syncStatus">{sourcePolicyNotice}</span>}
+                    </div>
                     <div className="sourcePolicyGrid">
-                      {sourcePolicyProfiles.map((profile) => (
-                        <button
-                          key={profile.id}
-                          onClick={() => applySourcePolicy(profile)}
-                          type="button"
-                        >
-                          <strong>{profile.label}</strong>
-                          <span>{sourceScheduleLabel(Number(profile.scan_interval_minutes))}</span>
-                          <small>{profile.detail}</small>
-                        </button>
-                      ))}
+                      {sourcePolicyProfiles.map((profile) =>
+                        renderSourcePolicyProfile(profile, applySourcePolicy),
+                      )}
                     </div>
                   </details>
                   <input
@@ -3723,22 +3893,51 @@ export function App() {
                     <form className="sourceForm sourceEditForm" onSubmit={submitSourceUpdate}>
                       <details className="sourcePolicyPicker">
                         <summary>Policies</summary>
+                        <div className="sourcePolicySave">
+                          <input
+                            aria-label="Edit policy profile name"
+                            disabled={
+                              sourceDetail.source.status === 'archived' ||
+                              savingSourceID === sourceDetail.source.id
+                            }
+                            onChange={(event) => setSourcePolicyName(event.target.value)}
+                            placeholder="Policy name"
+                            value={sourcePolicyName}
+                          />
+                          <input
+                            aria-label="Edit policy profile note"
+                            disabled={
+                              sourceDetail.source.status === 'archived' ||
+                              savingSourceID === sourceDetail.source.id
+                            }
+                            onChange={(event) => setSourcePolicyDetail(event.target.value)}
+                            placeholder="Note"
+                            value={sourcePolicyDetail}
+                          />
+                          <button
+                            disabled={
+                              !tenantID ||
+                              !sourcePolicyName.trim() ||
+                              savingSourcePolicyProfile ||
+                              sourceDetail.source.status === 'archived' ||
+                              savingSourceID === sourceDetail.source.id
+                            }
+                            onClick={() => void saveSourcePolicyProfile(sourceEditForm)}
+                            type="button"
+                          >
+                            {savingSourcePolicyProfile ? 'Saving' : 'Save'}
+                          </button>
+                          {sourcePolicyNotice && <span className="syncStatus">{sourcePolicyNotice}</span>}
+                        </div>
                         <div className="sourcePolicyGrid">
-                          {sourcePolicyProfiles.map((profile) => (
-                            <button
-                              disabled={
-                                sourceDetail.source.status === 'archived' ||
-                                savingSourceID === sourceDetail.source.id
-                              }
-                              key={profile.id}
-                              onClick={() => applySourceEditPolicy(profile)}
-                              type="button"
-                            >
-                              <strong>{profile.label}</strong>
-                              <span>{sourceScheduleLabel(Number(profile.scan_interval_minutes))}</span>
-                              <small>{profile.detail}</small>
-                            </button>
-                          ))}
+                          {sourcePolicyProfiles.map((profile) =>
+                            renderSourcePolicyProfile(
+                              profile,
+                              applySourceEditPolicy,
+                              sourceDetail.source.status === 'archived' ||
+                                savingSourceID === sourceDetail.source.id,
+                            ),
+                          )}
                         </div>
                       </details>
                       <input
@@ -6536,6 +6735,28 @@ function sortSourceViews(views: SourceSavedView[]) {
       undefined,
       { sensitivity: 'base' },
     );
+    if (nameCompare !== 0) {
+      return nameCompare;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function sourcePolicyProfileToOption(profile: PersistedSourcePolicyProfile): SourcePolicyProfile {
+  return {
+    id: profile.id,
+    label: profile.name,
+    detail: profile.detail,
+    include_patterns: profile.include_patterns.join('\n'),
+    exclude_patterns: profile.exclude_patterns.join('\n'),
+    scan_interval_minutes: String(profile.scan_interval_minutes),
+    persisted: true,
+  };
+}
+
+function sortSourcePolicyProfiles(profiles: SourcePolicyProfile[]) {
+  return [...profiles].sort((left, right) => {
+    const nameCompare = left.label.localeCompare(right.label, undefined, { sensitivity: 'base' });
     if (nameCompare !== 0) {
       return nameCompare;
     }

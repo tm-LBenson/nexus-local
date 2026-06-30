@@ -89,6 +89,7 @@ func (s *Store) DeleteTenant(ctx context.Context, id domain.TenantID) error {
 		`DELETE FROM data_source_scan_entries WHERE tenant_id = $1`,
 		`DELETE FROM data_sources WHERE tenant_id = $1`,
 		`DELETE FROM source_views WHERE tenant_id = $1`,
+		`DELETE FROM source_policy_profiles WHERE tenant_id = $1`,
 		`DELETE FROM jobs WHERE tenant_id = $1`,
 		`DELETE FROM documents WHERE tenant_id = $1`,
 		`DELETE FROM audit_events WHERE tenant_id = $1`,
@@ -483,6 +484,99 @@ func (s *Store) ListSourceViews(ctx context.Context, tenantID domain.TenantID) (
 func (s *Store) DeleteSourceView(ctx context.Context, tenantID domain.TenantID, id domain.SourceViewID) error {
 	tag, err := s.pool.Exec(ctx, `
 		DELETE FROM source_views
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SaveSourcePolicyProfile(ctx context.Context, profile domain.SourcePolicyProfile) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO source_policy_profiles (
+			tenant_id, id, owner_id, name, detail, include_patterns, exclude_patterns,
+			scan_interval_minutes, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (tenant_id, id) DO UPDATE
+		SET owner_id = EXCLUDED.owner_id,
+		    name = EXCLUDED.name,
+		    detail = EXCLUDED.detail,
+		    include_patterns = EXCLUDED.include_patterns,
+		    exclude_patterns = EXCLUDED.exclude_patterns,
+		    scan_interval_minutes = EXCLUDED.scan_interval_minutes,
+		    updated_at = EXCLUDED.updated_at
+	`, profile.TenantID, profile.ID, profile.OwnerID, profile.Name, profile.Detail, profile.IncludePatterns, profile.ExcludePatterns, profile.ScanIntervalMinutes, profile.CreatedAt, profile.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) (domain.SourcePolicyProfile, error) {
+	var profile domain.SourcePolicyProfile
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, owner_id, name, detail, include_patterns, exclude_patterns,
+		       scan_interval_minutes, created_at, updated_at
+		FROM source_policy_profiles
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(
+		&profile.ID,
+		&profile.TenantID,
+		&profile.OwnerID,
+		&profile.Name,
+		&profile.Detail,
+		&profile.IncludePatterns,
+		&profile.ExcludePatterns,
+		&profile.ScanIntervalMinutes,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
+	if err != nil {
+		return domain.SourcePolicyProfile{}, translateErr(err)
+	}
+	return profile, nil
+}
+
+func (s *Store) ListSourcePolicyProfiles(ctx context.Context, tenantID domain.TenantID) ([]domain.SourcePolicyProfile, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, owner_id, name, detail, include_patterns, exclude_patterns,
+		       scan_interval_minutes, created_at, updated_at
+		FROM source_policy_profiles
+		WHERE tenant_id = $1
+		ORDER BY lower(name), id
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	profiles := make([]domain.SourcePolicyProfile, 0)
+	for rows.Next() {
+		var profile domain.SourcePolicyProfile
+		if err := rows.Scan(
+			&profile.ID,
+			&profile.TenantID,
+			&profile.OwnerID,
+			&profile.Name,
+			&profile.Detail,
+			&profile.IncludePatterns,
+			&profile.ExcludePatterns,
+			&profile.ScanIntervalMinutes,
+			&profile.CreatedAt,
+			&profile.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, profile)
+	}
+	return profiles, rows.Err()
+}
+
+func (s *Store) DeleteSourcePolicyProfile(ctx context.Context, tenantID domain.TenantID, id domain.SourcePolicyProfileID) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM source_policy_profiles
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	if err != nil {
