@@ -66,7 +66,7 @@ type SourceFilterValues = {
   schedule: string;
   type: string;
 };
-type SourceBulkAction = 'preflight' | 'plan' | 'scan';
+type SourceBulkAction = 'preflight' | 'plan' | 'scan' | 'retry_failures' | 'reindex';
 type SourceSavedView = {
   id: string;
   name: string;
@@ -1628,8 +1628,12 @@ export function App() {
             await preflightDataSource(tenantID, source.id);
           } else if (action === 'plan') {
             await planDataSource(tenantID, source.id);
-          } else {
+          } else if (action === 'scan') {
             await scanDataSource(tenantID, source.id);
+          } else if (action === 'retry_failures') {
+            await retryFailedDataSourceDocuments(tenantID, source.id);
+          } else {
+            await reindexDataSource(tenantID, source.id);
           }
           queued++;
         } catch (err) {
@@ -1637,12 +1641,16 @@ export function App() {
         }
       }
 
-      await Promise.all([
+      const refreshes: Array<Promise<void>> = [
         refreshDataSources(tenantID),
         refreshJobs(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
         sourceDetail ? refreshSourceDetail(sourceDetail.source.id) : Promise.resolve(),
-      ]);
+      ];
+      if (action === 'retry_failures' || action === 'reindex') {
+        refreshes.push(refreshDocuments(tenantID));
+      }
+      await Promise.all(refreshes);
 
       setSourceBulkResult(
         `${queued} ${sourceBulkActionResultLabel(action, queued)}${
@@ -3000,7 +3008,9 @@ export function App() {
                       <strong>{sourceListCountLabel(dataSources?.sources.length ?? 0, filteredSources.length)}</strong>
                       <span>Uses the current source filters.</span>
                     </div>
-                    {(['preflight', 'plan', 'scan'] as SourceBulkAction[]).map((action) => (
+                    {(
+                      ['preflight', 'plan', 'scan', 'retry_failures', 'reindex'] as SourceBulkAction[]
+                    ).map((action) => (
                       <button
                         disabled={sourceBulkAction !== '' || sourceBulkActionCounts[action] === 0}
                         key={action}
@@ -6465,6 +6475,28 @@ function sourceBulkEligibilityCounts(
         latestPlanJobs,
       ),
     ).length,
+    retry_failures: sources.filter((source) =>
+      sourceBulkActionIsEligible(
+        'retry_failures',
+        source,
+        activePreflightJobs,
+        activePlanJobs,
+        activeScanJobs,
+        latestPreflightJobs,
+        latestPlanJobs,
+      ),
+    ).length,
+    reindex: sources.filter((source) =>
+      sourceBulkActionIsEligible(
+        'reindex',
+        source,
+        activePreflightJobs,
+        activePlanJobs,
+        activeScanJobs,
+        latestPreflightJobs,
+        latestPlanJobs,
+      ),
+    ).length,
   };
 }
 
@@ -6494,6 +6526,12 @@ function sourceBulkActionIsEligible(
   if (action === 'preflight') {
     return true;
   }
+  if (action === 'retry_failures') {
+    return (source.last_scan_failed ?? 0) > 0;
+  }
+  if (action === 'reindex') {
+    return sourceImportHasStarted(source);
+  }
   if (preflightBlocksScan || planBlocksScan) {
     return false;
   }
@@ -6510,7 +6548,13 @@ function sourceBulkActionVerb(action: SourceBulkAction) {
   if (action === 'plan') {
     return 'Plan imports';
   }
-  return 'Rescan ready';
+  if (action === 'scan') {
+    return 'Rescan ready';
+  }
+  if (action === 'retry_failures') {
+    return 'Retry failures';
+  }
+  return 'Reindex docs';
 }
 
 function sourceBulkActionButtonLabel(action: SourceBulkAction, count: number) {
@@ -6524,7 +6568,13 @@ function sourceBulkActionResultLabel(action: SourceBulkAction, count: number) {
   if (action === 'plan') {
     return count === 1 ? 'import plan queued' : 'import plans queued';
   }
-  return count === 1 ? 'scan queued' : 'scans queued';
+  if (action === 'scan') {
+    return count === 1 ? 'scan queued' : 'scans queued';
+  }
+  if (action === 'retry_failures') {
+    return count === 1 ? 'failure retry queued' : 'failure retries queued';
+  }
+  return count === 1 ? 'reindex queued' : 'reindexes queued';
 }
 
 function filterDataSources(
