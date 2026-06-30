@@ -60,6 +60,7 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
 type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
+type SourceBulkAction = 'preflight' | 'plan' | 'scan';
 type SourcePlanSampleFilter = 'all' | 'would_import' | 'skipped' | 'failed';
 
 type ScanMetric = {
@@ -353,6 +354,8 @@ export function App() {
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
+  const [sourceBulkAction, setSourceBulkAction] = useState<SourceBulkAction | ''>('');
+  const [sourceBulkResult, setSourceBulkResult] = useState('');
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
@@ -497,6 +500,25 @@ export function App() {
     ],
   );
   const sourceFiltersActive = sourceFilterSetIsActive(sourceFilters);
+  const sourceBulkActionCounts = useMemo(
+    () =>
+      sourceBulkEligibilityCounts(
+        filteredSources,
+        activeSourcePreflightJobs,
+        activeSourcePlanJobs,
+        activeSourceScanJobs,
+        latestSourcePreflightJobs,
+        latestSourcePlanJobs,
+      ),
+    [
+      activeSourcePlanJobs,
+      activeSourcePreflightJobs,
+      activeSourceScanJobs,
+      filteredSources,
+      latestSourcePlanJobs,
+      latestSourcePreflightJobs,
+    ],
+  );
   const visibleSourceScanEntries = useMemo(
     () => sourceDetail?.scan_entries ?? [],
     [sourceDetail],
@@ -1477,6 +1499,72 @@ export function App() {
       setError(messageFromError(err));
     } finally {
       setScanningSourceID('');
+    }
+  }
+
+  async function runSourceBulkAction(action: SourceBulkAction) {
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    const eligibleSources = filteredSources.filter((source) =>
+      sourceBulkActionIsEligible(
+        action,
+        source,
+        activeSourcePreflightJobs,
+        activeSourcePlanJobs,
+        activeSourceScanJobs,
+        latestSourcePreflightJobs,
+        latestSourcePlanJobs,
+      ),
+    );
+    if (eligibleSources.length === 0) {
+      setSourceBulkResult(`No eligible sources for ${sourceBulkActionVerb(action).toLowerCase()}`);
+      return;
+    }
+
+    setSourceBulkAction(action);
+    setSourceBulkResult('');
+    setError(null);
+    let queued = 0;
+    const failures: string[] = [];
+    try {
+      for (const source of eligibleSources) {
+        try {
+          if (action === 'preflight') {
+            await preflightDataSource(tenantID, source.id);
+          } else if (action === 'plan') {
+            await planDataSource(tenantID, source.id);
+          } else {
+            await scanDataSource(tenantID, source.id);
+          }
+          queued++;
+        } catch (err) {
+          failures.push(`${source.name}: ${messageFromError(err)}`);
+        }
+      }
+
+      await Promise.all([
+        refreshDataSources(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        sourceDetail ? refreshSourceDetail(sourceDetail.source.id) : Promise.resolve(),
+      ]);
+
+      setSourceBulkResult(
+        `${queued} ${sourceBulkActionResultLabel(action, queued)}${
+          failures.length > 0 ? ` / ${failures.length} failed` : ''
+        }`,
+      );
+      if (failures.length > 0) {
+        setError(
+          failures.length === 1
+            ? failures[0]
+            : `${failures[0]} (${failures.length - 1} more failed)`,
+        );
+      }
+    } finally {
+      setSourceBulkAction('');
     }
   }
 
@@ -2757,6 +2845,30 @@ export function App() {
                     </button>
                   </div>
                 </details>
+                <details className="menuPanel compactMenu sourceBulkMenu">
+                  <summary>{sourceBulkAction ? sourceBulkActionVerb(sourceBulkAction) : 'Actions'}</summary>
+                  <div className="menuFields sourceBulkFields">
+                    <div className="sourceBulkSummary">
+                      <strong>{sourceListCountLabel(dataSources?.sources.length ?? 0, filteredSources.length)}</strong>
+                      <span>Uses the current source filters.</span>
+                    </div>
+                    {(['preflight', 'plan', 'scan'] as SourceBulkAction[]).map((action) => (
+                      <button
+                        disabled={sourceBulkAction !== '' || sourceBulkActionCounts[action] === 0}
+                        key={action}
+                        onClick={() => void runSourceBulkAction(action)}
+                        type="button"
+                      >
+                        <span>
+                          {sourceBulkAction === action
+                            ? 'Working'
+                            : sourceBulkActionButtonLabel(action, sourceBulkActionCounts[action])}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+                {sourceBulkResult && <span className="syncStatus">{sourceBulkResult}</span>}
               </div>
 
               <div className="tableList sourceList">
@@ -6081,6 +6193,110 @@ function sourceFilterSetIsActive(filters: typeof initialSourceFilters) {
   return Boolean(
     filters.health || filters.query.trim() || filters.schedule || filters.type,
   );
+}
+
+function sourceBulkEligibilityCounts(
+  sources: ListDataSourcesResponse['sources'],
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+): Record<SourceBulkAction, number> {
+  return {
+    preflight: sources.filter((source) =>
+      sourceBulkActionIsEligible(
+        'preflight',
+        source,
+        activePreflightJobs,
+        activePlanJobs,
+        activeScanJobs,
+        latestPreflightJobs,
+        latestPlanJobs,
+      ),
+    ).length,
+    plan: sources.filter((source) =>
+      sourceBulkActionIsEligible(
+        'plan',
+        source,
+        activePreflightJobs,
+        activePlanJobs,
+        activeScanJobs,
+        latestPreflightJobs,
+        latestPlanJobs,
+      ),
+    ).length,
+    scan: sources.filter((source) =>
+      sourceBulkActionIsEligible(
+        'scan',
+        source,
+        activePreflightJobs,
+        activePlanJobs,
+        activeScanJobs,
+        latestPreflightJobs,
+        latestPlanJobs,
+      ),
+    ).length,
+  };
+}
+
+function sourceBulkActionIsEligible(
+  action: SourceBulkAction,
+  source: ListDataSourcesResponse['sources'][number],
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+) {
+  if (source.status === 'archived') {
+    return false;
+  }
+  const activePreflightJob = activePreflightJobs.get(source.id);
+  const activePlanJob = activePlanJobs.get(source.id);
+  const activeScanJob = activeScanJobs.get(source.id);
+  if (activePreflightJob || activePlanJob || activeScanJob) {
+    return false;
+  }
+  const latestPreflightJob = latestPreflightJobs.get(source.id);
+  const latestPlanJob = latestPlanJobs.get(source.id);
+  const preflightBlocksScan = sourcePreflightBlocksScan(source, latestPreflightJob);
+  const planBlocksScan = sourcePlanBlocksScan(source, latestPlanJob);
+
+  if (action === 'preflight') {
+    return true;
+  }
+  if (preflightBlocksScan || planBlocksScan) {
+    return false;
+  }
+  if (action === 'plan') {
+    return true;
+  }
+  return sourceFirstScanReviewPrompt(source, latestPlanJob) === '';
+}
+
+function sourceBulkActionVerb(action: SourceBulkAction) {
+  if (action === 'preflight') {
+    return 'Check paths';
+  }
+  if (action === 'plan') {
+    return 'Plan imports';
+  }
+  return 'Rescan ready';
+}
+
+function sourceBulkActionButtonLabel(action: SourceBulkAction, count: number) {
+  return `${sourceBulkActionVerb(action)} (${count})`;
+}
+
+function sourceBulkActionResultLabel(action: SourceBulkAction, count: number) {
+  if (action === 'preflight') {
+    return count === 1 ? 'path check queued' : 'path checks queued';
+  }
+  if (action === 'plan') {
+    return count === 1 ? 'import plan queued' : 'import plans queued';
+  }
+  return count === 1 ? 'scan queued' : 'scans queued';
 }
 
 function filterDataSources(

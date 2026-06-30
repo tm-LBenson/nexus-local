@@ -595,7 +595,17 @@ try {
   }
 
   if ($workspaceCreated) {
-    Warn "cleanup workspace" "left $tenantId; workspace deletion is not implemented yet"
+    if ($KeepSource) {
+      Warn "cleanup workspace" "left $tenantId because -KeepSource was passed"
+    } else {
+      try {
+        $encodedTenant = UrlEncode $tenantId
+        Invoke-Json "DELETE" "$apiBase/v1/tenants/$encodedTenant" | Out-Null
+        Pass "cleanup workspace" "deleted $tenantId"
+      } catch {
+        Warn "cleanup workspace" $_.Exception.Message
+      }
+    }
   }
 
   if ($fixtureCreated -and -not $KeepFixture) {

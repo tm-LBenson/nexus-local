@@ -1027,8 +1027,28 @@ h3 {
   flex: 0 0 auto;
 }
 
-.sourceFilterMenu .menuFields {
+.sourceFilterMenu .menuFields,
+.sourceBulkMenu .menuFields {
   width: min(300px, calc(100vw - 44px));
+}
+
+.sourceBulkFields button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.sourceBulkSummary {
+  display: grid;
+  gap: 2px;
+  color: #69777d;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.sourceBulkSummary strong {
+  color: #172026;
+  font-size: 0.86rem;
 }
 
 .sourceTemplatePicker {

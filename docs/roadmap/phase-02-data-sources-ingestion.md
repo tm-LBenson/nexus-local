@@ -54,6 +54,13 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.30 | Compact source run history. | Library source detail shows the last few scan runs with state, duration, and outcome counts so operators can compare imports without opening raw activity rows. |
 | 2.31 | Operator source health rollups. | Library source rows and detail show compact health summaries for blocked paths/plans, stale schedules, repeated failures, failed documents, and the next operator action. |
 | 2.32 | Source list search and filters. | Larger source libraries can be narrowed by text, health, type, and schedule without leaving the Library page. |
+| 2.33 | Filtered source bulk actions. | Operators can run path checks, import plans, or safe rescans across the currently filtered source list. |
+
+## Current Status
+
+- Done: Slices 2.1 through 2.32 managed-source pipeline, observability, recovery, planning, stress gates, and filtering.
+- Done: Slice 2.33 filtered source bulk actions for check, plan, and safe rescan.
+- Next: Source-side saved views or additional bulk recovery actions for larger operator workflows.
 
 ## Dependencies
 
@@ -70,4 +77,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.32 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, richer batch import reporting in the UI, customer-shaped stress fixtures, worker-context source path preflight checks, preflight-guided source onboarding, worker-side source import dry-run planning, plan-guided first scan safety, a paged import-plan review surface, durable source scan run summaries, source scan cancellation, compact source run history, operator source health rollups, and source list search/filter controls. Next, add source-side saved views or bulk recovery actions so operators can act on filtered sources efficiently.
+Slices 2.1 through 2.33 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, richer batch import reporting in the UI, customer-shaped stress fixtures, worker-context source path preflight checks, preflight-guided source onboarding, worker-side source import dry-run planning, plan-guided first scan safety, a paged import-plan review surface, durable source scan run summaries, source scan cancellation, compact source run history, operator source health rollups, source list search/filter controls, and filtered source bulk actions. Next, add source-side saved views or additional bulk recovery actions so operators can act on larger source libraries efficiently.
