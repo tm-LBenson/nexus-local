@@ -822,7 +822,73 @@ h3 {
 }
 
 .dashboardStartForm {
-  max-width: 520px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  max-width: 680px;
+}
+
+.dashboardStartActions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.sampleStartPanel {
+  border-color: #cbdcdb;
+  background: #fbfdfc;
+}
+
+.sampleStepGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sampleStepButton {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: 62px;
+  border-color: #d8e2e2;
+  color: #172026;
+  background: #ffffff;
+  text-align: left;
+}
+
+.sampleStepButton:hover {
+  background: #f1f6f5;
+}
+
+.sampleStepButton strong,
+.sampleStepButton span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sampleStepButton strong {
+  font-size: 0.88rem;
+}
+
+.sampleStepButton span {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.sampleStepButtonActive {
+  border-color: #d8bf86;
+  background: #fff8ea;
+}
+
+.sampleStepButtonReady {
+  border-color: #9bc8b7;
+  background: #edf8f3;
+}
+
+.sampleStepButtonFailed {
+  border-color: #e3aca6;
+  background: #fff8f7;
 }
 
 .chatSurface {
@@ -3007,8 +3073,10 @@ h3 {
 
   .topbar,
   .attentionPanel,
+  .dashboardStartForm,
   .workspaceSplit,
   .dashboardSecondary,
+  .sampleStepGrid,
   .settingsGrid,
   .providerPanel,
   .statusGrid {
@@ -3034,6 +3102,7 @@ h3 {
   }
 
   .topActions,
+  .dashboardStartActions,
   .composerActions,
   .uploadBar,
   .searchBar,

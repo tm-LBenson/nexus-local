@@ -38,7 +38,8 @@ The product needs a dependable core loop before broad connectors, governance, or
 - Done: Slice 1.3 library action polish for retry/delete/download/detail states.
 - Done: Slice 1.4 audit filters by action/outcome/actor/date.
 - Done: Slice 1.5 backup/restore smoke check in local Docker profile.
-- Next: Slice 1.6 first-run sample flow polish.
+- Done: Slice 1.6 first-run sample flow polish.
+- Next: Phase 1 release-candidate review against the full MVP gate.
 
 ## Dependencies
 
@@ -57,4 +58,4 @@ The product needs a dependable core loop before broad connectors, governance, or
 
 ## First Build Candidate
 
-The immediate build priority is Slice 1.6. Backup and restore now have a local round-trip gate, so the next highest-value improvement is polishing the first-run sample flow for a fresh user who needs a quick successful import, search, and ask path.
+The immediate build priority is the Phase 1 release-candidate review. All listed Phase 1 slices now have implementation coverage, so the next pass should run the full gate, review the fresh-install UI end to end, and turn any remaining gaps into the first MVP release checklist.

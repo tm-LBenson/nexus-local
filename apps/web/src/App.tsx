@@ -311,6 +311,12 @@ Sample phrase: cedar signal atlas.
 
 Try searching for cedar signal atlas, then ask what phrase appears in the sample document.
 `;
+const sampleDocumentName = 'nexus-local-sample.md';
+const sampleSearchPhrase = 'cedar signal atlas';
+const sampleQuestion = 'What phrase appears in the sample document?';
+const sampleDocumentWaitMs = 90000;
+
+type SampleFlowState = 'idle' | 'creating' | 'uploading' | 'indexing' | 'ready' | 'failed';
 
 export function App() {
   const [activeView, setActiveView] = useState<View>('ask');
@@ -370,6 +376,8 @@ export function App() {
   const [reindexingSourceID, setReindexingSourceID] = useState('');
   const [retryingSourceFailuresID, setRetryingSourceFailuresID] = useState('');
   const [uploadingSample, setUploadingSample] = useState(false);
+  const [sampleFlowState, setSampleFlowState] = useState<SampleFlowState>('idle');
+  const [sampleFlowDocumentID, setSampleFlowDocumentID] = useState('');
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [removingMemberID, setRemovingMemberID] = useState('');
@@ -508,9 +516,24 @@ export function App() {
   const documentCount = documents?.documents.length ?? 0;
   const readyDocumentCount =
     documents?.documents.filter((document) => document.status === 'ready').length ?? 0;
+  const sampleDocument = useMemo(
+    () =>
+      documents?.documents.find((document) => document.id === sampleFlowDocumentID) ??
+      documents?.documents.find((document) => document.name === sampleDocumentName) ??
+      null,
+    [documents, sampleFlowDocumentID],
+  );
+  const sampleSearchReady = Boolean(
+    searchResult &&
+      sampleDocument &&
+      searchForm.document_id === sampleDocument.id &&
+      searchForm.query === sampleSearchPhrase,
+  );
   const processingDocumentCount = activeDocuments.length;
   const failedDocumentCount = failedDocuments.length;
   const activeJobCount = activeJobs.length;
+  const sampleFlowActive =
+    sampleFlowState !== 'idle' && sampleFlowState !== 'ready' && sampleFlowState !== 'failed';
   const activeSourceScanCount = activeSourceScanJobs.size;
   const activeSourcePreflightCount = activeSourcePreflightJobs.size;
   const activeSourcePlanCount = activeSourcePlanJobs.size;
@@ -553,6 +576,7 @@ export function App() {
       : lastIngestionSync
         ? `Synced ${formatTimeOnly(lastIngestionSync)}`
         : 'Idle';
+  const freshWorkspace = workspaceReady && documentCount === 0 && !trackingIngestion;
   const rawAskAnswer = askResult?.assistant_message.content || streamAnswer;
   const visibleAskAnswer = askPhase === 'failed' ? '' : rawAskAnswer;
   const visibleAskTitle =
@@ -1042,35 +1066,153 @@ export function App() {
   }
 
   async function uploadSampleDocument() {
-    const sampleFile = new File([sampleDocumentContent], 'nexus-local-sample.md', {
-      type: 'text/markdown',
-    });
+    await runSampleFlow(tenantID);
+  }
+
+  async function runSampleFlow(nextTenantID = tenantID) {
+    if (!nextTenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    const existingSample = nextTenantID === tenantID ? sampleDocument : null;
     setUploadingSample(true);
+    setError(null);
     try {
-      await uploadWorkspaceFile(sampleFile);
+      if (existingSample && existingSample.status !== 'failed') {
+        configureSampleWorkspace(existingSample.id);
+        if (existingSample.status !== 'ready') {
+          setSampleFlowState('indexing');
+          await waitForDocumentReady(nextTenantID, existingSample.id);
+        }
+        if (await searchSampleDocument(nextTenantID, existingSample.id)) {
+          setSampleFlowState('ready');
+        } else {
+          setSampleFlowState('failed');
+        }
+        return;
+      }
+
+      setSampleFlowState('uploading');
+      const sampleFile = new File([sampleDocumentContent], sampleDocumentName, {
+        type: 'text/markdown',
+      });
+      const result = await uploadWorkspaceFile(sampleFile, nextTenantID);
+      if (!result) {
+        setSampleFlowState('failed');
+        return;
+      }
+
+      const nextDocumentID = result.document.id;
+      setSampleFlowDocumentID(nextDocumentID);
+      configureSampleWorkspace(nextDocumentID);
+      setSampleFlowState('indexing');
+      await waitForDocumentReady(nextTenantID, nextDocumentID);
+      if (await searchSampleDocument(nextTenantID, nextDocumentID)) {
+        setSampleFlowState('ready');
+      } else {
+        setSampleFlowState('failed');
+      }
+    } catch (err) {
+      setSampleFlowState('failed');
+      setError(messageFromError(err));
     } finally {
       setUploadingSample(false);
     }
   }
 
-  async function uploadWorkspaceFile(nextFile: File) {
-    if (!tenantID) {
+  function configureSampleWorkspace(documentID: string) {
+    setActiveView('ask');
+    setSearchResult(null);
+    setAskResult(null);
+    setStreamAnswer('');
+    setStreamStatus('');
+    setAskPhase('idle');
+    setAskForm((current) => ({
+      ...current,
+      document_id: documentID,
+      question: current.question.trim() ? current.question : sampleQuestion,
+    }));
+    setSearchForm((current) => ({
+      ...current,
+      document_id: documentID,
+      query: sampleSearchPhrase,
+      limit: 5,
+    }));
+  }
+
+  async function waitForDocumentReady(nextTenantID: string, documentID: string) {
+    const deadline = Date.now() + sampleDocumentWaitMs;
+    let latestDetail: DocumentDetailResponse | null = null;
+    while (Date.now() < deadline) {
+      latestDetail = await getDocument(nextTenantID, documentID);
+      setDocumentDetail(latestDetail);
+      if (latestDetail.document.status === 'ready') {
+        await Promise.all([refreshDocuments(nextTenantID), refreshJobs(nextTenantID)]);
+        return latestDetail;
+      }
+      if (latestDetail.document.status === 'failed') {
+        throw new Error(`Sample ingestion failed for ${latestDetail.document.name}`);
+      }
+      await waitForMs(2000);
+    }
+    throw new Error(`Sample ingestion is still ${latestDetail?.document.status ?? 'pending'}`);
+  }
+
+  async function searchSampleDocument(nextTenantID = tenantID, documentID = sampleDocument?.id ?? '') {
+    if (!nextTenantID || !documentID) {
+      return false;
+    }
+    setSearching(true);
+    setError(null);
+    try {
+      setSearchForm((current) => ({
+        ...current,
+        document_id: documentID,
+        query: sampleSearchPhrase,
+        limit: 5,
+      }));
+      setSearchResult(
+        await searchDocuments({
+          tenant_id: nextTenantID,
+          document_id: documentID,
+          query: sampleSearchPhrase,
+          limit: 5,
+        }),
+      );
+      if (canManageTenant && nextTenantID === tenantID) {
+        await refreshAuditEvents(nextTenantID);
+      }
+      return true;
+    } catch (err) {
+      setError(messageFromError(err));
+      return false;
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function uploadWorkspaceFile(nextFile: File, nextTenantID = tenantID) {
+    if (!nextTenantID) {
       setError('Create a workspace first');
-      return;
+      return null;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const result = await uploadDocument({ tenant_id: tenantID, file: nextFile });
+      const result = await uploadDocument({ tenant_id: nextTenantID, file: nextFile });
       setRegistration(result);
       setDocumentDetail({ document: result.document, jobs: [result.job] });
       await Promise.all([
-        refreshDocuments(tenantID),
-        refreshJobs(tenantID),
-        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+        refreshDocuments(nextTenantID),
+        refreshJobs(nextTenantID),
+        canManageTenant && nextTenantID === tenantID
+          ? refreshAuditEvents(nextTenantID)
+          : Promise.resolve(),
       ]);
+      return result;
     } catch (err) {
       setError(messageFromError(err));
+      return null;
     } finally {
       setSubmitting(false);
     }
@@ -1514,12 +1656,19 @@ export function App() {
 
   async function submitTenant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await createWorkspace(false);
+  }
+
+  async function createWorkspace(seedSample: boolean) {
     if (!tenantName.trim()) {
       setError('Enter a workspace name');
       return;
     }
     setCreatingTenant(true);
     setError(null);
+    if (seedSample) {
+      setSampleFlowState('creating');
+    }
     try {
       const hadNoWorkspace = needsWorkspace;
       const created = await createTenant({ name: tenantName });
@@ -1528,7 +1677,13 @@ export function App() {
       if (hadNoWorkspace) {
         setActiveView('ask');
       }
+      if (seedSample) {
+        await runSampleFlow(created.tenant.id);
+      }
     } catch (err) {
+      if (seedSample) {
+        setSampleFlowState('failed');
+      }
       setError(messageFromError(err));
     } finally {
       setCreatingTenant(false);
@@ -1987,103 +2142,159 @@ export function App() {
                   readyDocumentCount={readyDocumentCount}
                 />
 
-                <div className="workspaceSplit">
-              <div className="workSurface chatSurface">
-                <div className="surfaceHeader">
-                  <h2>Ask</h2>
-                  <span>{workspaceLabel}</span>
-                </div>
-                <form className="askComposer" onSubmit={submitAsk}>
-                  <textarea
-                    aria-label="Question"
-                    disabled={asking}
-                    onChange={(event) =>
-                      setAskForm((current) => ({ ...current, question: event.target.value }))
-                    }
-                    placeholder="Ask a question"
-                    value={askForm.question}
-                  />
-                  <div className="composerActions">
-                    <details className="menuPanel">
-                      <summary>Options</summary>
-                      <div className="menuFields">
-                        <label>
-                          Target
-                          <select
-                            disabled={asking}
-                            value={askForm.model_target}
-                            onChange={(event) =>
-                              setAskForm((current) => ({
-                                ...current,
-                                model_target: event.target.value,
-                              }))
-                            }
-                          >
-                            {targets.length === 0 && <option value="general">general</option>}
-                            {targets.map((target) => (
-                              <option key={target.name} value={target.name}>
-                                {target.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Source
-                          <DocumentSelect
-                            disabled={asking}
-                            documents={documents?.documents ?? []}
-                            value={askForm.document_id}
-                            onChange={(value) =>
-                              setAskForm((current) => ({ ...current, document_id: value }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Limit
-                          <input
-                            disabled={asking}
-                            max="20"
-                            min="1"
-                            type="number"
-                            value={askForm.limit}
-                            onChange={(event) =>
-                              setAskForm((current) => ({
-                                ...current,
-                                limit: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Conversation
-                          <input
-                            disabled={asking}
-                            value={askForm.conversation_id}
-                            onChange={(event) =>
-                              setAskForm((current) => ({
-                                ...current,
-                                conversation_id: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-                    </details>
-                    <div className="composerSubmit">
-                      {asking && (
-                        <button className="secondaryButton" onClick={cancelAsk} type="button">
-                          Cancel
-                        </button>
-                      )}
+                {(freshWorkspace ||
+                  sampleFlowState !== 'idle' ||
+                  (sampleDocument && documentCount <= 1)) && (
+                  <section className="workSurface sampleStartPanel">
+                    <div className="surfaceHeader">
+                      <h2>First run</h2>
+                      <span>{sampleFlowStatusLabel(sampleFlowState, sampleDocument)}</span>
+                    </div>
+                    <div className="sampleStepGrid">
                       <button
-                        disabled={asking || !workspaceReady || !askForm.question.trim()}
-                        type="submit"
+                        className={sampleStepClass(
+                          sampleFlowState,
+                          Boolean(sampleDocument && sampleDocument.status === 'ready'),
+                          Boolean(sampleDocument && sampleDocument.status === 'failed'),
+                        )}
+                        disabled={submitting || uploadingSample || !workspaceReady}
+                        onClick={() => void runSampleFlow(tenantID)}
+                        type="button"
                       >
-                        {asking ? 'Asking' : 'Ask'}
+                        <strong>{sampleFlowPrimaryLabel(sampleFlowState, sampleDocument)}</strong>
+                        <span>{sampleDocument?.name ?? sampleDocumentName}</span>
+                      </button>
+                      <button
+                        className={
+                          sampleSearchReady
+                            ? 'sampleStepButton sampleStepButtonReady'
+                            : 'sampleStepButton'
+                        }
+                        disabled={!sampleDocument || sampleDocument.status !== 'ready' || searching}
+                        onClick={() => void searchSampleDocument(tenantID, sampleDocument?.id ?? '')}
+                        type="button"
+                      >
+                        <strong>{searching ? 'Searching' : 'Search sample'}</strong>
+                        <span>{sampleSearchPhrase}</span>
+                      </button>
+                      <button
+                        className={
+                          askForm.document_id === sampleDocument?.id
+                            ? 'sampleStepButton sampleStepButtonReady'
+                            : 'sampleStepButton'
+                        }
+                        disabled={!sampleDocument || sampleDocument.status !== 'ready'}
+                        onClick={() => {
+                          if (sampleDocument) {
+                            configureSampleWorkspace(sampleDocument.id);
+                          }
+                        }}
+                        type="button"
+                      >
+                        <strong>Ask sample</strong>
+                        <span>{sampleQuestion}</span>
                       </button>
                     </div>
-                  </div>
-                </form>
+                  </section>
+                )}
+
+                <div className="workspaceSplit">
+                  <div className="workSurface chatSurface">
+                    <div className="surfaceHeader">
+                      <h2>Ask</h2>
+                      <span>{workspaceLabel}</span>
+                    </div>
+                    <form className="askComposer" onSubmit={submitAsk}>
+                      <textarea
+                        aria-label="Question"
+                        disabled={asking}
+                        onChange={(event) =>
+                          setAskForm((current) => ({ ...current, question: event.target.value }))
+                        }
+                        placeholder="Ask a question"
+                        value={askForm.question}
+                      />
+                      <div className="composerActions">
+                        <details className="menuPanel">
+                          <summary>Options</summary>
+                          <div className="menuFields">
+                            <label>
+                              Target
+                              <select
+                                disabled={asking}
+                                value={askForm.model_target}
+                                onChange={(event) =>
+                                  setAskForm((current) => ({
+                                    ...current,
+                                    model_target: event.target.value,
+                                  }))
+                                }
+                              >
+                                {targets.length === 0 && <option value="general">general</option>}
+                                {targets.map((target) => (
+                                  <option key={target.name} value={target.name}>
+                                    {target.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Source
+                              <DocumentSelect
+                                disabled={asking}
+                                documents={documents?.documents ?? []}
+                                value={askForm.document_id}
+                                onChange={(value) =>
+                                  setAskForm((current) => ({ ...current, document_id: value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              Limit
+                              <input
+                                disabled={asking}
+                                max="20"
+                                min="1"
+                                type="number"
+                                value={askForm.limit}
+                                onChange={(event) =>
+                                  setAskForm((current) => ({
+                                    ...current,
+                                    limit: Number(event.target.value),
+                                  }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              Conversation
+                              <input
+                                disabled={asking}
+                                value={askForm.conversation_id}
+                                onChange={(event) =>
+                                  setAskForm((current) => ({
+                                    ...current,
+                                    conversation_id: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                          </div>
+                        </details>
+                        <div className="composerSubmit">
+                          {asking && (
+                            <button className="secondaryButton" onClick={cancelAsk} type="button">
+                              Cancel
+                            </button>
+                          )}
+                          <button
+                            disabled={asking || !workspaceReady || !askForm.question.trim()}
+                            type="submit"
+                          >
+                            {asking ? 'Asking' : 'Ask'}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
 
                 {showAskResult && (
                   <div className={asking ? 'answerBox answerBoxActive' : 'answerBox'}>
@@ -2311,9 +2522,19 @@ export function App() {
                     onChange={(event) => setTenantName(event.target.value)}
                     value={tenantName}
                   />
-                  <button disabled={creatingTenant} type="submit">
-                    {creatingTenant ? 'Creating' : 'Create'}
-                  </button>
+                  <div className="dashboardStartActions">
+                    <button disabled={creatingTenant} type="submit">
+                      {creatingTenant && !sampleFlowActive ? 'Creating' : 'Create'}
+                    </button>
+                    <button
+                      className="secondaryButton"
+                      disabled={creatingTenant || uploadingSample}
+                      onClick={() => void createWorkspace(true)}
+                      type="button"
+                    >
+                      {sampleFlowActive ? sampleFlowButtonLabel(sampleFlowState) : 'Create + sample'}
+                    </button>
+                  </div>
                 </form>
               </section>
             )
@@ -5011,6 +5232,76 @@ function askWaitingLabel(phase: AskPhase) {
   }
 }
 
+function sampleFlowStatusLabel(
+  state: SampleFlowState,
+  document: ListDocumentsResponse['documents'][number] | null,
+) {
+  if (state === 'creating') {
+    return 'creating workspace';
+  }
+  if (state === 'uploading') {
+    return 'adding sample';
+  }
+  if (state === 'indexing') {
+    return 'indexing';
+  }
+  if (state === 'ready' || document?.status === 'ready') {
+    return 'ready';
+  }
+  if (state === 'failed' || document?.status === 'failed') {
+    return 'needs review';
+  }
+  return 'empty workspace';
+}
+
+function sampleFlowPrimaryLabel(
+  state: SampleFlowState,
+  document: ListDocumentsResponse['documents'][number] | null,
+) {
+  if (state === 'failed' || document?.status === 'failed') {
+    return 'Retry sample';
+  }
+  if (state === 'creating') {
+    return 'Creating';
+  }
+  if (state === 'uploading') {
+    return 'Adding';
+  }
+  if (state === 'indexing' || (document && document.status !== 'ready')) {
+    return 'Indexing';
+  }
+  if (document?.status === 'ready' || state === 'ready') {
+    return 'Sample ready';
+  }
+  return 'Add sample';
+}
+
+function sampleFlowButtonLabel(state: SampleFlowState) {
+  switch (state) {
+    case 'creating':
+      return 'Creating';
+    case 'uploading':
+      return 'Adding';
+    case 'indexing':
+      return 'Indexing';
+    default:
+      return 'Working';
+  }
+}
+
+function sampleStepClass(state: SampleFlowState, ready: boolean, failed = false) {
+  if (ready || state === 'ready') {
+    return 'sampleStepButton sampleStepButtonReady';
+  }
+  if (failed || state === 'failed') {
+    return 'sampleStepButton sampleStepButtonFailed';
+  }
+  if (state !== 'idle') {
+    return 'sampleStepButton sampleStepButtonActive';
+  }
+  return 'sampleStepButton';
+}
+
 function sourceScheduleLabel(minutes: number) {
   if (!minutes) {
     return 'Manual';
@@ -6888,6 +7179,12 @@ function formatElapsed(seconds: number) {
 
 function formatDurationMS(ms: number) {
   return formatElapsed(Math.max(0, Math.round(ms / 1000)));
+}
+
+function waitForMs(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
 }
 
 function formatRelativeDateTime(value: string) {
