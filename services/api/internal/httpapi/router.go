@@ -1982,13 +1982,15 @@ func askConversationHandler(service app.ConversationService, authorizer internal
 		if !ok {
 			return
 		}
+		started := time.Now()
 		result, err := service.Ask(r.Context(), askConversationInput(req, tenantID, principal.UserID))
+		latencyMS := time.Since(started).Milliseconds()
 		if err != nil {
-			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0)
+			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0, latencyMS, err)
 			writeError(w, askConversationStatus(err), fmt.Sprintf("ask conversation: %v", err))
 			return
 		}
-		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits))
+		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits), latencyMS, nil)
 
 		writeJSON(w, http.StatusOK, encodeAskConversationResult(result))
 	}
@@ -2012,6 +2014,7 @@ func askConversationStreamHandler(service app.ConversationService, authorizer in
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
 
+		started := time.Now()
 		result, err := service.AskStream(r.Context(), askConversationInput(req, tenantID, principal.UserID), func(event app.AskStreamEvent) error {
 			switch event.Type {
 			case app.AskStreamStatus:
@@ -2026,15 +2029,16 @@ func askConversationStreamHandler(service app.ConversationService, authorizer in
 			flusher.Flush()
 			return nil
 		})
+		latencyMS := time.Since(started).Milliseconds()
 		if err != nil {
-			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0)
+			recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeFailed, "", "", 0, latencyMS, err)
 			if writeErr := writeSSE(w, "error", envelope{"message": fmt.Sprintf("ask conversation: %v", err)}); writeErr != nil {
 				log.Printf("write sse error: %v", writeErr)
 			}
 			flusher.Flush()
 			return
 		}
-		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits))
+		recordAskAudit(r.Context(), audit, tenantID, principal.UserID, req, domain.AuditOutcomeSucceeded, string(result.Conversation.ID), result.Completion.Model, len(result.Hits), latencyMS, nil)
 
 		if err := writeSSE(w, "done", encodeAskConversationResult(result)); err != nil {
 			log.Printf("write sse done: %v", err)
@@ -2061,17 +2065,26 @@ func prepareAskConversation(w http.ResponseWriter, r *http.Request, authorizer i
 	return req, tenantID, principal, true
 }
 
-func recordAskAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorID domain.UserID, req askConversationRequest, outcome domain.AuditOutcome, conversationID string, model string, hitCount int) {
+func recordAskAudit(ctx context.Context, audit app.AuditService, tenantID domain.TenantID, actorID domain.UserID, req askConversationRequest, outcome domain.AuditOutcome, conversationID string, model string, hitCount int, latencyMS int64, askErr error) {
+	modelTarget := strings.TrimSpace(req.ModelTarget)
+	if modelTarget == "" {
+		modelTarget = "general"
+	}
 	metadata := map[string]string{
 		"document_id":   req.DocumentID,
-		"model_target":  req.ModelTarget,
+		"model_target":  modelTarget,
 		"question_len":  strconv.Itoa(len(strings.TrimSpace(req.Question))),
 		"retrieval_lim": strconv.Itoa(req.Limit),
 		"strategy":      req.Strategy,
 		"hit_count":     strconv.Itoa(hitCount),
+		"latency_ms":    strconv.FormatInt(latencyMS, 10),
 	}
 	if model != "" {
 		metadata["model"] = model
+	}
+	if askErr != nil {
+		metadata["error_class"] = askErrorClass(askErr)
+		metadata["error"] = compactError(askErr)
 	}
 	recordAudit(ctx, audit, app.RecordAuditInput{
 		TenantID:     tenantID,
@@ -2082,6 +2095,43 @@ func recordAskAudit(ctx context.Context, audit app.AuditService, tenantID domain
 		Outcome:      outcome,
 		Metadata:     metadata,
 	})
+}
+
+func askErrorClass(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, providers.ErrUnknownTarget):
+		return "unknown_target"
+	case errors.Is(err, providers.ErrEmptyTarget):
+		return "invalid_target"
+	case errors.Is(err, app.ErrConversationModelUnavailable):
+		return "model_unavailable"
+	case errors.Is(err, app.ErrSearchUnavailable):
+		return "search_unavailable"
+	}
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline"):
+		return "timeout"
+	case strings.Contains(lower, "connection refused") || strings.Contains(lower, "no such host"):
+		return "connection"
+	case strings.Contains(lower, "model gateway"):
+		return "gateway"
+	default:
+		return "unknown"
+	}
+}
+
+func compactError(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.Join(strings.Fields(err.Error()), " ")
+	if len(text) <= 180 {
+		return text
+	}
+	return strings.TrimSpace(text[:180])
 }
 
 func recordAudit(ctx context.Context, audit app.AuditService, input app.RecordAuditInput) {

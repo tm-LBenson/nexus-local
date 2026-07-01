@@ -143,6 +143,22 @@ type SourceHealthItem = {
 type TargetCheckState = {
   state: 'ok' | 'failed';
   detail: string;
+  checked_at?: string;
+  latency_ms?: number;
+  model?: string;
+};
+
+type ModelPerformanceRow = {
+  target: ModelTarget;
+  check?: TargetCheckState;
+  askCount: number;
+  failureCount: number;
+  latestLatencyMS: number | null;
+  p95LatencyMS: number | null;
+  successRate: number | null;
+  lastError: string;
+  lastErrorClass: string;
+  lastEventAt: string;
 };
 
 type SetupCheckStatus = 'checking' | 'ok' | 'warning' | 'blocked';
@@ -516,6 +532,7 @@ export function App() {
   const [documentDetail, setDocumentDetail] = useState<DocumentDetailResponse | null>(null);
   const [jobs, setJobs] = useState<ListJobsResponse | null>(null);
   const [auditEvents, setAuditEvents] = useState<ListAuditEventsResponse | null>(null);
+  const [modelAuditEvents, setModelAuditEvents] = useState<ListAuditEventsResponse | null>(null);
   const [auditFilters, setAuditFilters] = useState(initialAuditFilters);
   const [tenantMembers, setTenantMembers] = useState<ListTenantMembersResponse | null>(null);
   const [conversations, setConversations] = useState<ListConversationsResponse | null>(null);
@@ -843,6 +860,14 @@ export function App() {
     () => filterAuditEvents(auditEvents?.events ?? [], auditFilters),
     [auditEvents, auditFilters],
   );
+  const modelPerformanceRows = useMemo(
+    () => buildModelPerformanceRows(targets, targetChecks, modelAuditEvents?.events ?? []),
+    [targets, targetChecks, modelAuditEvents],
+  );
+  const modelPerformanceSummary = useMemo(
+    () => summarizeModelPerformance(modelPerformanceRows),
+    [modelPerformanceRows],
+  );
   const auditFiltersActive = Boolean(
     auditFilters.action ||
       auditFilters.outcome ||
@@ -991,10 +1016,12 @@ export function App() {
   useEffect(() => {
     if (activeView !== 'settings' || !tenantID || !canManageTenant) {
       setAuditEvents(null);
+      setModelAuditEvents(null);
       return;
     }
 
     void refreshAuditEvents(tenantID);
+    void refreshModelAuditEvents(tenantID);
   }, [activeView, tenantID, canManageTenant]);
 
   async function loadBootstrapData() {
@@ -1018,6 +1045,7 @@ export function App() {
       setCustomSourcePolicyProfiles([]);
       setJobs({ jobs: [] });
       setAuditEvents(null);
+      setModelAuditEvents(null);
       setConversations({ conversations: [] });
       setActiveView('ask');
       return { targets: targetsResult.targets };
@@ -1336,6 +1364,20 @@ export function App() {
     }
   }
 
+  async function refreshModelAuditEvents(nextTenantID = tenantID) {
+    if (!nextTenantID || !canManageTenant) {
+      setModelAuditEvents(null);
+      return;
+    }
+    try {
+      setModelAuditEvents(
+        await listAuditEvents(nextTenantID, { action: 'conversation.ask', limit: 100 }),
+      );
+    } catch {
+      setModelAuditEvents(null);
+    }
+  }
+
   async function refreshConversations(nextTenantID = tenantID) {
     setError(null);
     if (!nextTenantID) {
@@ -1390,7 +1432,14 @@ export function App() {
   async function refreshRuntime() {
     setError(null);
     try {
-      const [healthResult, readinessResult, targetsResult, jobsResult, auditResult] =
+      const [
+        healthResult,
+        readinessResult,
+        targetsResult,
+        jobsResult,
+        auditResult,
+        modelAuditResult,
+      ] =
         await Promise.all([
           getHealth(),
           getReadiness(),
@@ -1399,12 +1448,16 @@ export function App() {
           tenantID && canManageTenant
             ? listAuditEvents(tenantID, auditApiFilters(auditFilters)).catch(() => null)
             : Promise.resolve(null),
+          tenantID && canManageTenant
+            ? listAuditEvents(tenantID, { action: 'conversation.ask', limit: 100 }).catch(() => null)
+            : Promise.resolve(null),
         ]);
       setHealth(healthResult);
       setReadiness(readinessResult);
       setTargets(targetsResult.targets);
       setJobs(jobsResult);
       setAuditEvents(auditResult);
+      setModelAuditEvents(modelAuditResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -1423,6 +1476,9 @@ export function App() {
         [targetName]: {
           state: 'ok',
           detail: `${result.model || result.route.model} ${result.latency_ms}ms`,
+          checked_at: new Date().toISOString(),
+          latency_ms: result.latency_ms,
+          model: result.model || result.route.model,
         },
       }));
     } catch (err) {
@@ -1431,6 +1487,7 @@ export function App() {
         [targetName]: {
           state: 'failed',
           detail: messageFromError(err),
+          checked_at: new Date().toISOString(),
         },
       }));
     } finally {
@@ -1450,6 +1507,7 @@ export function App() {
     setSelectedSearchSourceKey('');
     setTenantMembers(null);
     setAuditEvents(null);
+    setModelAuditEvents(null);
     setSelectedConversationID('');
     setConversationMessages(null);
     setAskForm((current) => ({ ...current, conversation_id: '', document_id: '' }));
@@ -1464,6 +1522,7 @@ export function App() {
       setJobs({ jobs: [] });
       setTenantMembers(null);
       setAuditEvents(null);
+      setModelAuditEvents(null);
       setConversations({ conversations: [] });
       return;
     }
@@ -1476,6 +1535,7 @@ export function App() {
         jobsResult,
         conversationsResult,
         auditResult,
+        modelAuditResult,
       ] = await Promise.all([
         listDocuments(nextTenantID),
         listDataSources(nextTenantID),
@@ -1484,6 +1544,9 @@ export function App() {
         listJobs(nextTenantID),
         listConversations(nextTenantID),
         listAuditEvents(nextTenantID, auditApiFilters(auditFilters)).catch(() => null),
+        canManageTenant
+          ? listAuditEvents(nextTenantID, { action: 'conversation.ask', limit: 100 }).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setDocuments(documentsResult);
       setDataSources(dataSourcesResult);
@@ -1492,6 +1555,7 @@ export function App() {
       setJobs(jobsResult);
       setConversations(conversationsResult);
       setAuditEvents(auditResult);
+      setModelAuditEvents(modelAuditResult);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -2661,7 +2725,7 @@ export function App() {
       setSelectedConversationID(result.conversation.id);
       await refreshConversations(tenantID);
       if (canManageTenant) {
-        await refreshAuditEvents(tenantID);
+        await Promise.all([refreshAuditEvents(tenantID), refreshModelAuditEvents(tenantID)]);
       }
       if (conversationMessages && selectedConversationID === result.conversation.id) {
         setConversationMessages(await listConversationMessages(tenantID, result.conversation.id));
@@ -2673,6 +2737,9 @@ export function App() {
       setStreamStatus(message);
       if (message !== 'Request canceled.') {
         setError(message);
+      }
+      if (canManageTenant) {
+        await refreshModelAuditEvents(tenantID);
       }
     } finally {
       if (askAbortRef.current === controller) {
@@ -5236,6 +5303,14 @@ export function App() {
                   <em>{readiness?.provider_preset ?? 'unknown'}</em>
                 </summary>
                 <div className="settingsDetailsBody">
+                  <ModelPerformancePanel
+                    canTest={workspaceReady}
+                    checkingTarget={checkingTarget}
+                    onRefresh={() => void refreshRuntime()}
+                    onTest={(targetName) => void testModelTarget(targetName)}
+                    rows={modelPerformanceRows}
+                    summary={modelPerformanceSummary}
+                  />
                   <ProviderPanel readiness={readiness} targets={targets} />
                   <details className="inlineDetails">
                     <summary>Services</summary>
@@ -5665,6 +5740,123 @@ function SourcePreviewPanel({ hit }: { hit: SearchDocumentsResponse['hits'][numb
         ))}
       </dl>
     </aside>
+  );
+}
+
+function ModelPerformancePanel({
+  canTest,
+  checkingTarget,
+  onRefresh,
+  onTest,
+  rows,
+  summary,
+}: {
+  canTest: boolean;
+  checkingTarget: string;
+  onRefresh: () => void;
+  onTest: (targetName: string) => void;
+  rows: ModelPerformanceRow[];
+  summary: ReturnType<typeof summarizeModelPerformance>;
+}) {
+  return (
+    <section className="modelPerfPanel">
+      <div className="modelPerfHeader">
+        <div>
+          <strong>Model performance</strong>
+          <span>
+            {summary.askCount} asks / {summary.failureCount} failures /{' '}
+            {summary.p95LatencyMS === null ? 'no p95' : `${formatLatencyMS(summary.p95LatencyMS)} p95`}
+          </span>
+        </div>
+        <button onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </div>
+
+      <div className="modelPerfMetrics">
+        <div>
+          <span>Targets</span>
+          <strong>{summary.targetCount}</strong>
+          <em>{summary.checkedCount} checked</em>
+        </div>
+        <div>
+          <span>Success</span>
+          <strong>{summary.successRate === null ? '-' : `${summary.successRate}%`}</strong>
+          <em>{summary.askCount} recent</em>
+        </div>
+        <div>
+          <span>P95</span>
+          <strong>{summary.p95LatencyMS === null ? '-' : formatLatencyMS(summary.p95LatencyMS)}</strong>
+          <em>Ask latency</em>
+        </div>
+        <div>
+          <span>Review</span>
+          <strong>{summary.unhealthyCount}</strong>
+          <em>Failed checks/errors</em>
+        </div>
+      </div>
+
+      <div className="dataTable modelPerfTable">
+        <div className="dataHeader">
+          <span>Target</span>
+          <span>Probe</span>
+          <span>Requests</span>
+          <span>P95</span>
+          <span>Last error</span>
+          <span></span>
+        </div>
+        {rows.map((row) => {
+          const checking = checkingTarget === row.target.name;
+          const probeClass =
+            row.check?.state === 'ok'
+              ? 'stateBadge stateReady'
+              : row.check?.state === 'failed'
+                ? 'stateBadge stateFailed'
+                : 'stateBadge';
+          return (
+            <div className="dataRow modelPerfRow" key={row.target.name}>
+              <div className="modelPerfTarget">
+                <strong>{row.target.name}</strong>
+                <span>{row.target.model}</span>
+                <em>{compactEndpoint(row.target.base_url)}</em>
+              </div>
+              <div className="modelPerfCell">
+                <span className={probeClass}>
+                  {row.check?.state === 'ok'
+                    ? row.check.latency_ms === undefined
+                      ? 'OK'
+                      : formatLatencyMS(row.check.latency_ms)
+                    : row.check?.state === 'failed'
+                      ? 'Failed'
+                      : 'Not checked'}
+                </span>
+                <em>{row.check?.checked_at ? formatTimeOnly(row.check.checked_at) : row.target.provider}</em>
+              </div>
+              <div className="modelPerfCell">
+                <strong>{row.askCount}</strong>
+                <em>
+                  {row.successRate === null
+                    ? 'No asks'
+                    : `${row.successRate}% success / ${row.failureCount} failed`}
+                </em>
+              </div>
+              <div className="modelPerfCell">
+                <strong>{row.p95LatencyMS === null ? '-' : formatLatencyMS(row.p95LatencyMS)}</strong>
+                <em>{row.latestLatencyMS === null ? 'No latency' : `${formatLatencyMS(row.latestLatencyMS)} latest`}</em>
+              </div>
+              <div className="modelPerfError">
+                <strong>{row.lastErrorClass ? titleCase(row.lastErrorClass.replace(/_/g, ' ')) : 'None'}</strong>
+                <span title={row.lastError}>{row.lastError || (row.lastEventAt ? formatTimeOnly(row.lastEventAt) : 'No recent errors')}</span>
+              </div>
+              <button disabled={!canTest || checking} onClick={() => onTest(row.target.name)} type="button">
+                {checking ? 'Testing' : 'Test'}
+              </button>
+            </div>
+          );
+        })}
+        {rows.length === 0 && <p className="muted">No model targets</p>}
+      </div>
+    </section>
   );
 }
 
@@ -8636,6 +8828,96 @@ function auditMetadataLabel(metadata: Record<string, string>) {
     .join(' / ');
 }
 
+function buildModelPerformanceRows(
+  targets: ModelTarget[],
+  targetChecks: Record<string, TargetCheckState>,
+  events: ListAuditEventsResponse['events'],
+): ModelPerformanceRow[] {
+  const targetMap = new Map(targets.map((target) => [target.name, target]));
+  const grouped = new Map<string, ListAuditEventsResponse['events']>();
+  for (const event of events.filter((item) => item.action === 'conversation.ask')) {
+    const targetName = event.metadata.model_target || 'general';
+    if (!targetMap.has(targetName)) {
+      targetMap.set(targetName, {
+        name: targetName,
+        provider: 'unknown',
+        base_url: '',
+        model: event.metadata.model || targetName,
+      });
+    }
+    grouped.set(targetName, [...(grouped.get(targetName) ?? []), event]);
+  }
+
+  return Array.from(targetMap.values())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((target) => {
+      const targetEvents = (grouped.get(target.name) ?? []).sort(
+        (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+      );
+      const latencies = targetEvents
+        .map((event) => Number(event.metadata.latency_ms))
+        .filter((value) => Number.isFinite(value) && value >= 0)
+        .sort((left, right) => left - right);
+      const askCount = targetEvents.length;
+      const failureEvents = targetEvents.filter((event) => event.outcome === 'failed');
+      const lastErrorEvent = failureEvents[0];
+      const successCount = askCount - failureEvents.length;
+      return {
+        target,
+        check: targetChecks[target.name],
+        askCount,
+        failureCount: failureEvents.length,
+        latestLatencyMS: firstFiniteLatency(targetEvents),
+        p95LatencyMS: percentileValue(latencies, 95),
+        successRate: askCount === 0 ? null : Math.round((successCount / askCount) * 100),
+        lastError: lastErrorEvent?.metadata.error ?? '',
+        lastErrorClass: lastErrorEvent?.metadata.error_class ?? '',
+        lastEventAt: targetEvents[0]?.created_at ?? '',
+      };
+    });
+}
+
+function summarizeModelPerformance(rows: ModelPerformanceRow[]) {
+  const latencies = rows
+    .flatMap((row) => (row.p95LatencyMS === null ? [] : [row.p95LatencyMS]))
+    .sort((left, right) => left - right);
+  const askCount = rows.reduce((total, row) => total + row.askCount, 0);
+  const failureCount = rows.reduce((total, row) => total + row.failureCount, 0);
+  const successCount = askCount - failureCount;
+  const checkedCount = rows.filter((row) => row.check).length;
+  const unhealthyCount = rows.filter(
+    (row) => row.failureCount > 0 || row.check?.state === 'failed',
+  ).length;
+  return {
+    targetCount: rows.length,
+    checkedCount,
+    askCount,
+    failureCount,
+    unhealthyCount,
+    p95LatencyMS: percentileValue(latencies, 95),
+    successRate: askCount === 0 ? null : Math.round((successCount / askCount) * 100),
+  };
+}
+
+function firstFiniteLatency(events: ListAuditEventsResponse['events']) {
+  for (const event of events) {
+    const latency = Number(event.metadata.latency_ms);
+    if (Number.isFinite(latency) && latency >= 0) {
+      return latency;
+    }
+  }
+  return null;
+}
+
+function percentileValue(values: number[], percentile: number) {
+  if (values.length === 0) {
+    return null;
+  }
+  const safePercentile = Math.min(100, Math.max(1, percentile));
+  const index = Math.ceil((safePercentile / 100) * values.length) - 1;
+  return values[Math.max(0, Math.min(values.length - 1, index))];
+}
+
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter((value) => value.trim() !== ''))).sort((a, b) =>
     a.localeCompare(b),
@@ -8709,6 +8991,16 @@ function formatElapsed(seconds: number) {
 
 function formatDurationMS(ms: number) {
   return formatElapsed(Math.max(0, Math.round(ms / 1000)));
+}
+
+function formatLatencyMS(ms: number) {
+  if (ms < 1000) {
+    return `${Math.max(0, Math.round(ms))}ms`;
+  }
+  if (ms < 60000) {
+    return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+  }
+  return formatDurationMS(ms);
 }
 
 function waitForMs(milliseconds: number) {

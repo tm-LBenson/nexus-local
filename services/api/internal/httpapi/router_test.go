@@ -1990,6 +1990,18 @@ func TestAskConversationEndpointCanScopeToDocument(t *testing.T) {
 	}
 }
 
+func TestAskErrorClassifiesGatewayTimeouts(t *testing.T) {
+	if got := askErrorClass(context.DeadlineExceeded); got != "timeout" {
+		t.Fatalf("deadline class = %q, want timeout", got)
+	}
+	if got := askErrorClass(fmt.Errorf("model gateway status 500: unavailable")); got != "gateway" {
+		t.Fatalf("gateway class = %q, want gateway", got)
+	}
+	if got := compactError(fmt.Errorf("%s", strings.Repeat("x", 240))); len(got) > 180 {
+		t.Fatalf("compact error length = %d, want <= 180", len(got))
+	}
+}
+
 func TestAuditEventsEndpointListsUserActions(t *testing.T) {
 	server := newTestServer(t)
 
@@ -2078,6 +2090,12 @@ func TestAuditEventsEndpointListsUserActions(t *testing.T) {
 	}
 	if actions["conversation.ask"].ResourceID != "conv_http" {
 		t.Fatalf("conversation resource id = %q", actions["conversation.ask"].ResourceID)
+	}
+	if actions["conversation.ask"].Metadata["model_target"] != "general" {
+		t.Fatalf("conversation metadata = %#v, want default model target", actions["conversation.ask"].Metadata)
+	}
+	if _, ok := actions["conversation.ask"].Metadata["latency_ms"]; !ok {
+		t.Fatalf("conversation metadata = %#v, want latency_ms", actions["conversation.ask"].Metadata)
 	}
 
 	filtered := httptest.NewRecorder()

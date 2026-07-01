@@ -3225,6 +3225,124 @@ h3 {
   font-weight: 700;
 }
 
+.modelPerfPanel {
+  display: grid;
+  gap: 10px;
+}
+
+.modelPerfHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.modelPerfHeader div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.modelPerfHeader strong {
+  color: #172026;
+  font-size: 0.95rem;
+}
+
+.modelPerfHeader span {
+  min-width: 0;
+  overflow: hidden;
+  color: #69777d;
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPerfMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.modelPerfMetrics div {
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfdfc;
+}
+
+.modelPerfMetrics span,
+.modelPerfCell em,
+.modelPerfTarget em,
+.modelPerfError span {
+  color: #69777d;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.modelPerfMetrics span {
+  text-transform: uppercase;
+}
+
+.modelPerfMetrics strong {
+  color: #172026;
+  font-size: 1rem;
+}
+
+.modelPerfMetrics em {
+  color: #69777d;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 740;
+}
+
+.modelPerfTable .dataHeader,
+.modelPerfRow {
+  grid-template-columns:
+    minmax(170px, 1.2fr)
+    minmax(112px, 0.72fr)
+    minmax(120px, 0.75fr)
+    minmax(112px, 0.7fr)
+    minmax(160px, 1fr)
+    74px;
+  gap: 10px;
+}
+
+.modelPerfTarget,
+.modelPerfCell,
+.modelPerfError {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.modelPerfTarget strong,
+.modelPerfCell strong,
+.modelPerfError strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172026;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPerfTarget span,
+.modelPerfError span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPerfCell .stateBadge {
+  justify-self: start;
+}
+
 .settingsGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -4029,6 +4147,7 @@ strong {
   .dashboardSecondary,
   .sampleStepGrid,
   .settingsGrid,
+  .modelPerfMetrics,
   .providerPanel,
   .statusGrid {
     grid-template-columns: 1fr;

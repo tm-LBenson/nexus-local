@@ -27,7 +27,8 @@ The product is not useful just because a model answers. It is useful when retrie
 | 3.3 | Answer metrics: citation presence, unsupported-claim checks, refusal behavior, and latency. | Done: Ask path can be evaluated without manual screenshots. |
 | 3.4 | Source preview UX for answers and search hits. | Done: user can inspect cited passages quickly. |
 | 3.5 | Hybrid retrieval strategy option. | Done: vector-only and hybrid strategies are selectable; hybrid reranks wider vector candidates with lexical overlap and is covered by eval fixtures plus a regression test where hybrid beats vector-only. |
-| 3.6 | Model target performance panel. | Admin can compare model latency, errors, and timeout behavior. |
+| 3.6 | Model target performance panel. | Done: Settings shows per-target probe status, recent Ask counts, success rate, p95 latency, and latest error class backed by audit metadata. |
+| 3.7 | Query rewriting for vague user questions. | Rewritten retrieval query improves source rank without changing the original user-visible question. |
 
 ## Dependencies
 
@@ -44,7 +45,7 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slices 3.1 through 3.5 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, and selectable vector-only or hybrid retrieval.
+- Slices 3.1 through 3.6 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, selectable vector-only or hybrid retrieval, and an audit-backed model performance panel.
 - Retrieval metrics cover aggregate recall, expected rank, latency, and explicit no-hit filter behavior.
 - Answer metrics cover expected source grounding, citation text, required/forbidden phrases, refusal wording, prompt context, conversation history, and latency.
 - Ask and search results now share selectable source rows with a compact preview panel for the full passage, document/chunk identifiers, score, storage key, and useful metadata.
@@ -52,4 +53,4 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Next Build Candidate
 
-Move to Slice 3.6. Add a model target performance panel so admins can compare model latency, timeout behavior, and recent gateway errors from one place.
+Move to Slice 3.7. Add query rewriting so vague user questions can be expanded into stronger retrieval queries without changing the original question shown in chat history.
