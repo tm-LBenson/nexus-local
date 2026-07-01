@@ -24,7 +24,7 @@ The product is not useful just because a model answers. It is useful when retrie
 | --- | --- | --- |
 | 3.1 | Evaluation fixture format for documents, questions, expected sources, and expected answer traits. | Done: offline retrieval eval runner reports pass/fail locally. |
 | 3.2 | Retrieval metrics: hit recall, source rank, empty result behavior, and latency. | Done: fixture set establishes baseline metrics. |
-| 3.3 | Answer metrics: citation presence, unsupported-claim checks, refusal behavior, and latency. | Ask path can be evaluated without manual screenshots. |
+| 3.3 | Answer metrics: citation presence, unsupported-claim checks, refusal behavior, and latency. | Done: Ask path can be evaluated without manual screenshots. |
 | 3.4 | Source preview UX for answers and search hits. | User can inspect cited passages quickly. |
 | 3.5 | Hybrid retrieval strategy option. | Lexical plus vector retrieval beats vector-only on fixture set. |
 | 3.6 | Model target performance panel. | Admin can compare model latency, errors, and timeout behavior. |
@@ -44,9 +44,11 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slices 3.1 and 3.2 now have a checked-in retrieval fixture, Go eval runner, `.\nexus.ps1 eval-retrieval`, release-check coverage, aggregate recall/rank/latency metrics, and an explicit no-hit filter case.
-- The baseline focuses on enterprise support and governance retrieval: OIDC troubleshooting, HAR diagnostics, PII redaction, MFA-gated status workflows, and scoped empty-result behavior.
+- Slices 3.1 through 3.3 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, and release-check coverage.
+- Retrieval metrics cover aggregate recall, expected rank, latency, and explicit no-hit filter behavior.
+- Answer metrics cover expected source grounding, citation text, required/forbidden phrases, refusal wording, prompt context, conversation history, and latency.
+- The baselines focus on enterprise support and governance behavior: OIDC troubleshooting, HAR diagnostics, PII redaction, MFA-gated status workflows, and scoped empty-result behavior.
 
 ## Next Build Candidate
 
-Move to Slice 3.3. Add answer metrics on top of the Ask path: citation presence, unsupported-claim checks, refusal behavior, and latency thresholds.
+Move to Slice 3.4. Add source preview UX for answers and search hits so users can inspect cited passages quickly.

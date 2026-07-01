@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$evalAnswerScript = Join-Path $PSScriptRoot "eval-answer.ps1"
 $devCheckScript = Join-Path $PSScriptRoot "dev-check.ps1"
 $evalRetrievalScript = Join-Path $PSScriptRoot "eval-retrieval.ps1"
 $testScript = Join-Path $PSScriptRoot "test.ps1"
@@ -43,6 +44,10 @@ Invoke-ReleaseStep "API and launcher tests" {
 
 Invoke-ReleaseStep "Retrieval eval gate" {
   & $evalRetrievalScript
+}
+
+Invoke-ReleaseStep "Answer eval gate" {
+  & $evalAnswerScript
 }
 
 Invoke-ReleaseStep "Web production build" {

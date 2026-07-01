@@ -43,7 +43,7 @@ Use the release check before tagging, demoing, or handing a build to another mac
 .\nexus.ps1 release-check
 ```
 
-This command runs API and launcher tests, the retrieval eval gate, the web production build, the end-to-end smoke gate, and the backup/restore round trip. It finishes by printing the manual UI checklist that still needs human eyes: setup blocking, first-run sample, dashboard, library, activity, settings, and slow-model answer states.
+This command runs API and launcher tests, retrieval and answer eval gates, the web production build, the end-to-end smoke gate, and the backup/restore round trip. It finishes by printing the manual UI checklist that still needs human eyes: setup blocking, first-run sample, dashboard, library, activity, settings, and slow-model answer states.
 
 ## Retrieval Eval Gate
 
@@ -54,6 +54,16 @@ Use the offline retrieval eval when touching search, chunking, source metadata, 
 ```
 
 The fixture at `fixtures/eval/retrieval-baseline.json` builds an in-memory index with hash embeddings, runs the normal search service, and verifies that support/governance questions retrieve the expected document chunks within the expected rank. The report includes aggregate recall, mean expected rank, p95 case latency, and no-hit case pass counts. It does not need Docker, a model gateway, or a GPU.
+
+## Answer Eval Gate
+
+Use the offline answer eval when touching prompts, citation/source UX, model target defaults, refusal behavior, conversation storage, or answer grounding:
+
+```powershell
+.\nexus.ps1 eval-answer
+```
+
+The fixture at `fixtures/eval/answer-baseline.json` seeds the same in-memory index, runs the normal Ask service with a deterministic model stub, and verifies expected sources, citation text, required phrases, forbidden phrases, refusal wording, prompt context, and conversation history. It does not need Docker, a model gateway, or a GPU.
 
 ## Backup/Restore Gate
 

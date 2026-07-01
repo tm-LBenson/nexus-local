@@ -166,7 +166,7 @@ Before a release candidate or serious demo, run the full release gate:
 .\nexus.ps1 release-check
 ```
 
-That gate runs tests, the production web build, smoke, backup/restore, and then prints the remaining manual UI checklist.
+That gate runs tests, offline retrieval and answer evals, the production web build, smoke, backup/restore, and then prints the remaining manual UI checklist.
 
 For search/retrieval changes, run the offline eval gate:
 
@@ -175,3 +175,11 @@ For search/retrieval changes, run the offline eval gate:
 ```
 
 It uses checked-in fixtures and does not require Docker or a model gateway.
+
+For prompt, citation, refusal, or Ask-flow changes, run the offline answer eval:
+
+```powershell
+.\nexus.ps1 eval-answer
+```
+
+It uses checked-in fixtures and a deterministic model stub, so it does not require Docker or a model gateway.

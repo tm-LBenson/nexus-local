@@ -13,11 +13,13 @@ import (
 )
 
 func main() {
-	fixturePath := flag.String("fixture", "", "retrieval fixture JSON path")
+	kind := flag.String("kind", "retrieval", "eval kind: retrieval or answer")
+	fixturePath := flag.String("fixture", "", "fixture JSON path")
 	jsonOutput := flag.Bool("json", false, "write JSON report")
 	flag.Parse()
 
-	resolvedFixture, err := resolveFixturePath(*fixturePath)
+	resolvedKind := strings.ToLower(strings.TrimSpace(*kind))
+	resolvedFixture, err := resolveFixturePath(resolvedKind, *fixturePath)
 	if err != nil {
 		fail("%v", err)
 	}
@@ -27,6 +29,17 @@ func main() {
 	}
 	defer file.Close()
 
+	switch resolvedKind {
+	case "retrieval":
+		runRetrieval(file, *jsonOutput)
+	case "answer":
+		runAnswer(file, *jsonOutput)
+	default:
+		fail("unknown eval kind %q; use retrieval or answer", *kind)
+	}
+}
+
+func runRetrieval(file *os.File, jsonOutput bool) {
 	suite, err := evaluation.LoadRetrievalSuite(file)
 	if err != nil {
 		fail("%v", err)
@@ -36,7 +49,7 @@ func main() {
 		fail("run retrieval eval: %v", err)
 	}
 
-	if *jsonOutput {
+	if jsonOutput {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(report); err != nil {
@@ -50,21 +63,49 @@ func main() {
 	}
 }
 
-func resolveFixturePath(path string) (string, error) {
+func runAnswer(file *os.File, jsonOutput bool) {
+	suite, err := evaluation.LoadAnswerSuite(file)
+	if err != nil {
+		fail("%v", err)
+	}
+	report, err := evaluation.RunAnswerSuite(context.Background(), suite)
+	if err != nil {
+		fail("run answer eval: %v", err)
+	}
+
+	if jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(report); err != nil {
+			fail("write JSON report: %v", err)
+		}
+	} else {
+		writeAnswerReport(report)
+	}
+	if !report.Passed {
+		os.Exit(1)
+	}
+}
+
+func resolveFixturePath(kind string, path string) (string, error) {
 	if strings.TrimSpace(path) != "" {
 		return path, nil
 	}
+	name := "retrieval-baseline.json"
+	if kind == "answer" {
+		name = "answer-baseline.json"
+	}
 	candidates := []string{
-		filepath.Join("fixtures", "eval", "retrieval-baseline.json"),
-		filepath.Join("..", "..", "fixtures", "eval", "retrieval-baseline.json"),
-		filepath.Join("..", "..", "..", "fixtures", "eval", "retrieval-baseline.json"),
+		filepath.Join("fixtures", "eval", name),
+		filepath.Join("..", "..", "fixtures", "eval", name),
+		filepath.Join("..", "..", "..", "fixtures", "eval", name),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("retrieval fixture not found; pass -fixture")
+	return "", fmt.Errorf("%s fixture not found; pass -fixture", kind)
 }
 
 func writeTextReport(report evaluation.RetrievalReport) {
@@ -110,6 +151,57 @@ func writeTextReport(report evaluation.RetrievalReport) {
 			fmt.Printf("  - %s\n", failure)
 		}
 		for _, hit := range testCase.TopHits {
+			fmt.Printf("  #%d %.4f %s#%s\n", hit.Rank, hit.Score, hit.DocumentID, hit.ChunkID)
+		}
+	}
+}
+
+func writeAnswerReport(report evaluation.AnswerReport) {
+	status := "PASS"
+	if !report.Passed {
+		status = "FAIL"
+	}
+	fmt.Printf("Nexus Local answer eval: %s\n", status)
+	fmt.Printf("Suite: %s\n", report.Suite)
+	if report.Description != "" {
+		fmt.Printf("Description: %s\n", report.Description)
+	}
+	fmt.Printf("Cases: %d passed / %d failed / %d total\n", report.PassedCount, report.FailedCount, report.CaseCount)
+	fmt.Printf("Indexed chunks: %d\n", report.IndexedChunks)
+	fmt.Printf("Embedding: %s / %d dims\n", report.Embedding.Model, report.Embedding.Dimensions)
+	fmt.Printf("Source recall: %.2f (%d/%d expected sources)\n", report.SourceRecall, report.MatchedExpectedSources, report.TotalExpectedSources)
+	fmt.Printf("Citation checks: %d/%d passed\n", report.CitationPassedCount, report.CaseCount)
+	if report.RefusalCaseCount > 0 {
+		fmt.Printf("Refusal checks: %d/%d passed\n", report.RefusalPassedCount, report.RefusalCaseCount)
+	}
+	fmt.Printf("History checks: %d/%d passed\n", report.HistoryPassedCount, report.CaseCount)
+	fmt.Printf("Prompt context checks: %d/%d passed\n", report.PromptContextPassCount, report.CaseCount)
+	fmt.Printf("P95 case latency: %dms\n", report.P95LatencyMS)
+	if report.ForbiddenPhraseHitCount > 0 {
+		fmt.Printf("Forbidden phrase hits: %d\n", report.ForbiddenPhraseHitCount)
+	}
+	fmt.Println("")
+
+	for _, testCase := range report.CaseReports {
+		caseStatus := "PASS"
+		if !testCase.Passed {
+			caseStatus = "FAIL"
+		}
+		fmt.Printf("[%s] %s\n", caseStatus, testCase.ID)
+		fmt.Printf("  Question: %s\n", testCase.Question)
+		fmt.Printf("  Sources: %d/%d expected matched", testCase.ExpectedSourceMatched, testCase.ExpectedSourceTotal)
+		if len(testCase.ExpectedSourceRanks) > 0 {
+			fmt.Printf(", ranks %s", formatRanks(testCase.ExpectedSourceRanks))
+		}
+		fmt.Println("")
+		fmt.Printf("  Citations: %d/%d, required phrases: %d/%d, latency: %dms\n", testCase.CitationMatched, testCase.CitationTotal, testCase.RequiredPhraseMatched, testCase.RequiredPhraseTotal, testCase.LatencyMS)
+		if testCase.RefusalExpected {
+			fmt.Printf("  Refusal: %t\n", testCase.RefusalPassed)
+		}
+		for _, failure := range testCase.Failures {
+			fmt.Printf("  - %s\n", failure)
+		}
+		for _, hit := range testCase.TopSources {
 			fmt.Printf("  #%d %.4f %s#%s\n", hit.Rank, hit.Score, hit.DocumentID, hit.ChunkID)
 		}
 	}

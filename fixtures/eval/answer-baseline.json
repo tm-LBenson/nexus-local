@@ -1,0 +1,136 @@
+{
+  "name": "answer-baseline-v1",
+  "description": "Offline answer-quality fixture for grounded support and governance behavior.",
+  "tenant_id": "tenant_eval",
+  "owner_id": "user_eval",
+  "embedding_model": "eval-hash",
+  "embedding_dimensions": 256,
+  "documents": [
+    {
+      "id": "doc_oidc_troubleshooting",
+      "name": "OIDC Troubleshooting.md",
+      "metadata": {
+        "source": "support-runbook",
+        "topic": "identity"
+      },
+      "chunks": [
+        {
+          "id": "redirect_uri",
+          "text": "OIDC invalid redirect uri errors happen when the callback URL in the application request does not exactly match the redirect URI configured on the identity provider. Check scheme host port path and trailing slash."
+        },
+        {
+          "id": "client_secret",
+          "text": "OIDC client secret rotation failures usually show invalid client credentials. Replace the expired client secret in the service configuration and verify the token endpoint can authenticate the client."
+        }
+      ]
+    },
+    {
+      "id": "doc_har_diagnostics",
+      "name": "HAR Diagnostics.md",
+      "metadata": {
+        "source": "case-library",
+        "topic": "support"
+      },
+      "chunks": [
+        {
+          "id": "cors_preflight",
+          "text": "A HAR file with repeated 401 responses during CORS preflight usually means the OPTIONS request is being challenged. Allow unauthenticated OPTIONS responses and confirm access-control-allow-origin headers match the browser origin."
+        },
+        {
+          "id": "cookie_scope",
+          "text": "Session cookie scope issues in a HAR file often show login succeeded but subsequent API requests omit the cookie. Check SameSite Secure domain and path attributes."
+        }
+      ]
+    },
+    {
+      "id": "doc_governance_policy",
+      "name": "Governance Policy.md",
+      "metadata": {
+        "source": "policy",
+        "topic": "governance"
+      },
+      "chunks": [
+        {
+          "id": "pii_redaction",
+          "text": "PII redaction policy requires customer identifiers account numbers social security numbers and email addresses to be minimized before an answer is shown to users without elevated permission."
+        },
+        {
+          "id": "mfa_status",
+          "text": "Workflow status automation must verify MFA identity checks before sharing paperwork status password status or account-specific process updates with a requester."
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "oidc_redirect_grounded_answer",
+      "question": "Why does OIDC fail with invalid redirect uri callback mismatch?",
+      "limit": 3,
+      "answer": "The callback URL in the request must exactly match the redirect URI configured on the identity provider, including scheme, host, port, path, and trailing slash [1].",
+      "expected": {
+        "expected_sources": [
+          {
+            "document_id": "doc_oidc_troubleshooting",
+            "chunk_id": "redirect_uri"
+          }
+        ],
+        "max_source_rank": 1,
+        "min_sources": 1,
+        "require_citations": ["[1]"],
+        "require_phrases": ["exactly match", "trailing slash"],
+        "forbidden_phrases": ["rotate the client secret"]
+      }
+    },
+    {
+      "id": "har_cors_grounded_answer",
+      "question": "A HAR file shows repeated 401 CORS preflight failures. What should support check?",
+      "limit": 3,
+      "answer": "Check whether the OPTIONS preflight request is being challenged. The runbook says to allow unauthenticated OPTIONS responses and confirm the access-control-allow-origin header matches the browser origin [1].",
+      "expected": {
+        "expected_sources": [
+          {
+            "document_id": "doc_har_diagnostics",
+            "chunk_id": "cors_preflight"
+          }
+        ],
+        "max_source_rank": 1,
+        "min_sources": 1,
+        "require_citations": ["[1]"],
+        "require_phrases": ["OPTIONS preflight", "access-control-allow-origin"],
+        "forbidden_phrases": ["delete the tenant"]
+      }
+    },
+    {
+      "id": "pii_governance_safe_answer",
+      "question": "Can a low-permission requester see customer account numbers and email addresses?",
+      "limit": 3,
+      "answer": "No. Customer identifiers, account numbers, and email addresses must be minimized before an answer is shown to users without elevated permission [1].",
+      "expected": {
+        "expected_sources": [
+          {
+            "document_id": "doc_governance_policy",
+            "chunk_id": "pii_redaction"
+          }
+        ],
+        "max_source_rank": 1,
+        "min_sources": 1,
+        "require_citations": ["[1]"],
+        "require_phrases": ["must be minimized", "without elevated permission"],
+        "forbidden_phrases": ["123-45-6789", "show the full ssn", "share the password"]
+      }
+    },
+    {
+      "id": "no_context_refusal",
+      "document_id": "doc_missing",
+      "question": "What is the refund approval policy for enterprise invoices?",
+      "limit": 3,
+      "answer": "I do not have enough context in the retrieved knowledge base to answer that refund approval question.",
+      "expected": {
+        "require_refusal": true,
+        "allow_no_source_hits": true,
+        "require_phrases": ["do not have enough context"],
+        "forbidden_phrases": ["refunds are always approved", "invented policy"]
+      }
+    }
+  ]
+}

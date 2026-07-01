@@ -125,7 +125,7 @@ Run the Phase 1 release gate before tagging or calling a build demo-ready:
 .\nexus.ps1 release-check
 ```
 
-This runs API/launcher tests, the web production build, the end-to-end smoke gate, and the backup/restore round trip, then prints the manual UI checklist for setup, dashboard, library, activity, settings, and slow-model answer states.
+This runs API/launcher tests, offline retrieval and answer evals, the web production build, the end-to-end smoke gate, and the backup/restore round trip, then prints the manual UI checklist for setup, dashboard, library, activity, settings, and slow-model answer states.
 
 Run the offline retrieval quality gate after changing search, chunking, metadata filters, or embeddings:
 
@@ -134,6 +134,14 @@ Run the offline retrieval quality gate after changing search, chunking, metadata
 ```
 
 This builds a small in-memory fixture index and verifies that support/governance questions retrieve the expected sources, including recall/rank/latency metrics and scoped empty-result behavior. It does not require Docker or a model gateway.
+
+Run the offline answer quality gate after changing prompts, citation behavior, model routing, or the Ask flow:
+
+```powershell
+.\nexus.ps1 eval-answer
+```
+
+This uses a deterministic model stub against the real Ask path and verifies grounding, citations, refusal wording, prompt context, and conversation history. It does not require Docker or a model gateway.
 
 Run a managed-source stress check:
 
