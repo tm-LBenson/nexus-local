@@ -69,6 +69,13 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
+const askPhaseSteps: Array<{ phase: AskPhase; label: string }> = [
+  { phase: 'connecting', label: 'Connect' },
+  { phase: 'retrieving', label: 'Context' },
+  { phase: 'generating', label: 'Model' },
+  { phase: 'streaming', label: 'Answer' },
+];
+
 type ScanEntryFilter = 'all' | 'imported' | 'skipped' | 'failed' | 'deleted';
 type SourceFilterValues = {
   health: string;
@@ -723,6 +730,13 @@ export function App() {
   const visibleAskModel = askResult?.completion.model || askForm.model_target;
   const showAskProgress = asking || askPhase === 'failed';
   const showAskResult = Boolean(askResult || visibleAskAnswer || showAskProgress || streamStatus);
+  const askRetryAvailable = askPhase === 'failed' && Boolean(currentAskQuestion) && workspaceReady;
+  const askProgressDetail = askProgressDetailLabel({
+    answer: visibleAskAnswer,
+    elapsedSeconds: askElapsedSeconds,
+    phase: askPhase,
+    status: streamStatus,
+  });
   const auditActionOptions = useMemo(
     () => uniqueSorted(auditEvents?.events.map((event) => event.action) ?? []),
     [auditEvents],
@@ -2385,6 +2399,22 @@ export function App() {
       setError('Enter a question');
       return;
     }
+    await runAsk(question);
+  }
+
+  async function runAsk(question: string) {
+    if (asking) {
+      return;
+    }
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    question = question.trim();
+    if (!question) {
+      setError('Enter a question');
+      return;
+    }
     setAsking(true);
     setError(null);
     setAskResult(null);
@@ -2465,6 +2495,13 @@ export function App() {
   function cancelAsk() {
     setStreamStatus('Canceling');
     askAbortRef.current?.abort();
+  }
+
+  function retryAsk() {
+    if (!currentAskQuestion || asking) {
+      return;
+    }
+    void runAsk(currentAskQuestion);
   }
 
   if (showSetupWizard) {
@@ -2770,6 +2807,21 @@ export function App() {
                             : askPhaseLabel(askPhase, visibleAskAnswer)}
                         </strong>
                         <em>{formatElapsed(askElapsedSeconds)}</em>
+                        <span className="answerProgressDetail">{askProgressDetail}</span>
+                        {askRetryAvailable && (
+                          <button className="secondaryButton" onClick={retryAsk} type="button">
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {showAskProgress && (
+                      <div className="answerPhaseStrip" aria-label="Answer progress">
+                        {askPhaseSteps.map((step) => (
+                          <span className={askPhaseStepClass(askPhase, step.phase)} key={step.phase}>
+                            {step.label}
+                          </span>
+                        ))}
                       </div>
                     )}
                     {askPhase === 'failed' ? (
@@ -5850,6 +5902,48 @@ function askPhaseLabel(phase: AskPhase, answer: string) {
     case 'idle':
       return 'Starting';
   }
+}
+
+function askPhaseStepClass(current: AskPhase, step: AskPhase) {
+  if (current === 'failed') {
+    return 'answerPhase answerPhaseFailed';
+  }
+  if (current === 'complete') {
+    return 'answerPhase answerPhaseDone';
+  }
+  const currentIndex = askPhaseSteps.findIndex((item) => item.phase === current);
+  const stepIndex = askPhaseSteps.findIndex((item) => item.phase === step);
+  if (currentIndex < 0 || stepIndex < 0) {
+    return 'answerPhase';
+  }
+  if (stepIndex < currentIndex) {
+    return 'answerPhase answerPhaseDone';
+  }
+  if (stepIndex === currentIndex) {
+    return 'answerPhase answerPhaseActive';
+  }
+  return 'answerPhase';
+}
+
+function askProgressDetailLabel(input: {
+  answer: string;
+  elapsedSeconds: number;
+  phase: AskPhase;
+  status: string;
+}) {
+  if (input.phase === 'failed') {
+    return 'Ready to retry';
+  }
+  if (input.answer) {
+    return `${input.answer.length.toLocaleString()} chars received`;
+  }
+  if (input.elapsedSeconds >= 90) {
+    return 'Still waiting on the local model';
+  }
+  if (input.elapsedSeconds >= 45) {
+    return 'Local models can take a minute';
+  }
+  return input.status || askWaitingLabel(input.phase);
 }
 
 function askWaitingLabel(phase: AskPhase) {

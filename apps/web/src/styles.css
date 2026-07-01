@@ -1487,7 +1487,7 @@ h3 {
 
 .answerProgress {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(110px, 0.72fr) auto minmax(150px, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: 34px;
@@ -1513,6 +1513,73 @@ h3 {
   font-size: 0.78rem;
   font-style: normal;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.answerProgressDetail {
+  min-width: 0;
+  overflow: hidden;
+  color: #52616b;
+  font-size: 0.78rem;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.answerProgress .secondaryButton {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.answerPhaseStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.answerPhase {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border: 1px solid #dce4e5;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #69777d;
+  background: #f7faf9;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.answerPhaseDone {
+  border-color: #b8d6ca;
+  color: #0a684c;
+  background: #edf8f3;
+}
+
+.answerPhaseActive {
+  border-color: #86b7be;
+  color: #0e5d67;
+  background: #e7f4f5;
+  box-shadow: inset 0 0 0 1px rgba(14, 93, 103, 0.08);
+}
+
+.answerPhaseActive::after {
+  position: absolute;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #0e5d67;
+  animation: pulse 1.25s ease-in-out infinite;
+  content: "";
+}
+
+.answerPhaseFailed {
+  border-color: #f0bbb4;
+  color: #b42318;
+  background: #fff4f2;
 }
 
 .answerText {
@@ -1579,8 +1646,19 @@ h3 {
   }
 }
 
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
+  .spinner,
+  .answerPhaseActive::after {
     animation: none;
   }
 }
@@ -3904,6 +3982,27 @@ strong {
     display: grid;
     grid-template-columns: 1fr 1fr;
     width: 100%;
+  }
+
+  .answerProgress {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+  }
+
+  .answerProgressDetail,
+  .answerProgress .secondaryButton {
+    grid-column: 2 / -1;
+  }
+
+  .answerProgressDetail {
+    white-space: normal;
+  }
+
+  .answerProgress .secondaryButton {
+    justify-self: start;
+  }
+
+  .answerPhaseStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .auditToolbar {
