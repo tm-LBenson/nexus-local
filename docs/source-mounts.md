@@ -1,18 +1,10 @@
 # Source Mounts
 
-Managed sources are scanned by the worker container. The path entered in Library must be visible inside that container.
+Managed sources are scanned by the worker container. The path entered in Dashboard Add data or Library must be visible inside that container.
 
 ## Quick Path
 
-During setup, mount one readable source root:
-
-```powershell
-.\scripts\setup.ps1 `
-  -Profile cpu-lite `
-  -SourceHostPath "C:\Users\you\OneDrive\Customer Docs" `
-  -SourceContainerPath "/sources/primary" `
-  -Force
-```
+During guided setup, choose one readable source root from the machine running Docker. The launcher writes that host path to `NEXUS_SOURCE_HOST_PATH` and exposes it to the worker as `NEXUS_SOURCE_CONTAINER_PATH`, usually `/sources/primary`.
 
 Then start with the printed Compose command or run:
 
@@ -20,14 +12,14 @@ Then start with the printed Compose command or run:
 .\nexus.ps1 start
 ```
 
-In Library, create sources with paths under `/sources/primary`, for example:
+In Dashboard Add data, use **Connect + scan** with paths under `/sources/primary`, for example:
 
 - `/sources/primary`
 - `/sources/primary/SharePoint`
 - `/sources/primary/exports`
 - `/sources/primary/customers/acme`
 
-Use the Add source templates for common starting points. They prefill source type, path, include rules, exclude rules, and schedule for SharePoint or Teams sync folders, OneDrive sync folders, network shares, ticket exports, knowledge base exports, and runbooks.
+Use the quick presets for common starting points. They prefill source type, path, include rules, exclude rules, and schedule for folders, vaults, team drives, exports, and runbooks. Library exposes the same managed sources with deeper controls for saved views, retry, reindex, CSV review, archive, and cleanup.
 
 ## Host Examples
 

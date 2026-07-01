@@ -43,6 +43,8 @@ type Config struct {
 	ModelGatewayTimeout       time.Duration
 	DefaultModelTarget        string
 	GeneralModelID            string
+	SourceHostPath            string
+	SourceContainerPath       string
 	WorkerPollInterval        time.Duration
 	WorkerDocumentConcurrency int
 }
@@ -85,6 +87,8 @@ func Load() Config {
 		ModelGatewayTimeout:       envDuration("MODEL_GATEWAY_TIMEOUT", 5*time.Minute),
 		DefaultModelTarget:        env("DEFAULT_MODEL_TARGET", "general"),
 		GeneralModelID:            env("GENERAL_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct"),
+		SourceHostPath:            env("NEXUS_SOURCE_HOST_PATH", ""),
+		SourceContainerPath:       env("NEXUS_SOURCE_CONTAINER_PATH", "/sources/primary"),
 		WorkerPollInterval:        envDuration("WORKER_POLL_INTERVAL", 2*time.Second),
 		WorkerDocumentConcurrency: envBoundedInt("WORKER_DOCUMENT_CONCURRENCY", 1, 1, 32),
 	}

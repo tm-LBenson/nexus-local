@@ -487,7 +487,7 @@ const builtinSourcePolicyProfiles: SourcePolicyProfile[] = [
   },
 ];
 
-const supportedDocumentAccept = [
+const supportedDocumentExtensions = [
   '.txt',
   '.md',
   '.json',
@@ -500,7 +500,10 @@ const supportedDocumentAccept = [
   '.docx',
   '.pptx',
   '.xlsx',
-].join(',');
+];
+
+const supportedDocumentAccept = supportedDocumentExtensions.join(',');
+const folderImportConcurrency = 3;
 
 const sampleDocumentContent = `# Nexus Local Sample
 
@@ -535,6 +538,10 @@ export function App() {
   const [tenantID, setTenantID] = useState('');
   const [tenantName, setTenantName] = useState('Personal Workspace');
   const [file, setFile] = useState<File | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const [folderFiles, setFolderFiles] = useState<File[]>([]);
+  const [folderImporting, setFolderImporting] = useState(false);
+  const [folderImportProgress, setFolderImportProgress] = useState('');
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
@@ -558,6 +565,8 @@ export function App() {
     strategy: 'hybrid' as RetrievalStrategy,
   });
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
+  const [contextSourceOpen, setContextSourceOpen] = useState(false);
+  const [sourceConnectNotice, setSourceConnectNotice] = useState('');
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
   const [sourceSavedViews, setSourceSavedViews] = useState<SourceSavedView[]>([]);
@@ -730,6 +739,11 @@ export function App() {
   const sourcePolicyProfiles = useMemo(
     () => [...builtinSourcePolicyProfiles, ...customSourcePolicyProfiles],
     [customSourcePolicyProfiles],
+  );
+  const sourceContainerRoot = sourceRootPath(readiness);
+  const quickSourceTemplates = useMemo(
+    () => dashboardSourceTemplates(sourceContainerRoot),
+    [sourceContainerRoot],
   );
   const sourceBulkActionCounts = useMemo(
     () =>
@@ -968,6 +982,15 @@ export function App() {
       canceled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const input = folderInputRef.current;
+    if (!input) {
+      return;
+    }
+    input.setAttribute('directory', '');
+    input.setAttribute('webkitdirectory', '');
+  }, [activeView, workspaceReady]);
 
   useEffect(() => {
     if (!setupShouldAutoRecheck) {
@@ -1579,6 +1602,13 @@ export function App() {
     setSourceDetail(null);
     setDocumentDetail(null);
     setDataSources(null);
+    setFolderFiles([]);
+    setFolderImportProgress('');
+    setContextSourceOpen(false);
+    setSourceConnectNotice('');
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
     setSourceSavedViews([]);
     setCustomSourcePolicyProfiles([]);
     setSearchResult(null);
@@ -1824,6 +1854,103 @@ export function App() {
     }
   }
 
+  async function submitFolderImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canUploadDocuments) {
+      setError('Member access is required to import folders');
+      return;
+    }
+    if (!tenantID) {
+      setError('Create a workspace first');
+      return;
+    }
+    if (folderFiles.length === 0) {
+      setError('Choose a folder first');
+      return;
+    }
+
+    const uploadableFiles = folderFiles.filter(isSupportedUploadFile);
+    const skippedCount = folderFiles.length - uploadableFiles.length;
+    if (uploadableFiles.length === 0) {
+      setError('No supported documents were found in that folder');
+      return;
+    }
+
+    setFolderImporting(true);
+    setFolderImportProgress(`Starting 0/${uploadableFiles.length}`);
+    setSourceConnectNotice('');
+    setError(null);
+
+    let nextIndex = 0;
+    let uploadedCount = 0;
+    let failedCount = 0;
+    let firstError = '';
+    const uploadResults: RegisterDocumentResponse[] = [];
+
+    async function uploadNext() {
+      while (nextIndex < uploadableFiles.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        const nextFile = uploadableFiles[currentIndex];
+        const displayName = folderRelativeName(nextFile);
+        setFolderImportProgress(`${currentIndex + 1}/${uploadableFiles.length} ${displayName}`);
+        try {
+          const result = await uploadDocument({
+            tenant_id: tenantID,
+            file: nextFile,
+            name: displayName,
+          });
+          uploadResults.push(result);
+          uploadedCount += 1;
+        } catch (err) {
+          failedCount += 1;
+          if (!firstError) {
+            firstError = messageFromError(err);
+          }
+        }
+      }
+    }
+
+    try {
+      const workers = Array.from(
+        { length: Math.min(folderImportConcurrency, uploadableFiles.length) },
+        () => uploadNext(),
+      );
+      await Promise.all(workers);
+
+      const latestResult = uploadResults[uploadResults.length - 1];
+      if (latestResult) {
+        setRegistration(latestResult);
+        setDocumentDetail({ document: latestResult.document, jobs: [latestResult.job] });
+      }
+
+      await Promise.all([
+        refreshDocuments(tenantID),
+        refreshJobs(tenantID),
+        canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
+      ]);
+
+      const resultParts = [`${uploadedCount} imported`];
+      if (skippedCount > 0) {
+        resultParts.push(`${skippedCount} skipped`);
+      }
+      if (failedCount > 0) {
+        resultParts.push(`${failedCount} failed`);
+      }
+      setSourceConnectNotice(resultParts.join(', '));
+      if (failedCount > 0) {
+        setError(firstError || 'Some files could not be imported');
+      }
+      setFolderFiles([]);
+      if (folderInputRef.current) {
+        folderInputRef.current.value = '';
+      }
+    } finally {
+      setFolderImporting(false);
+      setFolderImportProgress('');
+    }
+  }
+
   function applySourceTemplate(template: SourceTemplate) {
     setSourceForm({
       type: template.type,
@@ -1837,6 +1964,14 @@ export function App() {
       exclude_patterns: template.exclude_patterns,
       scan_interval_minutes: template.scan_interval_minutes,
     });
+  }
+
+  function openContextSourcePanel() {
+    setContextSourceOpen(true);
+    setSourceConnectNotice('');
+    if (!sourceForm.root_path.trim() && quickSourceTemplates[0]) {
+      applySourceTemplate(quickSourceTemplates[0]);
+    }
   }
 
   function sourceFormWithPolicy(
@@ -1891,7 +2026,10 @@ export function App() {
     );
   }
 
-  async function submitDataSource(event: FormEvent<HTMLFormElement>) {
+  async function submitDataSource(
+    event: FormEvent<HTMLFormElement>,
+    options: { closePanel?: boolean; scanAfterCreate?: boolean } = {},
+  ) {
     event.preventDefault();
     if (!canManageSources) {
       setError('Member access is required to add sources');
@@ -1906,6 +2044,7 @@ export function App() {
       return;
     }
     setCreatingSource(true);
+    setSourceConnectNotice('');
     setError(null);
     try {
       const createResult = await createDataSource({
@@ -1919,49 +2058,59 @@ export function App() {
         scan_interval_minutes: Number(sourceForm.scan_interval_minutes),
       });
       const connectorSource = sourceIsConnector(createResult.source);
+      let detailSource = createResult.source;
+      const detailJobs: ListJobsResponse['jobs'] = [];
       let preflightError = '';
-      if (connectorSource) {
-        setSourceDetail({
-          source: createResult.source,
-          jobs: [],
-          scan_entries: [],
-          scan_summary: emptyDataSourceScanSummary(),
-          scan_entries_page: emptyDataSourceScanEntryPage(),
-          failed_documents: 0,
-        });
-        setSourceEditForm(sourceFormFromSource(createResult.source));
-      } else {
+      let scanError = '';
+      if (!connectorSource) {
         try {
           const preflightResult = await preflightDataSource(tenantID, createResult.source.id);
-          setSourceDetail({
-            source: preflightResult.source,
-            jobs: [preflightResult.job],
-            scan_entries: [],
-            scan_summary: emptyDataSourceScanSummary(),
-            scan_entries_page: emptyDataSourceScanEntryPage(),
-            failed_documents: 0,
-          });
-          setSourceEditForm(sourceFormFromSource(preflightResult.source));
+          detailSource = preflightResult.source;
+          detailJobs.push(preflightResult.job);
         } catch (err) {
           preflightError = messageFromError(err);
-          setSourceDetail({
-            source: createResult.source,
-            jobs: [],
-            scan_entries: [],
-            scan_summary: emptyDataSourceScanSummary(),
-            scan_entries_page: emptyDataSourceScanEntryPage(),
-            failed_documents: 0,
-          });
-          setSourceEditForm(sourceFormFromSource(createResult.source));
+        }
+        if (options.scanAfterCreate && !preflightError) {
+          try {
+            const scanResult = await scanDataSource(tenantID, createResult.source.id);
+            detailSource = scanResult.source;
+            detailJobs.push(scanResult.job);
+          } catch (err) {
+            scanError = messageFromError(err);
+          }
         }
       }
+      setSourceDetail({
+        source: detailSource,
+        jobs: detailJobs,
+        scan_entries: [],
+        scan_summary: emptyDataSourceScanSummary(),
+        scan_entries_page: emptyDataSourceScanEntryPage(),
+        failed_documents: 0,
+      });
+      setSourceEditForm(sourceFormFromSource(detailSource));
       setSourceForm(initialSourceForm);
       await Promise.all([
+        refreshDocuments(tenantID),
         refreshDataSources(tenantID),
         refreshJobs(tenantID),
         canManageTenant ? refreshAuditEvents(tenantID) : Promise.resolve(),
       ]);
-      if (preflightError) {
+      if (options.closePanel && !preflightError && !scanError) {
+        setContextSourceOpen(false);
+      }
+      if (connectorSource) {
+        setSourceConnectNotice(`Saved ${createResult.source.name}`);
+      } else if (!preflightError && !scanError) {
+        setSourceConnectNotice(
+          options.scanAfterCreate
+            ? `Scan queued for ${createResult.source.name}`
+            : `Path check queued for ${createResult.source.name}`,
+        );
+      }
+      if (scanError) {
+        setError(`Source added. Scan did not start: ${scanError}`);
+      } else if (preflightError) {
         setError(`Source added. Path check did not start: ${preflightError}`);
       }
     } catch (err) {
@@ -2963,6 +3112,7 @@ export function App() {
                   activeJobs={activeJobs}
                   failedDocuments={failedDocuments}
                   failedJobs={failedJobs}
+                  onConnectSource={openContextSourcePanel}
                   onOpenDocument={(document) => {
                     setActiveView('documents');
                     void openDocument(document);
@@ -3234,6 +3384,229 @@ export function App() {
                   <h2>Context</h2>
                   <span>{askForm.document_id ? 'Scoped' : 'All documents'}</span>
                 </div>
+
+                <details
+                  className="contextSourcePanel"
+                  onToggle={(event) => {
+                    const isOpen = event.currentTarget.open;
+                    setContextSourceOpen(isOpen);
+                    if (isOpen && !sourceForm.root_path.trim() && quickSourceTemplates[0]) {
+                      applySourceTemplate(quickSourceTemplates[0]);
+                    }
+                  }}
+                  open={contextSourceOpen}
+                >
+                  <summary>
+                    <span>
+                      <strong>Add data</strong>
+                      <em>Folders, drives, exports</em>
+                    </span>
+                    <small>
+                      {folderImporting
+                        ? folderImportProgress || 'Importing'
+                        : sourceConnectNotice ||
+                          (readiness?.source_host_configured
+                            ? sourceContainerRoot
+                            : 'Import or connect')}
+                    </small>
+                  </summary>
+                  <div className="contextSourceBody">
+                    <form className="folderImportForm" onSubmit={submitFolderImport}>
+                      <input
+                        aria-label="Import folder"
+                        accept={supportedDocumentAccept}
+                        className="fileInput"
+                        disabled={folderImporting || !canUploadDocuments}
+                        multiple
+                        ref={folderInputRef}
+                        type="file"
+                        onChange={(event) =>
+                          setFolderFiles(Array.from(event.target.files ?? []))
+                        }
+                      />
+                      <button
+                        className="folderPicker"
+                        onClick={() => folderInputRef.current?.click()}
+                        type="button"
+                      >
+                        <strong>Import folder</strong>
+                        <span>
+                          {folderFiles.length > 0
+                            ? `${folderFiles.length} selected`
+                            : 'One-time upload'}
+                        </span>
+                      </button>
+                      <button
+                        disabled={
+                          folderImporting ||
+                          folderFiles.length === 0 ||
+                          !workspaceReady ||
+                          !canUploadDocuments
+                        }
+                        type="submit"
+                      >
+                        {folderImporting ? 'Importing' : 'Import'}
+                      </button>
+                    </form>
+
+                    {folderImportProgress && (
+                      <div className="sourceConnectNotice">
+                        <span className="spinner" aria-hidden="true"></span>
+                        <strong>{folderImportProgress}</strong>
+                      </div>
+                    )}
+
+                    <div
+                      className={
+                        readiness?.source_host_configured
+                          ? 'sourceMountStatus'
+                          : 'sourceMountStatus sourceMountStatusWarning'
+                      }
+                    >
+                      <strong>
+                        {readiness?.source_host_configured
+                          ? 'Mounted source ready'
+                          : 'No mounted source root'}
+                      </strong>
+                      <span>
+                        {readiness?.source_host_configured
+                          ? `${sourceContainerRoot} is available to source scans.`
+                          : 'Use folder import now, or choose a source folder in setup for repeat scans.'}
+                      </span>
+                    </div>
+
+                    <div className="contextSourceQuick">
+                      {quickSourceTemplates.map((template) => (
+                        <button
+                          key={template.id}
+                          onClick={() => applySourceTemplate(template)}
+                          type="button"
+                        >
+                          <strong>{template.label}</strong>
+                          <span>{template.detail}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <form
+                      className="contextSourceForm"
+                      onSubmit={(event) =>
+                        void submitDataSource(event, {
+                          closePanel: true,
+                          scanAfterCreate: true,
+                        })
+                      }
+                    >
+                      <label>
+                        <span>Name</span>
+                        <input
+                          aria-label="Source name"
+                          onChange={(event) =>
+                            setSourceForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Knowledge folder"
+                          value={sourceForm.name}
+                        />
+                      </label>
+                      <label className="contextSourcePath">
+                        <span>Path</span>
+                        <input
+                          aria-label="Source path"
+                          onChange={(event) =>
+                            setSourceForm((current) => ({
+                              ...current,
+                              root_path: event.target.value,
+                            }))
+                          }
+                          placeholder={sourceContainerRoot}
+                          value={sourceForm.root_path}
+                        />
+                      </label>
+                      <label>
+                        <span>Schedule</span>
+                        <select
+                          aria-label="Source schedule"
+                          onChange={(event) =>
+                            setSourceForm((current) => ({
+                              ...current,
+                              scan_interval_minutes: event.target.value,
+                            }))
+                          }
+                          value={sourceForm.scan_interval_minutes}
+                        >
+                          <option value="0">Manual</option>
+                          <option value="60">Hourly</option>
+                          <option value="1440">Daily</option>
+                          <option value="10080">Weekly</option>
+                        </select>
+                      </label>
+                      <details className="inlineDetails contextSourceAdvanced">
+                        <summary>Advanced</summary>
+                        <div className="contextAdvancedGrid">
+                          <label>
+                            <span>Type</span>
+                            <select
+                              aria-label="Source type"
+                              onChange={(event) =>
+                                setSourceForm((current) => ({
+                                  ...current,
+                                  type: event.target.value,
+                                }))
+                              }
+                              value={sourceForm.type}
+                            >
+                              <option value="synced_folder">Synced folder</option>
+                              <option value="folder">Local folder</option>
+                              <option value="network_share">Network share</option>
+                              <option value="export">Export</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Include</span>
+                            <textarea
+                              aria-label="Source include patterns"
+                              onChange={(event) =>
+                                setSourceForm((current) => ({
+                                  ...current,
+                                  include_patterns: event.target.value,
+                                }))
+                              }
+                              value={sourceForm.include_patterns}
+                            />
+                          </label>
+                          <label>
+                            <span>Exclude</span>
+                            <textarea
+                              aria-label="Source exclude patterns"
+                              onChange={(event) =>
+                                setSourceForm((current) => ({
+                                  ...current,
+                                  exclude_patterns: event.target.value,
+                                }))
+                              }
+                              value={sourceForm.exclude_patterns}
+                            />
+                          </label>
+                        </div>
+                      </details>
+                      <button
+                        disabled={creatingSource || !workspaceReady || !canManageSources}
+                        type="submit"
+                      >
+                        {creatingSource ? 'Connecting' : 'Connect + scan'}
+                      </button>
+                    </form>
+
+                    {sourceConnectNotice && (
+                      <div className="sourceConnectNotice">
+                        <strong>{sourceConnectNotice}</strong>
+                      </div>
+                    )}
+                  </div>
+                </details>
 
                 <form className="uploadBar compactUpload" onSubmit={submitUpload}>
                   <input
@@ -5964,6 +6337,7 @@ function DashboardAttentionPanel({
   activeJobs,
   failedDocuments,
   failedJobs,
+  onConnectSource,
   onOpenDocument,
   onRefresh,
   onViewActivity,
@@ -5975,6 +6349,7 @@ function DashboardAttentionPanel({
   activeJobs: ListJobsResponse['jobs'];
   failedDocuments: ListDocumentsResponse['documents'];
   failedJobs: ListJobsResponse['jobs'];
+  onConnectSource: () => void;
   onOpenDocument: (document: ListDocumentsResponse['documents'][number]) => void;
   onRefresh: () => void;
   onViewActivity: () => void;
@@ -6026,10 +6401,10 @@ function DashboardAttentionPanel({
       : readyDocumentCount === 0
         ? {
             label: 'Next',
-            title: 'Add context',
+            title: 'Add knowledge',
             detail: 'No ready documents',
-            button: 'Library',
-            onClick: onViewLibrary,
+            button: 'Connect',
+            onClick: onConnectSource,
           }
         : {
             label: 'Ready',
@@ -6145,8 +6520,17 @@ function DashboardAttentionPanel({
         <button onClick={onRefresh} type="button">
           Refresh
         </button>
-        <button onClick={totalAttention > 0 ? onViewActivity : onViewLibrary} type="button">
-          {totalAttention > 0 ? 'Activity' : 'Library'}
+        <button
+          onClick={
+            totalAttention > 0
+              ? onViewActivity
+              : readyDocumentCount === 0
+                ? onConnectSource
+                : onViewLibrary
+          }
+          type="button"
+        >
+          {totalAttention > 0 ? 'Activity' : readyDocumentCount === 0 ? 'Connect' : 'Library'}
         </button>
       </div>
     </section>
@@ -6277,9 +6661,6 @@ function SetupWizard({
   const blockingCount = checks.filter(
     (check) => check.blocking && check.status === 'blocked',
   ).length;
-  const commandProfile = readiness?.deployment_profile || 'cpu-lite';
-  const commandGateway = readiness?.model_gateway || 'http://host.docker.internal:11434/v1';
-  const commandModel = primaryTarget?.model || 'your-model-name';
 
   return (
     <main className="setupShell">
@@ -6353,7 +6734,19 @@ function SetupWizard({
 
           <details className="inlineDetails" open={!canEnter && gatewayCheck?.state !== 'loading'}>
             <summary>Configure</summary>
-            <pre className="setupCode">{`.\\scripts\\setup.ps1 -Profile ${commandProfile} -ProviderPreset ${readiness?.provider_preset || 'starter'} -ModelGatewayBaseUrl "${commandGateway}" -GeneralModelId "${commandModel}" -Force`}</pre>
+            <div className="setupConfigGrid">
+              <label>
+                <span>Gateway URL</span>
+                <input readOnly value={readiness?.model_gateway || 'Not configured'} />
+              </label>
+              <label>
+                <span>Model</span>
+                <input readOnly value={primaryTarget?.model ?? 'Not configured'} />
+              </label>
+              <p>
+                Change these from the Nexus launcher setup, then return here and recheck.
+              </p>
+            </div>
           </details>
 
           <details className="inlineDetails">
@@ -6633,6 +7026,79 @@ function sourceTypeLabel(value: string) {
   }
 }
 
+function sourceRootPath(readiness: Readiness | null) {
+  const configuredPath = readiness?.source_container_path?.trim();
+  return configuredPath || '/sources/primary';
+}
+
+function sourcePathJoin(root: string, child: string) {
+  const normalizedRoot = root.replace(/\/+$/, '') || '/sources/primary';
+  const normalizedChild = child.replace(/^\/+/, '').replace(/\/+$/, '');
+  return normalizedChild ? `${normalizedRoot}/${normalizedChild}` : normalizedRoot;
+}
+
+function dashboardSourceTemplates(root: string): SourceTemplate[] {
+  const generalExcludes = [
+    commonDocumentExcludes,
+    '**/.git/**',
+    '**/.obsidian/**',
+    '**/node_modules/**',
+    '**/tmp/**',
+    '**/temp/**',
+  ].join('\n');
+
+  return [
+    {
+      id: 'dashboard-folder',
+      label: 'Folder / vault',
+      detail: 'Notes, docs, PDFs',
+      type: 'synced_folder',
+      name: 'Knowledge Folder',
+      root_path: root,
+      include_patterns: broadDocumentIncludes,
+      exclude_patterns: generalExcludes,
+      scan_interval_minutes: '0',
+    },
+    {
+      id: 'dashboard-team-drive',
+      label: 'Team drive',
+      detail: 'OneDrive, Teams, share',
+      type: 'synced_folder',
+      name: 'Team Drive',
+      root_path: sourcePathJoin(root, 'Team Docs'),
+      include_patterns: broadDocumentIncludes,
+      exclude_patterns: generalExcludes,
+      scan_interval_minutes: '1440',
+    },
+    {
+      id: 'dashboard-export',
+      label: 'Export folder',
+      detail: 'Cases, HAR, CSV, JSON',
+      type: 'export',
+      name: 'Case Export',
+      root_path: sourcePathJoin(root, 'exports'),
+      include_patterns: ['**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.txt', '**/*.md'].join(
+        '\n',
+      ),
+      exclude_patterns: ['**/attachments/**', '**/raw/**', '**/tmp/**', '**/temp/**'].join('\n'),
+      scan_interval_minutes: '0',
+    },
+    {
+      id: 'dashboard-runbooks',
+      label: 'Runbooks',
+      detail: 'Procedures, SOPs',
+      type: 'synced_folder',
+      name: 'Runbooks',
+      root_path: sourcePathJoin(root, 'runbooks'),
+      include_patterns: ['**/*.md', '**/*.txt', '**/*.pdf', '**/*.docx', '**/*.csv', '**/*.json'].join(
+        '\n',
+      ),
+      exclude_patterns: generalExcludes,
+      scan_interval_minutes: '10080',
+    },
+  ];
+}
+
 function sourcePathPlaceholder(type: string) {
   switch (type) {
     case 'connector':
@@ -6738,6 +7204,15 @@ function patternLinesToList(value: string) {
     .split(/\r?\n|,/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
+}
+
+function folderRelativeName(file: File) {
+  return (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+}
+
+function isSupportedUploadFile(file: File) {
+  const name = folderRelativeName(file).toLowerCase();
+  return supportedDocumentExtensions.some((extension) => name.endsWith(extension));
 }
 
 function sourceScanSummary(source: ListDataSourcesResponse['sources'][number]) {

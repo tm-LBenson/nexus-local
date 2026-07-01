@@ -67,6 +67,12 @@ func TestReadinessIncludesPersistenceBackend(t *testing.T) {
 	if body["deployment_profile"] != "cpu-lite" {
 		t.Fatalf("deployment_profile = %v, want cpu-lite", body["deployment_profile"])
 	}
+	if body["source_host_configured"] != false {
+		t.Fatalf("source_host_configured = %v, want false", body["source_host_configured"])
+	}
+	if body["source_container_path"] != "/sources/primary" {
+		t.Fatalf("source_container_path = %v, want /sources/primary", body["source_container_path"])
+	}
 }
 
 func TestModelRouteEndpoint(t *testing.T) {

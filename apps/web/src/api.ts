@@ -24,6 +24,8 @@ export type Readiness = {
   provider_preset: string;
   model_gateway: string;
   model_gateway_auth: boolean;
+  source_host_configured: boolean;
+  source_container_path: string;
 };
 
 export type ModelTarget = {
@@ -765,9 +767,13 @@ export async function registerDocument(input: DocumentRegistration) {
 export async function uploadDocument(input: {
   tenant_id: string;
   file: File;
+  name?: string;
 }) {
   const form = new FormData();
   form.set('tenant_id', input.tenant_id);
+  if (input.name) {
+    form.set('name', input.name);
+  }
   form.set('file', input.file);
 
   return requestForm<RegisterDocumentResponse>('/v1/documents/upload', {

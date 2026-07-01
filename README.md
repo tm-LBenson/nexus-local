@@ -8,7 +8,7 @@ The project is early, but the core shape is already in place: a replaceable back
 
 - Upload documents into tenant-scoped workspaces.
 - Create managed knowledge source records for folders, synced drives, exports, network shares, and future connectors.
-- Import local folders or synced document roots through a bulk import script.
+- Import local folders from the dashboard or connect mounted document roots for repeat scans.
 - Manage workspace members and roles for self-hosted team access.
 - Extract text from UTF-8 text files, PDFs, and OpenXML Office files.
 - Chunk, embed, and index documents for semantic retrieval.
@@ -169,16 +169,23 @@ Run the full local restore round trip before release/demo builds:
 
 That gate creates a temporary workspace and document, backs it up, deletes it, restores the backup, verifies the restored document, search index, and object content, then cleans the temporary workspace again.
 
-Bulk-import a local document folder, such as a synced OneDrive, Teams/SharePoint, notes, or technical docs folder:
+Use the dashboard to add a larger document set. In a workspace, open **Context -> Add data**:
+
+- Use **Import folder** for a one-time upload from a local folder, synced drive, exported case bundle, notes vault, or technical docs folder. The browser picker preserves folder-relative names and uploads supported files into the workspace.
+- Use **Connect + scan** for a mounted source that should be checked again later. Pick a preset such as Folder / vault, Team drive, Export folder, or Runbooks, then scan the worker-visible path such as `/sources/primary`.
+
+The folder importer and managed-source scanner both preserve folder-relative document names, skip unsupported files, and queue background ingestion jobs so progress appears in Activity. Managed source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/primary` or `/sources/primary/customer-docs`.
+
+For automation or repeatable test fixtures, the folder import script is still available:
 
 ```powershell
 .\scripts\import-document-folder.ps1 -SourcePath "C:\Path\To\Docs" -DryRun
 .\scripts\import-document-folder.ps1 -SourcePath "C:\Path\To\Docs"
 ```
 
-The importer walks supported document types, skips common app/cache directories, preserves folder-relative document names, and uploads files sequentially so the background worker can ingest them. Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
+Use `-WorkspaceName` or `-TenantId` when you do not want the first available workspace.
 
-The app Library can also create managed sources from templates for SharePoint/Teams sync, OneDrive sync, network shares, ticket exports, knowledge base exports, and runbooks. It includes reusable built-in import policies for common document, support export, knowledge base, runbook, and governance record sources, plus workspace-shared custom policy profiles and shared source-list views for repeat team triage. It can edit source paths, include/exclude patterns, and scan schedules, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source detail shows a latest-scan report with outcome mix, reason buckets, paged file outcomes, and CSV export for review. Active scans show live file-result counts as entries arrive. Failed scans surface direct recovery actions for failed-only review, failed-only CSV export, and retrying the scan after fixing a source path, mount, or permission issue. Imported documents that fail ingestion can also be retried from the source detail page without opening each document. Source scan paths are resolved by the worker, not the browser. In Docker, mount the folder or network share into the worker container and enter the container-visible path, such as `/sources/customer-docs`. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default. Include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes. Scheduled source scans run from the worker process while the stack is up. Use `.\scripts\dev-check.ps1 -SourceStress` after changing source mounts, source scanning, ingestion, embeddings, or vector search.
+The app Library can also create and manage sources from templates for SharePoint/Teams sync, OneDrive sync, network shares, ticket exports, knowledge base exports, and runbooks. It includes reusable built-in import policies for common document, support export, knowledge base, runbook, and governance record sources, plus workspace-shared custom policy profiles and shared source-list views for repeat team triage. It can edit source paths, include/exclude patterns, and scan schedules, refresh source detail, queue rescans, reindex source documents, archive sources, and explicitly delete documents imported from a source. Source detail shows a latest-scan report with outcome mix, reason buckets, paged file outcomes, and CSV export for review. Active scans show live file-result counts as entries arrive. Failed scans surface direct recovery actions for failed-only review, failed-only CSV export, and retrying the scan after fixing a source path, mount, or permission issue. Imported documents that fail ingestion can also be retried from the source detail page without opening each document. Source scans skip hidden/cache/build folders, unsupported files, symlinks, and files larger than 10 MiB by default. Include/exclude patterns use source-relative paths such as `**/*.md`, `cases/**`, `archive/**`, or `*.draft.md`; excludes win over includes. Scheduled source scans run from the worker process while the stack is up. Use `.\scripts\dev-check.ps1 -SourceStress` after changing source mounts, source scanning, ingestion, embeddings, or vector search.
 
 See [Source Mounts](docs/source-mounts.md) for OneDrive, Teams/SharePoint sync, local folder, NAS, and export path examples.
 

@@ -107,6 +107,10 @@ func healthHandler(cfg config.Config) http.HandlerFunc {
 
 func readinessHandler(cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sourceContainerPath := strings.TrimSpace(cfg.SourceContainerPath)
+		if sourceContainerPath == "" {
+			sourceContainerPath = "/sources/primary"
+		}
 		writeJSON(w, http.StatusOK, envelope{
 			"status":                  "ready",
 			"auth_mode":               cfg.AuthMode,
@@ -127,6 +131,8 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 			"provider_preset":         cfg.ProviderPreset,
 			"model_gateway":           cfg.ModelGatewayBaseURL,
 			"model_gateway_auth":      cfg.ModelGatewayAPIKey != "",
+			"source_host_configured":  strings.TrimSpace(cfg.SourceHostPath) != "",
+			"source_container_path":   sourceContainerPath,
 		})
 	}
 }

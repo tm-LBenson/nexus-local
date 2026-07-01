@@ -489,6 +489,37 @@ h3 {
   white-space: pre-wrap;
 }
 
+.setupConfigGrid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.setupConfigGrid label {
+  display: grid;
+  gap: 5px;
+}
+
+.setupConfigGrid span {
+  color: #69777d;
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.setupConfigGrid input {
+  color: #2f3c46;
+  background: #f8fbfa;
+}
+
+.setupConfigGrid p {
+  margin: 0;
+  color: #64727d;
+  font-size: 0.82rem;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) auto;
@@ -1389,6 +1420,251 @@ h3 {
   display: grid;
   align-items: center;
   grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.contextSourcePanel {
+  border: 1px solid #dbe4e4;
+  border-radius: 7px;
+  background: #fbfdfc;
+}
+
+.contextSourcePanel summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 9px 11px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.contextSourcePanel summary::-webkit-details-marker {
+  display: none;
+}
+
+.contextSourcePanel summary span,
+.contextSourcePanel summary small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextSourcePanel summary span {
+  display: grid;
+  gap: 2px;
+}
+
+.contextSourcePanel summary strong {
+  color: #172026;
+  font-size: 0.9rem;
+}
+
+.contextSourcePanel summary em,
+.contextSourcePanel summary small {
+  color: #64727d;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.contextSourcePanel summary em {
+  font-size: 0.76rem;
+}
+
+.contextSourcePanel summary small {
+  font-size: 0.72rem;
+}
+
+.contextSourceBody {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #e2e9e9;
+  padding: 10px;
+}
+
+.contextSourcePanel .fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.folderImportForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.folderPicker {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #c8d4d5;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #172026;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folderPicker:hover {
+  border-color: #92a8af;
+  background: #f7fbfb;
+}
+
+.folderPicker strong,
+.folderPicker span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderPicker strong {
+  font-size: 0.84rem;
+}
+
+.folderPicker span {
+  color: #64727d;
+  font-size: 0.76rem;
+  font-weight: 740;
+}
+
+.sourceMountStatus,
+.sourceConnectNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #cfe0dc;
+  border-left: 3px solid #7ab69e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #f6fbf9;
+}
+
+.sourceMountStatus {
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+}
+
+.sourceMountStatusWarning {
+  border-color: #ead7a7;
+  border-left-color: #d8aa45;
+  background: #fffaf0;
+}
+
+.sourceMountStatus strong,
+.sourceMountStatus span,
+.sourceConnectNotice strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceMountStatus strong,
+.sourceConnectNotice strong {
+  font-size: 0.82rem;
+}
+
+.sourceMountStatus span {
+  color: #64727d;
+  font-size: 0.76rem;
+  font-weight: 740;
+}
+
+.sourceConnectNotice {
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.contextSourceQuick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.contextSourceQuick button {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-height: 52px;
+  border-color: #dbe4e4;
+  padding: 8px 10px;
+  color: #172026;
+  background: #ffffff;
+  text-align: left;
+}
+
+.contextSourceQuick button:hover {
+  background: #f1f7f6;
+}
+
+.contextSourceQuick strong,
+.contextSourceQuick span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextSourceQuick strong {
+  font-size: 0.82rem;
+}
+
+.contextSourceQuick span {
+  color: #64727d;
+  font-size: 0.74rem;
+  font-weight: 740;
+}
+
+.contextSourceForm {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(170px, 1.25fr) minmax(92px, 0.6fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.contextSourceForm label,
+.contextAdvancedGrid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contextSourceForm label span,
+.contextAdvancedGrid label span {
+  color: #64727d;
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.contextSourceAdvanced {
+  grid-column: 1 / -1;
+}
+
+.contextAdvancedGrid {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.6fr) repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.contextAdvancedGrid textarea {
+  min-height: 72px;
 }
 
 .searchBar input,
@@ -4362,6 +4638,23 @@ strong {
 
   .compactUpload {
     grid-template-columns: 1fr;
+  }
+
+  .contextSourcePanel summary,
+  .folderImportForm,
+  .sourceMountStatus,
+  .contextSourceQuick,
+  .contextSourceForm,
+  .contextAdvancedGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contextSourcePanel summary small,
+  .sourceMountStatus strong,
+  .sourceMountStatus span {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .status {
