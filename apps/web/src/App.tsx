@@ -210,6 +210,7 @@ type SourcePolicyProfile = Pick<
 };
 
 const setupWizardStorageKey = 'nexus-local.setupWizardAcknowledged';
+const setupAutoRecheckDelayMs = 15000;
 const scanEntryPageSize = 100;
 const sourcePlanSamplePageSize = 12;
 const sourcePlanLargeImportFileThreshold = 500;
@@ -517,6 +518,8 @@ export function App() {
   const [setupGatewayCheck, setSetupGatewayCheck] = useState<TargetCheckState | null>(null);
   const [setupChecking, setSetupChecking] = useState(false);
   const [setupLastChecked, setSetupLastChecked] = useState('');
+  const [setupAutoRecheckAt, setSetupAutoRecheckAt] = useState<number | null>(null);
+  const [setupAutoRecheckTick, setSetupAutoRecheckTick] = useState(Date.now());
   const [setupAcknowledgedKey, setSetupAcknowledgedKey] = useState(
     () => window.localStorage.getItem(setupWizardStorageKey) ?? '',
   );
@@ -910,6 +913,18 @@ export function App() {
     (check) => !check.blocking || check.status === 'ok',
   );
   const showSetupWizard = !setupCanEnter || setupAcknowledgedKey !== setupFingerprint;
+  const gatewaySetupCheck = setupChecks.find((check) => check.id === 'gateway');
+  const setupGatewayOnlyBlocker =
+    gatewaySetupCheck?.status === 'blocked' &&
+    setupChecks.every(
+      (check) => check.id === 'gateway' || !check.blocking || check.status === 'ok',
+    );
+  const setupShouldAutoRecheck =
+    showSetupWizard && setupGatewayOnlyBlocker && !setupChecking && setupGatewayCheck?.state !== 'ok';
+  const setupAutoRecheckSeconds =
+    setupAutoRecheckAt === null
+      ? null
+      : Math.max(0, Math.ceil((setupAutoRecheckAt - setupAutoRecheckTick) / 1000));
 
   useEffect(() => {
     let canceled = false;
@@ -935,6 +950,38 @@ export function App() {
       canceled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!setupShouldAutoRecheck) {
+      setSetupAutoRecheckAt(null);
+      return;
+    }
+
+    const nextCheckAt = Date.now() + setupAutoRecheckDelayMs;
+    setSetupAutoRecheckAt(nextCheckAt);
+    const timeoutID = window.setTimeout(() => {
+      void runSetupChecks({ silent: true });
+    }, setupAutoRecheckDelayMs);
+
+    return () => {
+      window.clearTimeout(timeoutID);
+    };
+  }, [setupShouldAutoRecheck, setupLastChecked, setupFingerprint]);
+
+  useEffect(() => {
+    if (setupAutoRecheckAt === null) {
+      return;
+    }
+
+    setSetupAutoRecheckTick(Date.now());
+    const intervalID = window.setInterval(() => {
+      setSetupAutoRecheckTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalID);
+    };
+  }, [setupAutoRecheckAt]);
 
   useEffect(() => {
     if (!asking || askStartedAt === null) {
@@ -1104,15 +1151,19 @@ export function App() {
     }
   }
 
-  async function runSetupChecks() {
-    setError(null);
+  async function runSetupChecks(options: { silent?: boolean } = {}) {
+    if (!options.silent) {
+      setError(null);
+    }
     setSetupChecking(true);
     try {
       const result = await loadBootstrapData();
       await checkSetupGateway(result.targets);
     } catch (err) {
       const message = messageFromError(err);
-      setError(message);
+      if (!options.silent) {
+        setError(message);
+      }
       setSetupGatewayCheck({ state: 'failed', detail: message });
       setSetupLastChecked(new Date().toISOString());
     } finally {
@@ -2777,6 +2828,7 @@ export function App() {
         onRecheck={() => void runSetupChecks()}
         primaryTarget={setupPrimaryTarget}
         readiness={readiness}
+        setupAutoRecheckSeconds={setupAutoRecheckSeconds}
         setupChecking={setupChecking}
       />
     );
@@ -6160,6 +6212,7 @@ function SetupWizard({
   onRecheck,
   primaryTarget,
   readiness,
+  setupAutoRecheckSeconds,
   setupChecking,
 }: {
   apiURL: string;
@@ -6171,6 +6224,7 @@ function SetupWizard({
   onRecheck: () => void;
   primaryTarget?: ModelTarget;
   readiness: Readiness | null;
+  setupAutoRecheckSeconds: number | null;
   setupChecking: boolean;
 }) {
   const blockingCount = checks.filter(
@@ -6215,6 +6269,12 @@ function SetupWizard({
               Enter app
             </button>
           </div>
+          {setupAutoRecheckSeconds !== null && !canEnter && (
+            <div className="setupAutoCheck">
+              <span>Watching gateway</span>
+              <strong>Next check in {setupAutoRecheckSeconds}s</strong>
+            </div>
+          )}
         </div>
 
         <aside className="setupPanel setupGuide">
@@ -6849,10 +6909,10 @@ function messageFromError(err: unknown) {
 function friendlyErrorMessage(message: string) {
   const lower = message.toLowerCase();
   if (lower.includes('model gateway') && lower.includes('404')) {
-    return 'Model gateway not found. Check the provider URL and model in Settings.';
+    return 'Model gateway answered, but the route or model is not ready/found. It may still be loading; check Settings if this does not clear.';
   }
   if (lower.includes('model gateway') && lower.includes('status')) {
-    return 'Model gateway is not responding correctly. Check Settings, then test the target.';
+    return 'Model gateway answered with an error. It may still be loading; check Settings if this does not clear.';
   }
   if (
     lower.includes('context deadline') ||

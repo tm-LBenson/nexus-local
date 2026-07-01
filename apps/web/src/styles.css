@@ -452,6 +452,26 @@ h3 {
   gap: 8px;
 }
 
+.setupAutoCheck {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #e7d8ad;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #6e5314;
+  background: #fffaf0;
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.setupAutoCheck strong {
+  color: #3d3212;
+  font-size: 0.82rem;
+}
+
 .setupGuide {
   position: sticky;
   top: 0;
