@@ -767,6 +767,46 @@ export function App() {
       latestSourcePreflightJobs,
     ],
   );
+  const dashboardSources = useMemo(
+    () =>
+      sortDashboardSources(
+        dataSources?.sources ?? [],
+        activeSourcePreflightJobs,
+        activeSourcePlanJobs,
+        activeSourceScanJobs,
+        latestSourcePreflightJobs,
+        latestSourcePlanJobs,
+      ).slice(0, 4),
+    [
+      activeSourcePlanJobs,
+      activeSourcePreflightJobs,
+      activeSourceScanJobs,
+      dataSources,
+      latestSourcePlanJobs,
+      latestSourcePreflightJobs,
+    ],
+  );
+  const dashboardSourceSummary = useMemo(
+    () =>
+      dashboardSourceSummaryLabel(
+        dataSources?.sources ?? [],
+        activeSourcePreflightJobs,
+        activeSourcePlanJobs,
+        activeSourceScanJobs,
+        latestSourcePreflightJobs,
+        latestSourcePlanJobs,
+      ),
+    [
+      activeSourcePlanJobs,
+      activeSourcePreflightJobs,
+      activeSourceScanJobs,
+      dataSources,
+      latestSourcePlanJobs,
+      latestSourcePreflightJobs,
+    ],
+  );
+  const dashboardSourceCount =
+    dataSources?.sources.filter((source) => source.status !== 'archived').length ?? 0;
   const visibleSourceScanEntries = useMemo(
     () => sourceDetail?.scan_entries ?? [],
     [sourceDetail],
@@ -3648,6 +3688,105 @@ export function App() {
                     )}
                   </div>
                 </details>
+
+                {dashboardSourceCount > 0 && (
+                  <section className="contextSourceMonitor" aria-label="Connected sources">
+                    <div className="contextSourceMonitorHeader">
+                      <div>
+                        <h3>Sources</h3>
+                        <span>{dashboardSourceSummary}</span>
+                      </div>
+                      <button onClick={() => setActiveView('documents')} type="button">
+                        Library
+                      </button>
+                    </div>
+                    <div className="contextSourceMonitorList">
+                      {dashboardSources.map((source) => {
+                        const connectorSource = sourceIsConnector(source);
+                        const scanJob = activeSourceScanJobs.get(source.id);
+                        const preflightJob = activeSourcePreflightJobs.get(source.id);
+                        const planJob = activeSourcePlanJobs.get(source.id);
+                        const latestPreflightJob = latestSourcePreflightJobs.get(source.id);
+                        const latestPlanJob = latestSourcePlanJobs.get(source.id);
+                        const visiblePreflightJob =
+                          preflightJob ??
+                          (sourcePreflightBlocksScan(source, latestPreflightJob)
+                            ? latestPreflightJob
+                            : undefined);
+                        const visiblePlanJob =
+                          planJob ?? (latestPlanJob?.state === 'failed' ? latestPlanJob : undefined);
+                        const health = sourceHealthFilterValue(
+                          source,
+                          preflightJob ?? latestPreflightJob,
+                          planJob ?? latestPlanJob,
+                          scanJob,
+                        );
+                        const preflightBlocksScan = sourcePreflightBlocksScan(
+                          source,
+                          latestPreflightJob,
+                        );
+                        const planBlocksScan = sourcePlanBlocksScan(source, latestPlanJob);
+                        const scanDisabled =
+                          !canImportSources ||
+                          connectorSource ||
+                          Boolean(preflightJob) ||
+                          Boolean(planJob) ||
+                          Boolean(scanJob) ||
+                          preflightBlocksScan ||
+                          planBlocksScan ||
+                          scanningSourceID === source.id ||
+                          source.status === 'archived';
+                        return (
+                          <div className="contextSourceMonitorRow" key={source.id}>
+                            <button
+                              className="contextSourceMonitorMain"
+                              onClick={() => {
+                                setActiveView('documents');
+                                void openSource(source);
+                              }}
+                              type="button"
+                            >
+                              <strong>{source.name}</strong>
+                              <span>
+                                {sourceListHealthLabel(
+                                  source,
+                                  visiblePreflightJob,
+                                  visiblePlanJob,
+                                  scanJob,
+                                )}
+                              </span>
+                            </button>
+                            <span className={sourceDashboardHealthBadgeClass(health)}>
+                              {sourceDashboardHealthLabel(health)}
+                            </span>
+                            <button
+                              disabled={scanDisabled}
+                              onClick={() => void requestDataSourceScan(source)}
+                              type="button"
+                            >
+                              {sourceDashboardScanLabel({
+                                connectorSource,
+                                planBlocksScan,
+                                preflightBlocksScan,
+                                scanJob,
+                                scanning: scanningSourceID === source.id,
+                              })}
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {dashboardSourceCount > dashboardSources.length && (
+                        <button
+                          className="contextSourceMonitorMore"
+                          onClick={() => setActiveView('documents')}
+                          type="button"
+                        >
+                          {dashboardSourceCount - dashboardSources.length} more
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                )}
 
                 <form className="uploadBar compactUpload" onSubmit={submitUpload}>
                   <input
@@ -8291,6 +8430,179 @@ function sourceHealthBadgeLabel(state: SourceHealthState) {
   }
 }
 
+function sortDashboardSources(
+  sources: ListDataSourcesResponse['sources'],
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+) {
+  return [...sources]
+    .filter((source) => source.status !== 'archived')
+    .sort((left, right) => {
+      const priorityDelta =
+        dashboardSourcePriority(
+          left,
+          activePreflightJobs,
+          activePlanJobs,
+          activeScanJobs,
+          latestPreflightJobs,
+          latestPlanJobs,
+        ) -
+        dashboardSourcePriority(
+          right,
+          activePreflightJobs,
+          activePlanJobs,
+          activeScanJobs,
+          latestPreflightJobs,
+          latestPlanJobs,
+        );
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      return safeTimestamp(right.updated_at) - safeTimestamp(left.updated_at);
+    });
+}
+
+function dashboardSourceSummaryLabel(
+  sources: ListDataSourcesResponse['sources'],
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+) {
+  const counts = { active: 0, blocked: 0, healthy: 0, review: 0 };
+  for (const source of sources) {
+    if (source.status === 'archived') {
+      continue;
+    }
+    const health = sourceHealthFilterValue(
+      source,
+      activePreflightJobs.get(source.id) ?? latestPreflightJobs.get(source.id),
+      activePlanJobs.get(source.id) ?? latestPlanJobs.get(source.id),
+      activeScanJobs.get(source.id),
+    );
+    if (health === 'active') {
+      counts.active += 1;
+    } else if (health === 'blocked') {
+      counts.blocked += 1;
+    } else if (health === 'review') {
+      counts.review += 1;
+    } else {
+      counts.healthy += 1;
+    }
+  }
+  if (counts.active > 0) {
+    return `${counts.active} active`;
+  }
+  if (counts.blocked > 0) {
+    return `${counts.blocked} blocked`;
+  }
+  if (counts.review > 0) {
+    return `${counts.review} review`;
+  }
+  if (counts.healthy > 0) {
+    return `${counts.healthy} ready`;
+  }
+  return 'No sources';
+}
+
+function dashboardSourcePriority(
+  source: ListDataSourcesResponse['sources'][number],
+  activePreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activePlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  activeScanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
+  latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
+) {
+  const health = sourceHealthFilterValue(
+    source,
+    activePreflightJobs.get(source.id) ?? latestPreflightJobs.get(source.id),
+    activePlanJobs.get(source.id) ?? latestPlanJobs.get(source.id),
+    activeScanJobs.get(source.id),
+  );
+  switch (health) {
+    case 'active':
+      return 0;
+    case 'blocked':
+      return 1;
+    case 'review':
+      return 2;
+    case 'healthy':
+      return 3;
+    case 'archived':
+      return 4;
+    default:
+      return 5;
+  }
+}
+
+function sourceDashboardHealthBadgeClass(health: string) {
+  if (health === 'healthy') {
+    return stateClass('ready');
+  }
+  if (health === 'active') {
+    return stateClass('running');
+  }
+  if (health === 'blocked') {
+    return stateClass('failed');
+  }
+  if (health === 'review') {
+    return 'stateBadge stateReview';
+  }
+  return 'stateBadge';
+}
+
+function sourceDashboardHealthLabel(health: string) {
+  switch (health) {
+    case 'healthy':
+      return 'ready';
+    case 'active':
+      return 'active';
+    case 'blocked':
+      return 'blocked';
+    case 'review':
+      return 'review';
+    case 'archived':
+      return 'archived';
+    default:
+      return 'source';
+  }
+}
+
+function sourceDashboardScanLabel({
+  connectorSource,
+  planBlocksScan,
+  preflightBlocksScan,
+  scanJob,
+  scanning,
+}: {
+  connectorSource: boolean;
+  planBlocksScan: boolean;
+  preflightBlocksScan: boolean;
+  scanJob?: ListJobsResponse['jobs'][number];
+  scanning: boolean;
+}) {
+  if (connectorSource) {
+    return 'Handoff';
+  }
+  if (scanning) {
+    return 'Queuing';
+  }
+  if (scanJob) {
+    return titleCase(scanJob.state);
+  }
+  if (preflightBlocksScan) {
+    return 'Blocked';
+  }
+  if (planBlocksScan) {
+    return 'Review';
+  }
+  return 'Scan';
+}
+
 function sourceListHealthLabel(
   source: ListDataSourcesResponse['sources'][number],
   preflightJob?: ListJobsResponse['jobs'][number],
@@ -9666,6 +9978,11 @@ function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter((value) => value.trim() !== ''))).sort((a, b) =>
     a.localeCompare(b),
   );
+}
+
+function safeTimestamp(value?: string) {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function stateClass(state: string) {
