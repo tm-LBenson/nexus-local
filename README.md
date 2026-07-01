@@ -275,6 +275,7 @@ The API is configured through environment variables. Common settings:
 | `EMBEDDING_GATEWAY_IMAGE` | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.9` | TEI image for self-hosted embeddings. |
 | `PROVIDER_PRESET` | `starter` | UI/setup label: `starter` for hash embeddings, `semantic` for OpenAI-compatible embeddings. |
 | `MODEL_GATEWAY_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible chat gateway. |
+| `MODEL_GATEWAY_TIMEOUT` | `5m` | Total Ask request timeout for slow or warming local model gateways. |
 | `GENERAL_MODEL_ID` | `Qwen/Qwen2.5-7B-Instruct` | Default model ID sent to the gateway. |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.80` | Local vLLM GPU memory target for `gpu-local`. |
 | `VLLM_MAX_MODEL_LEN` | `8192` | Local vLLM max context length for `gpu-local`. |

@@ -333,7 +333,7 @@ function Write-EnvFile($path, $values) {
       )
     },
     @{ Title = "Models"; Keys = @(
-        "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY",
+        "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY", "MODEL_GATEWAY_TIMEOUT",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "VLLM_GPU_MEMORY_UTILIZATION",
         "VLLM_MAX_MODEL_LEN", "HUGGING_FACE_HUB_TOKEN",
         "WORKER_POLL_INTERVAL", "WORKER_DOCUMENT_CONCURRENCY"
@@ -629,6 +629,7 @@ Set-EnvValue $values "PROVIDER_PRESET" $providerPresetValue
 Set-EnvValue $values "MODEL_GATEWAY_BASE_URL" $modelGatewayValue
 Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
 Set-EnvValue $values "MODEL_GATEWAY_API_KEY" $modelGatewayAPIKeyValue
+Set-EnvValue $values "MODEL_GATEWAY_TIMEOUT" (Get-EnvDefault $existingValues "MODEL_GATEWAY_TIMEOUT" "5m")
 Set-EnvValue $values "DEFAULT_MODEL_TARGET" "general"
 Set-EnvValue $values "GENERAL_MODEL_ID" $modelValue
 Set-EnvValue $values "VLLM_GPU_MEMORY_UTILIZATION" (Get-EnvDefault $existingValues "VLLM_GPU_MEMORY_UTILIZATION" $defaultVLLMGpuMemoryUtilization)

@@ -40,6 +40,7 @@ type Config struct {
 	ProviderPreset            string
 	ModelGatewayBaseURL       string
 	ModelGatewayAPIKey        string
+	ModelGatewayTimeout       time.Duration
 	DefaultModelTarget        string
 	GeneralModelID            string
 	WorkerPollInterval        time.Duration
@@ -81,6 +82,7 @@ func Load() Config {
 		ProviderPreset:            env("PROVIDER_PRESET", "starter"),
 		ModelGatewayBaseURL:       env("MODEL_GATEWAY_BASE_URL", "http://localhost:8000/v1"),
 		ModelGatewayAPIKey:        env("MODEL_GATEWAY_API_KEY", ""),
+		ModelGatewayTimeout:       envDuration("MODEL_GATEWAY_TIMEOUT", 5*time.Minute),
 		DefaultModelTarget:        env("DEFAULT_MODEL_TARGET", "general"),
 		GeneralModelID:            env("GENERAL_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct"),
 		WorkerPollInterval:        envDuration("WORKER_POLL_INTERVAL", 2*time.Second),

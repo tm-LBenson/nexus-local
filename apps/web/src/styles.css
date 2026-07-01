@@ -934,6 +934,7 @@ h3 {
 
 .chatSurface {
   min-height: 0;
+  min-width: min(560px, 100%);
 }
 
 .contextPanel {
@@ -1526,7 +1527,7 @@ h3 {
 
 .answerProgress {
   display: grid;
-  grid-template-columns: 18px minmax(110px, 0.72fr) auto minmax(150px, 1fr) auto;
+  grid-template-columns: 18px minmax(130px, 0.8fr) auto minmax(220px, 1.2fr) auto;
   gap: 8px;
   align-items: center;
   min-height: 34px;
@@ -1557,12 +1558,53 @@ h3 {
 
 .answerProgressDetail {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   color: #52616b;
   font-size: 0.78rem;
   font-weight: 680;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.answerProgressDetailSlow {
+  color: #7a4a08;
+}
+
+.answerProgressHint {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #ead7a8;
+  border-left: 3px solid #d5aa37;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #6b5a38;
+  background: #fffaf0;
+}
+
+.answerProgressHint strong {
+  color: #7a4a08;
+  font-size: 0.8rem;
+}
+
+.answerProgressHint span {
+  min-width: 0;
+  color: #6b5a38;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.answerProgressHintRisk {
+  border-color: #f0bbb4;
+  border-left-color: #d16055;
+  color: #8f2c22;
+  background: #fff8f7;
+}
+
+.answerProgressHintRisk strong,
+.answerProgressHintRisk span {
+  color: #8f2c22;
 }
 
 .answerProgress .secondaryButton {
@@ -1622,9 +1664,12 @@ h3 {
 }
 
 .answerText {
+  display: block;
+  width: 100%;
   min-width: 0;
   min-height: 52px;
   max-width: 100%;
+  overflow-x: auto;
   white-space: pre-wrap;
 }
 
@@ -4085,6 +4130,20 @@ strong {
   background: var(--bg-panel);
 }
 
+@media (max-width: 1180px) {
+  .workspaceSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .chatSurface {
+    min-width: 0;
+  }
+
+  .contextPanel {
+    position: static;
+  }
+}
+
 @media (max-width: 840px) {
   body {
     overflow: auto;
@@ -4286,6 +4345,11 @@ strong {
 
   .answerProgress .secondaryButton {
     justify-self: start;
+  }
+
+  .answerProgressHint {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 
   .answerPhaseStrip {

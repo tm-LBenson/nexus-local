@@ -111,6 +111,8 @@ Current audited actions:
 
 `POST /v1/model-targets/check` routes a configured model target and performs a short non-persistent completion to verify first-run model gateway connectivity. It returns the resolved route, model, finish reason, and latency when the gateway responds. Failure responses include `error_class`, `retryable`, and `check_state` so setup clients can distinguish a warming gateway from a URL, model, host, or auth configuration issue.
 
+Ask requests use the configured OpenAI-compatible gateway timeout (`MODEL_GATEWAY_TIMEOUT`, default `5m`). The setup check keeps its shorter probe timeout so first-run screens can keep polling while a local model is loading.
+
 The first worker can claim a document ingestion job and advance the document/job state flow. Extraction, chunking, embeddings, and vector writes are the next layer.
 
 ## Current State Machines

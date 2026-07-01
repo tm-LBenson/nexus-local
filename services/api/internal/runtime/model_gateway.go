@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/config"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -14,6 +15,7 @@ import (
 type RoutedModelGateway struct {
 	router  *providers.ModelRouter
 	apiKey  string
+	timeout time.Duration
 	mu      sync.Mutex
 	clients map[string]providers.ModelGateway
 }
@@ -22,6 +24,7 @@ func NewRoutedModelGateway(router *providers.ModelRouter, cfg config.Config) *Ro
 	return &RoutedModelGateway{
 		router:  router,
 		apiKey:  cfg.ModelGatewayAPIKey,
+		timeout: cfg.ModelGatewayTimeout,
 		clients: map[string]providers.ModelGateway{},
 	}
 }
@@ -97,6 +100,7 @@ func (g *RoutedModelGateway) clientFor(route providers.ModelRoute) (providers.Mo
 		created, err := openaicompat.New(openaicompat.ClientConfig{
 			BaseURL: route.BaseURL,
 			APIKey:  g.apiKey,
+			Timeout: g.timeout,
 		})
 		if err != nil {
 			return nil, err

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
 )
@@ -162,6 +163,20 @@ func TestClientCompleteHandlesNonSuccessStatus(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("err = nil, want non-success error")
+	}
+}
+
+func TestNewUsesConfiguredTimeout(t *testing.T) {
+	client, err := New(ClientConfig{
+		BaseURL: "http://gateway.local/v1",
+		Timeout: 4 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	if client.httpClient.Timeout != 4*time.Minute {
+		t.Fatalf("timeout = %s, want 4m", client.httpClient.Timeout)
 	}
 }
 

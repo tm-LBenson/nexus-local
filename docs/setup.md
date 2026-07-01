@@ -148,7 +148,7 @@ For the default CPU profile:
 
 `dev-up.ps1` reads `DEPLOYMENT_PROFILE` and optional overlays from the root `.env`, so it can start CPU, split, local GPU, source mount, and embedding profiles without extra flags. The command printed by `setup.ps1` is still useful for seeing the exact Compose files and profiles that will be used.
 
-When the web setup screen is waiting on a model gateway, it polls `POST /v1/model-targets/check`. Startup, timeout, rate-limit, and temporary gateway failures are treated as loading states and rechecked automatically. Host, auth, missing-model, or missing-route failures stay blocked until the operator changes the configured gateway URL, API key, or model.
+When the web setup screen is waiting on a model gateway, it polls `POST /v1/model-targets/check`. Startup, timeout, rate-limit, and temporary gateway failures are treated as loading states and rechecked automatically. Host, auth, missing-model, or missing-route failures stay blocked until the operator changes the configured gateway URL, API key, or model. Full Ask requests use `MODEL_GATEWAY_TIMEOUT`, which defaults to `5m` for slower local GPU starts.
 
 After the stack is running, use the end-to-end smoke gate:
 

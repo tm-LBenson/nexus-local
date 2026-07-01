@@ -72,6 +72,12 @@ type View = 'ask' | 'documents' | 'search' | 'activity' | 'history' | 'status' |
 
 type AskPhase = 'idle' | 'connecting' | 'retrieving' | 'generating' | 'streaming' | 'complete' | 'failed';
 
+type AskProgressHint = {
+  detail: string;
+  label: string;
+  tone: 'slow' | 'risk';
+};
+
 const askPhaseSteps: Array<{ phase: AskPhase; label: string }> = [
   { phase: 'connecting', label: 'Connect' },
   { phase: 'retrieving', label: 'Context' },
@@ -849,6 +855,12 @@ export function App() {
     elapsedSeconds: askElapsedSeconds,
     phase: askPhase,
     status: streamStatus,
+  });
+  const askProgressHint = askProgressHintLabel({
+    answer: visibleAskAnswer,
+    asking,
+    elapsedSeconds: askElapsedSeconds,
+    phase: askPhase,
   });
   const auditActionOptions = useMemo(
     () => uniqueSorted(auditEvents?.events.map((event) => event.action) ?? []),
@@ -3156,7 +3168,15 @@ export function App() {
                             : askPhaseLabel(askPhase, visibleAskAnswer)}
                         </strong>
                         <em>{formatElapsed(askElapsedSeconds)}</em>
-                        <span className="answerProgressDetail">{askProgressDetail}</span>
+                        <span
+                          className={
+                            askProgressHint
+                              ? 'answerProgressDetail answerProgressDetailSlow'
+                              : 'answerProgressDetail'
+                          }
+                        >
+                          {askProgressDetail}
+                        </span>
                         {askRetryAvailable && (
                           <button className="secondaryButton" onClick={retryAsk} type="button">
                             Retry
@@ -3171,6 +3191,18 @@ export function App() {
                             {step.label}
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {askProgressHint && (
+                      <div
+                        className={
+                          askProgressHint.tone === 'risk'
+                            ? 'answerProgressHint answerProgressHintRisk'
+                            : 'answerProgressHint'
+                        }
+                      >
+                        <strong>{askProgressHint.label}</strong>
+                        <span>{askProgressHint.detail}</span>
                       </div>
                     )}
                     {askPhase === 'failed' ? (
@@ -6810,15 +6842,53 @@ function askProgressDetailLabel(input: {
     return 'Ready to retry';
   }
   if (input.answer) {
-    return `${input.answer.length.toLocaleString()} chars received`;
+    const rate = input.elapsedSeconds > 0 ? input.answer.length / input.elapsedSeconds : 0;
+    const rateLabel = rate >= 1 ? ` / ${Math.round(rate).toLocaleString()} chars/sec` : '';
+    return `${input.answer.length.toLocaleString()} chars received${rateLabel}`;
+  }
+  if (input.elapsedSeconds >= 105) {
+    return 'No tokens yet';
   }
   if (input.elapsedSeconds >= 90) {
-    return 'Still waiting on the local model';
+    return 'Still waiting on the model';
   }
   if (input.elapsedSeconds >= 45) {
-    return 'Local models can take a minute';
+    return 'Model warm-up';
   }
   return input.status || askWaitingLabel(input.phase);
+}
+
+function askProgressHintLabel(input: {
+  answer: string;
+  asking: boolean;
+  elapsedSeconds: number;
+  phase: AskPhase;
+}): AskProgressHint | null {
+  if (!input.asking || input.phase === 'failed' || input.phase === 'complete') {
+    return null;
+  }
+  if (!input.answer && input.elapsedSeconds >= 105) {
+    return {
+      detail: 'Gateway connection is still open.',
+      label: 'No tokens yet',
+      tone: 'risk',
+    };
+  }
+  if (!input.answer && input.elapsedSeconds >= 45) {
+    return {
+      detail: 'Local model warm-up is taking longer than usual.',
+      label: 'Model warm-up',
+      tone: 'slow',
+    };
+  }
+  if (input.answer && input.elapsedSeconds >= 150) {
+    return {
+      detail: `${input.answer.length.toLocaleString()} chars received.`,
+      label: 'Streaming slowly',
+      tone: 'slow',
+    };
+  }
+  return null;
 }
 
 function askWaitingLabel(phase: AskPhase) {

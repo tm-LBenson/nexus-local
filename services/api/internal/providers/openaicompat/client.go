@@ -18,6 +18,7 @@ import (
 type ClientConfig struct {
 	BaseURL    string
 	APIKey     string
+	Timeout    time.Duration
 	HTTPClient *http.Client
 }
 
@@ -69,7 +70,11 @@ func New(cfg ClientConfig) (*Client, error) {
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 120 * time.Second}
+		timeout := cfg.Timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Minute
+		}
+		httpClient = &http.Client{Timeout: timeout}
 	}
 
 	return &Client{

@@ -30,6 +30,7 @@ The product is not useful just because a model answers. It is useful when retrie
 | 3.6 | Model target performance panel. | Done: Settings shows per-target probe status, recent Ask counts, success rate, p95 latency, and latest error class backed by audit metadata. |
 | 3.7 | Query rewriting for vague user questions. | Done: vague follow-up questions can expand retrieval with recent user context while preserving the original chat message. |
 | 3.8 | Default prompt and refusal behavior. | Done: Ask prompts require source-grounded answers, bracketed citations, clear missing-context refusal, and explicit separation between general guidance and knowledge-base answers. |
+| 3.9 | Slow local model timeout and progress UX. | Done: model gateway timeouts are configurable, Ask waits longer by default for local GPUs, and the dashboard shows clearer warm-up/slow-streaming states without crowding the main workflow. |
 
 ## Dependencies
 
@@ -46,14 +47,15 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slices 3.1 through 3.8 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, selectable vector-only or hybrid retrieval, an audit-backed model performance panel, deterministic query rewriting for vague follow-up questions, and a stricter grounded-answer prompt contract.
+- Slices 3.1 through 3.9 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, selectable vector-only or hybrid retrieval, an audit-backed model performance panel, deterministic query rewriting for vague follow-up questions, a stricter grounded-answer prompt contract, and clearer slow-model handling.
 - Retrieval metrics cover aggregate recall, expected rank, latency, and explicit no-hit filter behavior.
 - Answer metrics cover expected source grounding, citation text, required/forbidden phrases, refusal wording, prompt context, conversation history, and latency.
 - Answer fixtures can seed conversation history so follow-up questions such as "How do I fix it?" prove that retrieval uses prior user context without changing the stored question.
 - Ask and search results now share selectable source rows with a compact preview panel for the full passage, document/chunk identifiers, score, storage key, and useful metadata.
 - The baselines focus on enterprise support and governance behavior: OIDC troubleshooting, HAR diagnostics, PII redaction, MFA-gated status workflows, and scoped empty-result behavior.
 - The default Ask prompt now tells the model to cite source-supported claims, refuse when retrieved context is insufficient, avoid invented customer-specific/PII/security facts, and label any general guidance separately from sourced knowledge-base answers.
+- Local model runs default to a longer `MODEL_GATEWAY_TIMEOUT`, and the dashboard distinguishes normal streaming from no-token warm-up and slow generation states.
 
 ## Next Build Candidate
 
-Move to answer latency and progress UX: expose clearer generation states, slow-model warnings, and token/latency telemetry so users understand when a local GPU model is loading, generating slowly, or timing out.
+Move to source ingestion scale UX: bulk folder imports should expose clearer scan progress, skipped/failed file summaries, retry controls, and enough detail for a non-developer to understand whether a large knowledge-base import is still healthy.
