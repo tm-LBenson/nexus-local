@@ -133,6 +133,17 @@
         ],
         "max_rank": 1
       }
+    },
+    {
+      "id": "filtered_empty_result",
+      "query": "OIDC invalid redirect uri callback mismatch",
+      "limit": 3,
+      "filters": {
+        "topic": "billing"
+      },
+      "expected": {
+        "no_hits": true
+      }
     }
   ]
 }

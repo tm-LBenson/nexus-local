@@ -80,6 +80,14 @@ func writeTextReport(report evaluation.RetrievalReport) {
 	fmt.Printf("Cases: %d passed / %d failed / %d total\n", report.PassedCount, report.FailedCount, report.CaseCount)
 	fmt.Printf("Indexed chunks: %d\n", report.IndexedChunks)
 	fmt.Printf("Embedding: %s / %d dims\n", report.Embedding.Model, report.Embedding.Dimensions)
+	fmt.Printf("Recall: %.2f (%d/%d expected hits)\n", report.Recall, report.MatchedExpected, report.TotalExpected)
+	if report.MeanExpectedRank > 0 {
+		fmt.Printf("Mean expected rank: %.2f\n", report.MeanExpectedRank)
+	}
+	fmt.Printf("P95 case latency: %dms\n", report.P95LatencyMS)
+	if report.NoHitCaseCount > 0 {
+		fmt.Printf("No-hit cases: %d/%d passed\n", report.NoHitPassedCount, report.NoHitCaseCount)
+	}
 	fmt.Println("")
 
 	for _, testCase := range report.CaseReports {
@@ -90,6 +98,14 @@ func writeTextReport(report evaluation.RetrievalReport) {
 		fmt.Printf("[%s] %s\n", caseStatus, testCase.ID)
 		fmt.Printf("  Query: %s\n", testCase.Query)
 		fmt.Printf("  Expected: %d/%d matched within rank %d\n", testCase.ExpectedMatched, testCase.ExpectedTotal, testCase.MaxRank)
+		fmt.Printf("  Metrics: recall %.2f, latency %dms", testCase.Recall, testCase.LatencyMS)
+		if len(testCase.ExpectedRanks) > 0 {
+			fmt.Printf(", ranks %s", formatRanks(testCase.ExpectedRanks))
+		}
+		if testCase.NoHitExpected {
+			fmt.Print(", no-hit expected")
+		}
+		fmt.Println("")
 		for _, failure := range testCase.Failures {
 			fmt.Printf("  - %s\n", failure)
 		}
@@ -97,6 +113,20 @@ func writeTextReport(report evaluation.RetrievalReport) {
 			fmt.Printf("  #%d %.4f %s#%s\n", hit.Rank, hit.Score, hit.DocumentID, hit.ChunkID)
 		}
 	}
+}
+
+func formatRanks(ranks []int) string {
+	if len(ranks) == 0 {
+		return "[]"
+	}
+	formatted := "["
+	for i, rank := range ranks {
+		if i > 0 {
+			formatted += ", "
+		}
+		formatted += fmt.Sprintf("%d", rank)
+	}
+	return formatted + "]"
 }
 
 func fail(format string, args ...any) {

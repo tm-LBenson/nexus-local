@@ -23,7 +23,7 @@ The product is not useful just because a model answers. It is useful when retrie
 | Slice | Build | Gate |
 | --- | --- | --- |
 | 3.1 | Evaluation fixture format for documents, questions, expected sources, and expected answer traits. | Done: offline retrieval eval runner reports pass/fail locally. |
-| 3.2 | Retrieval metrics: hit recall, source rank, empty result behavior, and latency. | Fixture set establishes baseline. |
+| 3.2 | Retrieval metrics: hit recall, source rank, empty result behavior, and latency. | Done: fixture set establishes baseline metrics. |
 | 3.3 | Answer metrics: citation presence, unsupported-claim checks, refusal behavior, and latency. | Ask path can be evaluated without manual screenshots. |
 | 3.4 | Source preview UX for answers and search hits. | User can inspect cited passages quickly. |
 | 3.5 | Hybrid retrieval strategy option. | Lexical plus vector retrieval beats vector-only on fixture set. |
@@ -44,9 +44,9 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slice 3.1 now has a checked-in retrieval fixture, Go eval runner, `.\nexus.ps1 eval-retrieval`, and release-check coverage.
-- The baseline focuses on enterprise support and governance retrieval: OIDC troubleshooting, HAR diagnostics, PII redaction, and MFA-gated status workflows.
+- Slices 3.1 and 3.2 now have a checked-in retrieval fixture, Go eval runner, `.\nexus.ps1 eval-retrieval`, release-check coverage, aggregate recall/rank/latency metrics, and an explicit no-hit filter case.
+- The baseline focuses on enterprise support and governance retrieval: OIDC troubleshooting, HAR diagnostics, PII redaction, MFA-gated status workflows, and scoped empty-result behavior.
 
 ## Next Build Candidate
 
-Move to Slice 3.2. Add richer retrieval metrics on top of the fixture runner: recall by case, expected source rank, no-result behavior, filter behavior, and latency thresholds.
+Move to Slice 3.3. Add answer metrics on top of the Ask path: citation presence, unsupported-claim checks, refusal behavior, and latency thresholds.

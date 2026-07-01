@@ -71,16 +71,23 @@ type ExpectedHit struct {
 }
 
 type RetrievalReport struct {
-	Suite         string                `json:"suite"`
-	Description   string                `json:"description,omitempty"`
-	Passed        bool                  `json:"passed"`
-	CaseCount     int                   `json:"case_count"`
-	PassedCount   int                   `json:"passed_count"`
-	FailedCount   int                   `json:"failed_count"`
-	DurationMS    int64                 `json:"duration_ms"`
-	Embedding     RetrievalEmbedding    `json:"embedding"`
-	CaseReports   []RetrievalCaseReport `json:"cases"`
-	IndexedChunks int                   `json:"indexed_chunks"`
+	Suite            string                `json:"suite"`
+	Description      string                `json:"description,omitempty"`
+	Passed           bool                  `json:"passed"`
+	CaseCount        int                   `json:"case_count"`
+	PassedCount      int                   `json:"passed_count"`
+	FailedCount      int                   `json:"failed_count"`
+	DurationMS       int64                 `json:"duration_ms"`
+	P95LatencyMS     int64                 `json:"p95_latency_ms"`
+	Recall           float64               `json:"recall"`
+	MeanExpectedRank float64               `json:"mean_expected_rank,omitempty"`
+	MatchedExpected  int                   `json:"matched_expected"`
+	TotalExpected    int                   `json:"total_expected"`
+	NoHitCaseCount   int                   `json:"no_hit_case_count,omitempty"`
+	NoHitPassedCount int                   `json:"no_hit_passed_count,omitempty"`
+	Embedding        RetrievalEmbedding    `json:"embedding"`
+	CaseReports      []RetrievalCaseReport `json:"cases"`
+	IndexedChunks    int                   `json:"indexed_chunks"`
 }
 
 type RetrievalEmbedding struct {
@@ -93,8 +100,12 @@ type RetrievalCaseReport struct {
 	Query           string             `json:"query"`
 	Passed          bool               `json:"passed"`
 	Failures        []string           `json:"failures,omitempty"`
+	Recall          float64            `json:"recall"`
+	LatencyMS       int64              `json:"latency_ms"`
 	ExpectedMatched int                `json:"expected_matched"`
 	ExpectedTotal   int                `json:"expected_total"`
+	ExpectedRanks   []int              `json:"expected_ranks,omitempty"`
+	NoHitExpected   bool               `json:"no_hit_expected,omitempty"`
 	HitCount        int                `json:"hit_count"`
 	Limit           int                `json:"limit"`
 	MaxRank         int                `json:"max_rank"`
@@ -173,6 +184,7 @@ func RunRetrievalSuite(ctx context.Context, suite RetrievalSuite) (RetrievalRepo
 			report.PassedCount++
 		}
 	}
+	reportMetrics(&report)
 	report.FailedCount = report.CaseCount - report.PassedCount
 	report.Passed = report.FailedCount == 0
 	report.DurationMS = time.Since(startedAt).Milliseconds()
@@ -219,6 +231,7 @@ func runRetrievalCase(ctx context.Context, search app.SearchService, tenantID st
 	if maxRank <= 0 {
 		maxRank = limit
 	}
+	startedAt := time.Now()
 	result, err := search.Search(ctx, app.SearchInput{
 		TenantID:   domain.TenantID(tenantID),
 		DocumentID: domain.DocumentID(testCase.DocumentID),
@@ -236,30 +249,46 @@ func runRetrievalCase(ctx context.Context, search app.SearchService, tenantID st
 		MaxRank:       maxRank,
 		HitCount:      len(result.Hits),
 		ExpectedTotal: len(testCase.Expected.Hits),
+		NoHitExpected: testCase.Expected.NoHits,
+		LatencyMS:     time.Since(startedAt).Milliseconds(),
 		TopHits:       hitViews(result.Hits),
 	}
-	report.ExpectedMatched, report.Failures = evaluateHits(result.Hits, testCase.Expected, maxRank)
+	evaluation := evaluateHits(result.Hits, testCase.Expected, maxRank)
+	report.ExpectedMatched = evaluation.matched
+	report.ExpectedRanks = evaluation.ranks
+	report.Failures = evaluation.failures
+	if report.ExpectedTotal > 0 {
+		report.Recall = float64(report.ExpectedMatched) / float64(report.ExpectedTotal)
+	}
 	report.Passed = len(report.Failures) == 0
 	return report, nil
 }
 
-func evaluateHits(hits []providers.VectorHit, expectation RetrievalExpectation, maxRank int) (int, []string) {
+type hitEvaluation struct {
+	matched  int
+	ranks    []int
+	failures []string
+}
+
+func evaluateHits(hits []providers.VectorHit, expectation RetrievalExpectation, maxRank int) hitEvaluation {
 	if expectation.NoHits {
 		if len(hits) == 0 {
-			return 0, nil
+			return hitEvaluation{}
 		}
-		return 0, []string{fmt.Sprintf("expected no hits, got %d", len(hits))}
+		return hitEvaluation{failures: []string{fmt.Sprintf("expected no hits, got %d", len(hits))}}
 	}
 	if len(expectation.Hits) == 0 {
-		return 0, []string{"expected at least one hit expectation"}
+		return hitEvaluation{failures: []string{"expected at least one hit expectation"}}
 	}
 
 	matched := 0
+	ranks := make([]int, 0, len(expectation.Hits))
 	failures := make([]string, 0)
 	for _, expected := range expectation.Hits {
 		rank, ok := expectedHitRank(hits, expected, maxRank)
 		if ok {
 			matched++
+			ranks = append(ranks, rank)
 			if expectation.MinScore > 0 && hits[rank-1].Score < expectation.MinScore {
 				failures = append(failures, fmt.Sprintf("%s score %.4f below %.4f", expectedLabel(expected), hits[rank-1].Score, expectation.MinScore))
 			}
@@ -272,7 +301,7 @@ func evaluateHits(hits []providers.VectorHit, expectation RetrievalExpectation, 
 	if !expectation.RequireAll && matched == 0 {
 		failures = append(failures, fmt.Sprintf("none of %d expected hits found within rank %d", len(expectation.Hits), maxRank))
 	}
-	return matched, failures
+	return hitEvaluation{matched: matched, ranks: ranks, failures: failures}
 }
 
 func expectedHitRank(hits []providers.VectorHit, expected ExpectedHit, maxRank int) (int, bool) {
@@ -305,6 +334,58 @@ func hitViews(hits []providers.VectorHit) []RetrievalHitView {
 		})
 	}
 	return views
+}
+
+func reportMetrics(report *RetrievalReport) {
+	latencies := make([]int64, 0, len(report.CaseReports))
+	rankTotal := 0
+	rankCount := 0
+	for _, testCase := range report.CaseReports {
+		latencies = append(latencies, testCase.LatencyMS)
+		report.MatchedExpected += testCase.ExpectedMatched
+		report.TotalExpected += testCase.ExpectedTotal
+		for _, rank := range testCase.ExpectedRanks {
+			if rank <= 0 {
+				continue
+			}
+			rankTotal += rank
+			rankCount++
+		}
+		if testCase.NoHitExpected {
+			report.NoHitCaseCount++
+			if testCase.Passed {
+				report.NoHitPassedCount++
+			}
+		}
+	}
+	if report.TotalExpected > 0 {
+		report.Recall = float64(report.MatchedExpected) / float64(report.TotalExpected)
+	}
+	if rankCount > 0 {
+		report.MeanExpectedRank = float64(rankTotal) / float64(rankCount)
+	}
+	report.P95LatencyMS = percentileLatency(latencies, 95)
+}
+
+func percentileLatency(values []int64, percentile int) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
+	if percentile <= 0 {
+		return sorted[0]
+	}
+	if percentile >= 100 {
+		return sorted[len(sorted)-1]
+	}
+	index := ((percentile * len(sorted)) + 99) / 100
+	if index <= 0 {
+		index = 1
+	}
+	return sorted[index-1]
 }
 
 func validateRetrievalSuite(suite RetrievalSuite) error {

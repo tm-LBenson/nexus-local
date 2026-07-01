@@ -133,7 +133,7 @@ Run the offline retrieval quality gate after changing search, chunking, metadata
 .\nexus.ps1 eval-retrieval
 ```
 
-This builds a small in-memory fixture index and verifies that support/governance questions retrieve the expected sources. It does not require Docker or a model gateway.
+This builds a small in-memory fixture index and verifies that support/governance questions retrieve the expected sources, including recall/rank/latency metrics and scoped empty-result behavior. It does not require Docker or a model gateway.
 
 Run a managed-source stress check:
 

@@ -51,8 +51,14 @@ func TestRunRetrievalSuitePassesExpectedHits(t *testing.T) {
 	if !report.Passed || report.PassedCount != 1 || report.FailedCount != 0 {
 		t.Fatalf("report = %#v, want pass", report)
 	}
+	if report.Recall != 1 || report.MeanExpectedRank != 1 || report.TotalExpected != 1 || report.MatchedExpected != 1 {
+		t.Fatalf("metrics = recall %.2f mean rank %.2f expected %d/%d, want perfect metrics", report.Recall, report.MeanExpectedRank, report.MatchedExpected, report.TotalExpected)
+	}
 	if report.CaseReports[0].TopHits[0].DocumentID != "doc_oidc" {
 		t.Fatalf("top hit = %#v, want doc_oidc", report.CaseReports[0].TopHits[0])
+	}
+	if report.CaseReports[0].Recall != 1 || len(report.CaseReports[0].ExpectedRanks) != 1 || report.CaseReports[0].ExpectedRanks[0] != 1 {
+		t.Fatalf("case metrics = %#v, want rank 1 recall", report.CaseReports[0])
 	}
 }
 
@@ -96,6 +102,43 @@ func TestRunRetrievalSuiteReportsMissingHit(t *testing.T) {
 	}
 	if len(report.CaseReports[0].Failures) == 0 {
 		t.Fatalf("failures = %#v, want explanation", report.CaseReports[0].Failures)
+	}
+}
+
+func TestRunRetrievalSuiteReportsNoHitBehavior(t *testing.T) {
+	suite := RetrievalSuite{
+		Name: "test-suite",
+		Documents: []RetrievalDocument{
+			{
+				ID:       "doc_oidc",
+				Name:     "OIDC.md",
+				Metadata: map[string]string{"topic": "identity"},
+				Chunks: []RetrievalChunk{
+					{ID: "redirect_uri", Text: "OIDC invalid redirect uri"},
+				},
+			},
+		},
+		Cases: []RetrievalCase{
+			{
+				ID:      "filtered-empty",
+				Query:   "OIDC invalid redirect uri",
+				Filters: map[string]string{"topic": "billing"},
+				Expected: RetrievalExpectation{
+					NoHits: true,
+				},
+			},
+		},
+	}
+
+	report, err := RunRetrievalSuite(context.Background(), suite)
+	if err != nil {
+		t.Fatalf("run suite: %v", err)
+	}
+	if !report.Passed || report.NoHitCaseCount != 1 || report.NoHitPassedCount != 1 {
+		t.Fatalf("report = %#v, want passing no-hit metrics", report)
+	}
+	if !report.CaseReports[0].NoHitExpected || report.CaseReports[0].HitCount != 0 {
+		t.Fatalf("case = %#v, want no-hit case with no hits", report.CaseReports[0])
 	}
 }
 
