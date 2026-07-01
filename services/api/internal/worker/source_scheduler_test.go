@@ -80,3 +80,33 @@ func TestSourceSchedulerSkipsSourcesWithActiveScan(t *testing.T) {
 		t.Fatalf("jobs len = %d, want existing job only", len(jobs))
 	}
 }
+
+func TestSourceSchedulerSkipsConnectorSources(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	source := newTestDataSource(t, "connector://sharepoint/support", domain.DataSourceStatusActive)
+	source.Type = domain.DataSourceTypeConnector
+	source.ScanIntervalMinutes = 60
+	next := fixedTime().Add(-time.Minute)
+	source.NextScanAt = &next
+	if err := repos.SaveDataSource(ctx, source); err != nil {
+		t.Fatalf("save source: %v", err)
+	}
+
+	scheduler := NewSourceScheduler(repos, &scanIDs{}, fixedClock{})
+	result, err := scheduler.QueueDueScans(ctx, 10)
+	if err != nil {
+		t.Fatalf("queue due scans: %v", err)
+	}
+	if result.QueuedCount != 0 || result.SkippedActiveCount != 0 {
+		t.Fatalf("result = %#v, want no connector work", result)
+	}
+
+	jobs, err := repos.ListJobs(ctx, source.TenantID, 10)
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs len = %d, want none", len(jobs))
+	}
+}

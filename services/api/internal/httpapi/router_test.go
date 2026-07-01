@@ -656,6 +656,12 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"type": "synced_folder",
 		"name": "OneDrive Support Docs",
 		"root_path": "C:\\Users\\team\\OneDrive\\Support",
+		"connector_config": {
+			"provider": "sharepoint-sync",
+			"resource_id": "site:team-support",
+			"credential_ref": "secret/sharepoint/support",
+			"notes": "customer-owned app"
+		},
 		"include_patterns": ["**/*.md", "**/*.pdf"],
 		"exclude_patterns": ["archive/**"],
 		"scan_interval_minutes": 60
@@ -685,6 +691,10 @@ func TestDataSourceEndpoints(t *testing.T) {
 	if createBody.Source.ScanIntervalMinutes != 60 || createBody.Source.NextScanAt == "" {
 		t.Fatalf("create schedule = %d/%q", createBody.Source.ScanIntervalMinutes, createBody.Source.NextScanAt)
 	}
+	if createBody.Source.ConnectorConfig.Provider != "sharepoint-sync" ||
+		createBody.Source.ConnectorConfig.CredentialRef != "secret/sharepoint/support" {
+		t.Fatalf("create connector config = %#v", createBody.Source.ConnectorConfig)
+	}
 
 	list := httptest.NewRecorder()
 	listReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources?tenant_id=tenant_1", nil)
@@ -708,6 +718,12 @@ func TestDataSourceEndpoints(t *testing.T) {
 		"type": "network_share",
 		"name": "NAS Runbooks",
 		"root_path": "\\\\nas\\runbooks",
+		"connector_config": {
+			"provider": "smb",
+			"resource_id": "\\\\nas\\runbooks",
+			"credential_ref": "secret/nas/read-only",
+			"notes": "mounted by host"
+		},
 		"include_patterns": ["runbooks/**"],
 		"exclude_patterns": ["drafts/**", "*.tmp"],
 		"scan_interval_minutes": 1440
@@ -734,6 +750,11 @@ func TestDataSourceEndpoints(t *testing.T) {
 	if updateBody.Source.ScanIntervalMinutes != 1440 || updateBody.Source.NextScanAt == "" {
 		t.Fatalf("updated schedule = %d/%q", updateBody.Source.ScanIntervalMinutes, updateBody.Source.NextScanAt)
 	}
+	if updateBody.Source.ConnectorConfig.Provider != "smb" ||
+		updateBody.Source.ConnectorConfig.ResourceID != "\\\\nas\\runbooks" ||
+		updateBody.Source.ConnectorConfig.CredentialRef != "secret/nas/read-only" {
+		t.Fatalf("updated connector config = %#v", updateBody.Source.ConnectorConfig)
+	}
 
 	get := httptest.NewRecorder()
 	getReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources/src_http?tenant_id=tenant_1", nil)
@@ -757,6 +778,10 @@ func TestDataSourceEndpoints(t *testing.T) {
 	}
 	if getBody.Source.ScanIntervalMinutes != 1440 || getBody.Source.NextScanAt == "" {
 		t.Fatalf("get schedule = %d/%q", getBody.Source.ScanIntervalMinutes, getBody.Source.NextScanAt)
+	}
+	if getBody.Source.ConnectorConfig.Provider != "smb" ||
+		getBody.Source.ConnectorConfig.Notes != "mounted by host" {
+		t.Fatalf("get connector config = %#v", getBody.Source.ConnectorConfig)
 	}
 
 	scan := httptest.NewRecorder()

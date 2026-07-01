@@ -281,19 +281,24 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 	if source.NextScanAt != nil {
 		nextScanAt = *source.NextScanAt
 	}
-	_, err := s.pool.Exec(ctx, `
+	connectorConfigJSON, err := json.Marshal(source.ConnectorConfig)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO data_sources (
-			tenant_id, id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+			tenant_id, id, owner_id, type, name, root_path, connector_config, include_patterns, exclude_patterns,
 			scan_interval_minutes, next_scan_at, status, last_scan_at,
 			last_scan_imported, last_scan_skipped, last_scan_failed,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (tenant_id, id) DO UPDATE
 		SET owner_id = EXCLUDED.owner_id,
 		    type = EXCLUDED.type,
 		    name = EXCLUDED.name,
 		    root_path = EXCLUDED.root_path,
+		    connector_config = EXCLUDED.connector_config,
 		    include_patterns = EXCLUDED.include_patterns,
 		    exclude_patterns = EXCLUDED.exclude_patterns,
 		    scan_interval_minutes = EXCLUDED.scan_interval_minutes,
@@ -304,7 +309,7 @@ func (s *Store) SaveDataSource(ctx context.Context, source domain.DataSource) er
 		    last_scan_skipped = EXCLUDED.last_scan_skipped,
 		    last_scan_failed = EXCLUDED.last_scan_failed,
 		    updated_at = EXCLUDED.updated_at
-	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, source.IncludePatterns, source.ExcludePatterns, source.ScanIntervalMinutes, nextScanAt, source.Status, lastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed, source.CreatedAt, source.UpdatedAt)
+	`, source.TenantID, source.ID, source.OwnerID, source.Type, source.Name, source.RootPath, connectorConfigJSON, source.IncludePatterns, source.ExcludePatterns, source.ScanIntervalMinutes, nextScanAt, source.Status, lastScanAt, source.LastScanImported, source.LastScanSkipped, source.LastScanFailed, source.CreatedAt, source.UpdatedAt)
 	return err
 }
 
@@ -312,8 +317,9 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 	var source domain.DataSource
 	var lastScanAt sql.NullTime
 	var nextScanAt sql.NullTime
+	var connectorConfigJSON []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		SELECT id, tenant_id, owner_id, type, name, root_path, connector_config, include_patterns, exclude_patterns,
 		       scan_interval_minutes, next_scan_at, status, last_scan_at,
 		       last_scan_imported, last_scan_skipped, last_scan_failed,
 		       created_at, updated_at
@@ -326,6 +332,7 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 		&source.Type,
 		&source.Name,
 		&source.RootPath,
+		&connectorConfigJSON,
 		&source.IncludePatterns,
 		&source.ExcludePatterns,
 		&source.ScanIntervalMinutes,
@@ -341,6 +348,9 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 	if err != nil {
 		return domain.DataSource{}, translateErr(err)
 	}
+	if err := decodeConnectorConfig(connectorConfigJSON, &source); err != nil {
+		return domain.DataSource{}, err
+	}
 	if lastScanAt.Valid {
 		source.LastScanAt = &lastScanAt.Time
 	}
@@ -352,7 +362,7 @@ func (s *Store) GetDataSource(ctx context.Context, tenantID domain.TenantID, id 
 
 func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) ([]domain.DataSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		SELECT id, tenant_id, owner_id, type, name, root_path, connector_config, include_patterns, exclude_patterns,
 		       scan_interval_minutes, next_scan_at, status, last_scan_at,
 		       last_scan_imported, last_scan_skipped, last_scan_failed,
 		       created_at, updated_at
@@ -370,6 +380,7 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		var source domain.DataSource
 		var lastScanAt sql.NullTime
 		var nextScanAt sql.NullTime
+		var connectorConfigJSON []byte
 		if err := rows.Scan(
 			&source.ID,
 			&source.TenantID,
@@ -377,6 +388,7 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 			&source.Type,
 			&source.Name,
 			&source.RootPath,
+			&connectorConfigJSON,
 			&source.IncludePatterns,
 			&source.ExcludePatterns,
 			&source.ScanIntervalMinutes,
@@ -391,6 +403,9 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		); err != nil {
 			return nil, err
 		}
+		if err := decodeConnectorConfig(connectorConfigJSON, &source); err != nil {
+			return nil, err
+		}
 		if lastScanAt.Valid {
 			source.LastScanAt = &lastScanAt.Time
 		}
@@ -400,6 +415,17 @@ func (s *Store) ListDataSources(ctx context.Context, tenantID domain.TenantID) (
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()
+}
+
+func decodeConnectorConfig(raw []byte, source *domain.DataSource) error {
+	if len(raw) == 0 {
+		source.ConnectorConfig = domain.ConnectorConfig{}
+		return nil
+	}
+	if err := json.Unmarshal(raw, &source.ConnectorConfig); err != nil {
+		return fmt.Errorf("decode connector config: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) SaveSourceView(ctx context.Context, view domain.SourceView) error {
@@ -590,7 +616,7 @@ func (s *Store) DeleteSourcePolicyProfile(ctx context.Context, tenantID domain.T
 
 func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int) ([]domain.DataSource, error) {
 	query := `
-		SELECT id, tenant_id, owner_id, type, name, root_path, include_patterns, exclude_patterns,
+		SELECT id, tenant_id, owner_id, type, name, root_path, connector_config, include_patterns, exclude_patterns,
 		       scan_interval_minutes, next_scan_at, status, last_scan_at,
 		       last_scan_imported, last_scan_skipped, last_scan_failed,
 		       created_at, updated_at
@@ -598,6 +624,7 @@ func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int
 		WHERE scan_interval_minutes > 0
 		  AND next_scan_at IS NOT NULL
 		  AND next_scan_at <= $1
+		  AND type <> 'connector'
 		  AND status IN ('active', 'failed')
 		ORDER BY next_scan_at ASC, tenant_id, id
 	`
@@ -617,6 +644,7 @@ func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int
 		var source domain.DataSource
 		var lastScanAt sql.NullTime
 		var nextScanAt sql.NullTime
+		var connectorConfigJSON []byte
 		if err := rows.Scan(
 			&source.ID,
 			&source.TenantID,
@@ -624,6 +652,7 @@ func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int
 			&source.Type,
 			&source.Name,
 			&source.RootPath,
+			&connectorConfigJSON,
 			&source.IncludePatterns,
 			&source.ExcludePatterns,
 			&source.ScanIntervalMinutes,
@@ -636,6 +665,9 @@ func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int
 			&source.CreatedAt,
 			&source.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		if err := decodeConnectorConfig(connectorConfigJSON, &source); err != nil {
 			return nil, err
 		}
 		if lastScanAt.Valid {

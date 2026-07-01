@@ -264,13 +264,14 @@ type registerDocumentRequest struct {
 }
 
 type dataSourceRequest struct {
-	TenantID            string   `json:"tenant_id"`
-	Type                string   `json:"type"`
-	Name                string   `json:"name"`
-	RootPath            string   `json:"root_path"`
-	IncludePatterns     []string `json:"include_patterns"`
-	ExcludePatterns     []string `json:"exclude_patterns"`
-	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
+	TenantID            string                 `json:"tenant_id"`
+	Type                string                 `json:"type"`
+	Name                string                 `json:"name"`
+	RootPath            string                 `json:"root_path"`
+	ConnectorConfig     connectorConfigPayload `json:"connector_config"`
+	IncludePatterns     []string               `json:"include_patterns"`
+	ExcludePatterns     []string               `json:"exclude_patterns"`
+	ScanIntervalMinutes int                    `json:"scan_interval_minutes"`
 }
 
 type sourceViewFiltersRequest struct {
@@ -347,23 +348,31 @@ type documentPayload struct {
 }
 
 type dataSourcePayload struct {
-	ID                  string   `json:"id"`
-	TenantID            string   `json:"tenant_id"`
-	OwnerID             string   `json:"owner_id"`
-	Type                string   `json:"type"`
-	Name                string   `json:"name"`
-	RootPath            string   `json:"root_path"`
-	IncludePatterns     []string `json:"include_patterns"`
-	ExcludePatterns     []string `json:"exclude_patterns"`
-	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
-	NextScanAt          string   `json:"next_scan_at,omitempty"`
-	Status              string   `json:"status"`
-	LastScanAt          string   `json:"last_scan_at,omitempty"`
-	LastScanImported    int      `json:"last_scan_imported"`
-	LastScanSkipped     int      `json:"last_scan_skipped"`
-	LastScanFailed      int      `json:"last_scan_failed"`
-	CreatedAt           string   `json:"created_at"`
-	UpdatedAt           string   `json:"updated_at"`
+	ID                  string                 `json:"id"`
+	TenantID            string                 `json:"tenant_id"`
+	OwnerID             string                 `json:"owner_id"`
+	Type                string                 `json:"type"`
+	Name                string                 `json:"name"`
+	RootPath            string                 `json:"root_path"`
+	ConnectorConfig     connectorConfigPayload `json:"connector_config"`
+	IncludePatterns     []string               `json:"include_patterns"`
+	ExcludePatterns     []string               `json:"exclude_patterns"`
+	ScanIntervalMinutes int                    `json:"scan_interval_minutes"`
+	NextScanAt          string                 `json:"next_scan_at,omitempty"`
+	Status              string                 `json:"status"`
+	LastScanAt          string                 `json:"last_scan_at,omitempty"`
+	LastScanImported    int                    `json:"last_scan_imported"`
+	LastScanSkipped     int                    `json:"last_scan_skipped"`
+	LastScanFailed      int                    `json:"last_scan_failed"`
+	CreatedAt           string                 `json:"created_at"`
+	UpdatedAt           string                 `json:"updated_at"`
+}
+
+type connectorConfigPayload struct {
+	Provider      string `json:"provider,omitempty"`
+	ResourceID    string `json:"resource_id,omitempty"`
+	CredentialRef string `json:"credential_ref,omitempty"`
+	Notes         string `json:"notes,omitempty"`
 }
 
 type dataSourceScanEntryPayload struct {
@@ -1006,6 +1015,7 @@ func createDataSourceHandler(service app.DataSourceService, authorizer internala
 			Type:                domain.DataSourceType(req.Type),
 			Name:                req.Name,
 			RootPath:            req.RootPath,
+			ConnectorConfig:     decodeConnectorConfigPayload(req.ConnectorConfig),
 			IncludePatterns:     req.IncludePatterns,
 			ExcludePatterns:     req.ExcludePatterns,
 			ScanIntervalMinutes: req.ScanIntervalMinutes,
@@ -1135,6 +1145,7 @@ func updateDataSourceHandler(service app.DataSourceService, authorizer internala
 			Type:                domain.DataSourceType(req.Type),
 			Name:                req.Name,
 			RootPath:            req.RootPath,
+			ConnectorConfig:     decodeConnectorConfigPayload(req.ConnectorConfig),
 			IncludePatterns:     req.IncludePatterns,
 			ExcludePatterns:     req.ExcludePatterns,
 			ScanIntervalMinutes: req.ScanIntervalMinutes,
@@ -1622,10 +1633,13 @@ func recordDataSourceAudit(ctx context.Context, audit app.AuditService, tenantID
 		ResourceID:   string(source.ID),
 		Outcome:      outcome,
 		Metadata: map[string]string{
-			"name":      source.Name,
-			"type":      string(source.Type),
-			"root_path": source.RootPath,
-			"status":    string(source.Status),
+			"name":                  source.Name,
+			"type":                  string(source.Type),
+			"root_path":             source.RootPath,
+			"status":                string(source.Status),
+			"connector_provider":    source.ConnectorConfig.Provider,
+			"connector_resource_id": source.ConnectorConfig.ResourceID,
+			"connector_credential":  source.ConnectorConfig.CredentialRef,
 		},
 	})
 }
@@ -2153,6 +2167,7 @@ func encodeDataSource(source domain.DataSource) dataSourcePayload {
 		Type:                string(source.Type),
 		Name:                source.Name,
 		RootPath:            source.RootPath,
+		ConnectorConfig:     encodeConnectorConfig(source.ConnectorConfig),
 		IncludePatterns:     append([]string{}, source.IncludePatterns...),
 		ExcludePatterns:     append([]string{}, source.ExcludePatterns...),
 		ScanIntervalMinutes: source.ScanIntervalMinutes,
@@ -2196,6 +2211,24 @@ func encodeSourcePolicyProfile(profile domain.SourcePolicyProfile) sourcePolicyP
 		ScanIntervalMinutes: profile.ScanIntervalMinutes,
 		CreatedAt:           profile.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:           profile.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func decodeConnectorConfigPayload(payload connectorConfigPayload) domain.ConnectorConfig {
+	return domain.ConnectorConfig{
+		Provider:      payload.Provider,
+		ResourceID:    payload.ResourceID,
+		CredentialRef: payload.CredentialRef,
+		Notes:         payload.Notes,
+	}
+}
+
+func encodeConnectorConfig(config domain.ConnectorConfig) connectorConfigPayload {
+	return connectorConfigPayload{
+		Provider:      config.Provider,
+		ResourceID:    config.ResourceID,
+		CredentialRef: config.CredentialRef,
+		Notes:         config.Notes,
 	}
 }
 

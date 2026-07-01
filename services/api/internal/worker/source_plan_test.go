@@ -32,6 +32,7 @@ func TestSourcePlanWorkerSummarizesSourceWithoutImporting(t *testing.T) {
 		source.Name,
 		source.Type,
 		source.RootPath,
+		domain.ConnectorConfig{},
 		[]string{"**/*.md", "**/*.txt"},
 		[]string{"notes.txt"},
 		0,

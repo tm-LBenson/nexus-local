@@ -110,6 +110,13 @@ export type RegisteredDocument = {
   updated_at: string;
 };
 
+export type ConnectorConfig = {
+  provider?: string;
+  resource_id?: string;
+  credential_ref?: string;
+  notes?: string;
+};
+
 export type DataSource = {
   id: string;
   tenant_id: string;
@@ -117,6 +124,7 @@ export type DataSource = {
   type: string;
   name: string;
   root_path: string;
+  connector_config: ConnectorConfig;
   include_patterns: string[];
   exclude_patterns: string[];
   scan_interval_minutes: number;
@@ -542,6 +550,7 @@ export async function createDataSource(input: {
   type: string;
   name: string;
   root_path: string;
+  connector_config?: ConnectorConfig;
   include_patterns: string[];
   exclude_patterns: string[];
   scan_interval_minutes: number;
@@ -559,6 +568,7 @@ export async function updateDataSource(
     type: string;
     name: string;
     root_path: string;
+    connector_config?: ConnectorConfig;
     include_patterns: string[];
     exclude_patterns: string[];
     scan_interval_minutes: number;

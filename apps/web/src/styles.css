@@ -1235,6 +1235,21 @@ h3 {
   gap: 8px;
 }
 
+.sourceConnectorFields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfdfc;
+}
+
+.sourceConnectorFields label:last-child {
+  grid-column: 1 / -1;
+}
+
 .sourceMountHelper {
   grid-column: 1 / -1;
 }
@@ -1297,6 +1312,10 @@ h3 {
 
 .sourcePatternFields textarea {
   min-height: 74px;
+}
+
+.sourceConnectorFields textarea {
+  min-height: 58px;
 }
 
 .uploadBar .fileInput {
@@ -4192,6 +4211,10 @@ strong {
   }
 
   .sourcePatternFields {
+    grid-template-columns: 1fr;
+  }
+
+  .sourceConnectorFields {
     grid-template-columns: 1fr;
   }
 

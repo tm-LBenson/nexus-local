@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AuditEventFilters,
   AskConversationResponse,
+  ConnectorConfig,
   CurrentUserResponse,
   DataSourceDetailResponse,
   DocumentDetailResponse,
@@ -157,12 +158,25 @@ type SourceFormValues = {
   type: string;
   name: string;
   root_path: string;
+  connector_provider: string;
+  connector_resource_id: string;
+  connector_credential_ref: string;
+  connector_notes: string;
   include_patterns: string;
   exclude_patterns: string;
   scan_interval_minutes: string;
 };
 
-type SourceTemplate = SourceFormValues & {
+type SourceTemplate = Omit<
+  SourceFormValues,
+  'connector_provider' | 'connector_resource_id' | 'connector_credential_ref' | 'connector_notes'
+> &
+  Partial<
+    Pick<
+      SourceFormValues,
+      'connector_provider' | 'connector_resource_id' | 'connector_credential_ref' | 'connector_notes'
+    >
+  > & {
   id: string;
   label: string;
   detail: string;
@@ -229,6 +243,10 @@ const initialSourceForm: SourceFormValues = {
   type: 'synced_folder',
   name: '',
   root_path: '',
+  connector_provider: '',
+  connector_resource_id: '',
+  connector_credential_ref: '',
+  connector_notes: '',
   include_patterns: '',
   exclude_patterns: '',
   scan_interval_minutes: '0',
@@ -259,6 +277,53 @@ const commonDocumentExcludes = [
 ].join('\n');
 
 const sourceTemplates: SourceTemplate[] = [
+  {
+    id: 'sharepoint-connector',
+    label: 'SharePoint connector',
+    detail: 'Future direct connector handoff',
+    type: 'connector',
+    name: 'SharePoint Connector',
+    root_path: 'connector://sharepoint/site',
+    connector_provider: 'sharepoint',
+    connector_resource_id: 'tenant/site/library',
+    connector_credential_ref: 'secret/sharepoint/read-only',
+    connector_notes: 'Store OAuth/client details in the deployment secret manager.',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '0',
+  },
+  {
+    id: 'onedrive-connector',
+    label: 'OneDrive connector',
+    detail: 'Future direct drive connector',
+    type: 'connector',
+    name: 'OneDrive Connector',
+    root_path: 'connector://onedrive/drive',
+    connector_provider: 'onedrive',
+    connector_resource_id: 'user-or-group/drive',
+    connector_credential_ref: 'secret/onedrive/read-only',
+    connector_notes: 'Reference customer-owned credentials; do not paste secrets here.',
+    include_patterns: broadDocumentIncludes,
+    exclude_patterns: commonDocumentExcludes,
+    scan_interval_minutes: '0',
+  },
+  {
+    id: 'ticket-system-connector',
+    label: 'Ticket connector',
+    detail: 'Future case export connector',
+    type: 'connector',
+    name: 'Ticket Connector',
+    root_path: 'connector://tickets/project',
+    connector_provider: 'ticketing',
+    connector_resource_id: 'workspace/project',
+    connector_credential_ref: 'secret/tickets/read-only',
+    connector_notes: 'Use exported files until direct connector workers are implemented.',
+    include_patterns: ['**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.txt', '**/*.md'].join(
+      '\n',
+    ),
+    exclude_patterns: ['**/attachments/**', '**/raw/**', '**/tmp/**', '**/temp/**'].join('\n'),
+    scan_interval_minutes: '0',
+  },
   {
     id: 'sharepoint-sync',
     label: 'SharePoint sync',
@@ -1566,6 +1631,10 @@ export function App() {
       type: template.type,
       name: template.name,
       root_path: template.root_path,
+      connector_provider: template.connector_provider ?? '',
+      connector_resource_id: template.connector_resource_id ?? '',
+      connector_credential_ref: template.connector_credential_ref ?? '',
+      connector_notes: template.connector_notes ?? '',
       include_patterns: template.include_patterns,
       exclude_patterns: template.exclude_patterns,
       scan_interval_minutes: template.scan_interval_minutes,
@@ -1642,24 +1711,14 @@ export function App() {
         type: sourceForm.type,
         name: sourceForm.name.trim(),
         root_path: sourceForm.root_path.trim(),
+        connector_config: connectorConfigFromSourceForm(sourceForm),
         include_patterns: patternLinesToList(sourceForm.include_patterns),
         exclude_patterns: patternLinesToList(sourceForm.exclude_patterns),
         scan_interval_minutes: Number(sourceForm.scan_interval_minutes),
       });
+      const connectorSource = sourceIsConnector(createResult.source);
       let preflightError = '';
-      try {
-        const preflightResult = await preflightDataSource(tenantID, createResult.source.id);
-        setSourceDetail({
-          source: preflightResult.source,
-          jobs: [preflightResult.job],
-          scan_entries: [],
-          scan_summary: emptyDataSourceScanSummary(),
-          scan_entries_page: emptyDataSourceScanEntryPage(),
-          failed_documents: 0,
-        });
-        setSourceEditForm(sourceFormFromSource(preflightResult.source));
-      } catch (err) {
-        preflightError = messageFromError(err);
+      if (connectorSource) {
         setSourceDetail({
           source: createResult.source,
           jobs: [],
@@ -1669,6 +1728,30 @@ export function App() {
           failed_documents: 0,
         });
         setSourceEditForm(sourceFormFromSource(createResult.source));
+      } else {
+        try {
+          const preflightResult = await preflightDataSource(tenantID, createResult.source.id);
+          setSourceDetail({
+            source: preflightResult.source,
+            jobs: [preflightResult.job],
+            scan_entries: [],
+            scan_summary: emptyDataSourceScanSummary(),
+            scan_entries_page: emptyDataSourceScanEntryPage(),
+            failed_documents: 0,
+          });
+          setSourceEditForm(sourceFormFromSource(preflightResult.source));
+        } catch (err) {
+          preflightError = messageFromError(err);
+          setSourceDetail({
+            source: createResult.source,
+            jobs: [],
+            scan_entries: [],
+            scan_summary: emptyDataSourceScanSummary(),
+            scan_entries_page: emptyDataSourceScanEntryPage(),
+            failed_documents: 0,
+          });
+          setSourceEditForm(sourceFormFromSource(createResult.source));
+        }
       }
       setSourceForm(initialSourceForm);
       await Promise.all([
@@ -1704,6 +1787,7 @@ export function App() {
         type: sourceEditForm.type,
         name: sourceEditForm.name.trim(),
         root_path: sourceEditForm.root_path.trim(),
+        connector_config: connectorConfigFromSourceForm(sourceEditForm),
         include_patterns: patternLinesToList(sourceEditForm.include_patterns),
         exclude_patterns: patternLinesToList(sourceEditForm.exclude_patterns),
         scan_interval_minutes: Number(sourceEditForm.scan_interval_minutes),
@@ -3192,6 +3276,12 @@ export function App() {
                       </div>
                     </div>
                   </details>
+                  <SourceConnectorFields
+                    form={sourceForm}
+                    onChange={(updates) =>
+                      setSourceForm((current) => ({ ...current, ...updates }))
+                    }
+                  />
                   <div className="sourcePatternFields">
                     <label>
                       <span>Include</span>
@@ -3393,6 +3483,7 @@ export function App() {
 
               <div className="tableList sourceList">
                 {filteredSources.map((source) => {
+                  const connectorSource = sourceIsConnector(source);
                   const scanJob = activeSourceScanJobs.get(source.id);
                   const preflightJob = activeSourcePreflightJobs.get(source.id);
                   const planJob = activeSourcePlanJobs.get(source.id);
@@ -3404,9 +3495,13 @@ export function App() {
                     latestPreflightJob,
                   );
                   const visiblePreflightJob =
-                    preflightJob ?? (preflightBlocksScan ? latestPreflightJob : undefined);
+                    connectorSource
+                      ? undefined
+                      : preflightJob ?? (preflightBlocksScan ? latestPreflightJob : undefined);
                   const visiblePlanJob =
-                    planJob ?? (latestPlanJob?.state === 'failed' ? latestPlanJob : undefined);
+                    connectorSource
+                      ? undefined
+                      : planJob ?? (latestPlanJob?.state === 'failed' ? latestPlanJob : undefined);
                   return (
                     <div
                       className={
@@ -3439,6 +3534,8 @@ export function App() {
                             ? `plan ${visiblePlanJob.state}`
                           : scanJob
                             ? `scan ${scanJob.state}`
+                            : connectorSource
+                              ? 'handoff'
                             : source.status}
                       </span>
                       <em>{sourceTypeLabel(source.type)}</em>
@@ -3455,6 +3552,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              connectorSource ||
                               Boolean(preflightJob) ||
                               preflightingSourceID === source.id ||
                               source.status === 'archived' ||
@@ -3463,7 +3561,9 @@ export function App() {
                             onClick={() => void requestDataSourcePreflight(source)}
                             type="button"
                           >
-                            {preflightingSourceID === source.id
+                            {connectorSource
+                              ? 'Handoff'
+                              : preflightingSourceID === source.id
                               ? 'Queuing'
                               : preflightJob
                                 ? titleCase(preflightJob.state)
@@ -3471,6 +3571,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               preflightBlocksScan ||
@@ -3483,7 +3584,9 @@ export function App() {
                             onClick={() => void requestDataSourcePlan(source)}
                             type="button"
                           >
-                            {planningSourceID === source.id
+                            {connectorSource
+                              ? 'No worker'
+                              : planningSourceID === source.id
                               ? 'Queuing'
                               : planJob
                                 ? titleCase(planJob.state)
@@ -3491,6 +3594,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               preflightBlocksScan ||
@@ -3501,7 +3605,9 @@ export function App() {
                             onClick={() => void requestDataSourceScan(source)}
                             type="button"
                           >
-                            {scanningSourceID === source.id
+                            {connectorSource
+                              ? 'No worker'
+                              : scanningSourceID === source.id
                               ? 'Queuing'
                               : preflightBlocksScan
                                 ? 'Path blocked'
@@ -3513,6 +3619,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
                               Boolean(scanJob) ||
@@ -3524,7 +3631,11 @@ export function App() {
                             onClick={() => void requestDataSourceReindex(source)}
                             type="button"
                           >
-                            {reindexingSourceID === source.id ? 'Reindexing' : 'Reindex'}
+                            {connectorSource
+                              ? 'No docs'
+                              : reindexingSourceID === source.id
+                                ? 'Reindexing'
+                                : 'Reindex'}
                           </button>
                           <button
                             className="dangerButton"
@@ -3570,6 +3681,8 @@ export function App() {
                             ? `plan ${activeSourcePlanJobs.get(sourceDetail.source.id)?.state}`
                           : activeSourceScanJobs.get(sourceDetail.source.id)
                             ? `scan ${activeSourceScanJobs.get(sourceDetail.source.id)?.state}`
+                            : sourceIsConnector(sourceDetail.source)
+                              ? 'handoff'
                             : sourceDetail.source.status}
                       </span>
                       <button
@@ -3581,6 +3694,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePreflightJob(sourceDetail) ||
                           sourceDetail.source.status === 'archived' ||
@@ -3589,7 +3703,9 @@ export function App() {
                         onClick={() => void requestDataSourcePreflight(sourceDetail.source)}
                         type="button"
                       >
-                        {preflightingSourceID === sourceDetail.source.id
+                        {sourceIsConnector(sourceDetail.source)
+                          ? 'Handoff'
+                          : preflightingSourceID === sourceDetail.source.id
                           ? 'Queuing'
                           : sourceHasActivePreflightJob(sourceDetail)
                             ? 'Queued'
@@ -3597,6 +3713,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePlanJob(sourceDetail) ||
                           sourceScanBlockedByPlan(sourceDetail) ||
@@ -3611,7 +3728,9 @@ export function App() {
                         onClick={() => void requestDataSourcePlan(sourceDetail.source)}
                         type="button"
                       >
-                        {planningSourceID === sourceDetail.source.id
+                        {sourceIsConnector(sourceDetail.source)
+                          ? 'No worker'
+                          : planningSourceID === sourceDetail.source.id
                           ? 'Queuing'
                           : sourceHasActivePlanJob(sourceDetail)
                             ? 'Queued'
@@ -3619,6 +3738,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePlanJob(sourceDetail) ||
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
@@ -3632,7 +3752,9 @@ export function App() {
                         onClick={() => void requestDataSourceScan(sourceDetail.source)}
                         type="button"
                       >
-                        {scanningSourceID === sourceDetail.source.id
+                        {sourceIsConnector(sourceDetail.source)
+                          ? 'No worker'
+                          : scanningSourceID === sourceDetail.source.id
                           ? 'Queuing'
                           : sourceScanBlockedByPlan(sourceDetail)
                             ? 'Plan failed'
@@ -3649,6 +3771,7 @@ export function App() {
                         <div className="rowMenuActions">
                           <button
                             disabled={
+                              sourceIsConnector(sourceDetail.source) ||
                               reindexingSourceID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
                               Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
@@ -3661,12 +3784,15 @@ export function App() {
                             onClick={() => void requestDataSourceReindex(sourceDetail.source)}
                             type="button"
                           >
-                            {reindexingSourceID === sourceDetail.source.id
+                            {sourceIsConnector(sourceDetail.source)
+                              ? 'No docs'
+                              : reindexingSourceID === sourceDetail.source.id
                               ? 'Reindexing'
                               : 'Reindex'}
                           </button>
                           <button
                             disabled={
+                              sourceIsConnector(sourceDetail.source) ||
                               retryingSourceFailuresID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
                               Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
@@ -3701,6 +3827,7 @@ export function App() {
                           <button
                             className="dangerButton"
                             disabled={
+                              sourceIsConnector(sourceDetail.source) ||
                               deletingSourceDocumentsID === sourceDetail.source.id ||
                               Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                               sourceHasActivePlanJob(sourceDetail) ||
@@ -3726,42 +3853,55 @@ export function App() {
                       <span>Existing documents remain available.</span>
                     </div>
                   )}
+                  {sourceIsConnector(sourceDetail.source) && (
+                    <div className="infoNotice">
+                      <strong>Connector handoff</strong>
+                      <span>
+                        Direct connector workers are not enabled yet. This record keeps provider,
+                        resource, and credential references ready for deployment handoff.
+                      </span>
+                    </div>
+                  )}
                   {sourceDetail.source.status === 'failed' && sourceFailureMessage(sourceDetail) && (
                     <div className="failureNotice">
                       <strong>Scan failed</strong>
                       <span>{sourceFailureMessage(sourceDetail)}</span>
                     </div>
                   )}
-                  <SourceHealthRollup
-                    activePlanJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
-                    activePreflightJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
-                    activeScanJob={activeSourceScanJobs.get(sourceDetail.source.id)}
-                    detail={sourceDetail}
-                  />
-                  <SourcePreflightStatus
-                    activeJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
-                    checking={preflightingSourceID === sourceDetail.source.id}
-                    checkDisabled={sourceDetail.source.status === 'archived'}
-                    detail={sourceDetail}
-                    onCheck={() => void requestDataSourcePreflight(sourceDetail.source)}
-                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
-                    refreshing={refreshingSourceID === sourceDetail.source.id}
-                  />
-                  <SourcePlanStatus
-                    activeJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
-                    detail={sourceDetail}
-                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
-                    refreshing={refreshingSourceID === sourceDetail.source.id}
-                  />
-                  <SourceScanRunStatus
-                    activeJob={activeSourceScanJobs.get(sourceDetail.source.id)}
-                    canceling={cancelingSourceScanID === sourceDetail.source.id}
-                    detail={sourceDetail}
-                    onCancel={() => void cancelSourceScan(sourceDetail.source)}
-                    onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
-                    refreshing={refreshingSourceID === sourceDetail.source.id}
-                  />
-                  <SourceScanRunHistory detail={sourceDetail} />
+                  {!sourceIsConnector(sourceDetail.source) && (
+                    <>
+                      <SourceHealthRollup
+                        activePlanJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
+                        activePreflightJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
+                        activeScanJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                        detail={sourceDetail}
+                      />
+                      <SourcePreflightStatus
+                        activeJob={activeSourcePreflightJobs.get(sourceDetail.source.id)}
+                        checking={preflightingSourceID === sourceDetail.source.id}
+                        checkDisabled={sourceDetail.source.status === 'archived'}
+                        detail={sourceDetail}
+                        onCheck={() => void requestDataSourcePreflight(sourceDetail.source)}
+                        onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                        refreshing={refreshingSourceID === sourceDetail.source.id}
+                      />
+                      <SourcePlanStatus
+                        activeJob={activeSourcePlanJobs.get(sourceDetail.source.id)}
+                        detail={sourceDetail}
+                        onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                        refreshing={refreshingSourceID === sourceDetail.source.id}
+                      />
+                      <SourceScanRunStatus
+                        activeJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                        canceling={cancelingSourceScanID === sourceDetail.source.id}
+                        detail={sourceDetail}
+                        onCancel={() => void cancelSourceScan(sourceDetail.source)}
+                        onRefresh={() => void refreshSourceDetail(sourceDetail.source.id)}
+                        refreshing={refreshingSourceID === sourceDetail.source.id}
+                      />
+                      <SourceScanRunHistory detail={sourceDetail} />
+                    </>
+                  )}
                   <dl className="runtimeList detailList">
                     <div>
                       <dt>ID</dt>
@@ -3775,42 +3915,70 @@ export function App() {
                       <dt>Path</dt>
                       <dd>{sourceDetail.source.root_path}</dd>
                     </div>
-                    <div>
-                      <dt>Last scan</dt>
-                      <dd>
-                        {sourceDetail.source.last_scan_at
-                          ? formatDateTime(sourceDetail.source.last_scan_at)
-                          : 'Not scanned'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Schedule</dt>
-                      <dd>{sourceScheduleLabel(sourceDetail.source.scan_interval_minutes)}</dd>
-                    </div>
-                    <div>
-                      <dt>Next scan</dt>
-                      <dd>
-                        {sourceDetail.source.next_scan_at
-                          ? formatDateTime(sourceDetail.source.next_scan_at)
-                          : 'Manual'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Imported</dt>
-                      <dd>{sourceDetail.source.last_scan_imported ?? 0}</dd>
-                    </div>
-                    <div>
-                      <dt>Skipped</dt>
-                      <dd>{sourceDetail.source.last_scan_skipped ?? 0}</dd>
-                    </div>
-                    <div>
-                      <dt>Failed</dt>
-                      <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
-                    </div>
-                    <div>
-                      <dt>Failed docs</dt>
-                      <dd>{sourceDetail.failed_documents}</dd>
-                    </div>
+                    {sourceConnectorConfigured(sourceDetail.source.connector_config) && (
+                      <>
+                        <div>
+                          <dt>Connector</dt>
+                          <dd>{sourceDetail.source.connector_config.provider || 'Configured'}</dd>
+                        </div>
+                        <div>
+                          <dt>Resource</dt>
+                          <dd>{sourceDetail.source.connector_config.resource_id || 'Not set'}</dd>
+                        </div>
+                        <div>
+                          <dt>Credential</dt>
+                          <dd>
+                            {sourceDetail.source.connector_config.credential_ref || 'Not set'}
+                          </dd>
+                        </div>
+                        {sourceDetail.source.connector_config.notes && (
+                          <div>
+                            <dt>Notes</dt>
+                            <dd>{sourceDetail.source.connector_config.notes}</dd>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {!sourceIsConnector(sourceDetail.source) && (
+                      <>
+                        <div>
+                          <dt>Last scan</dt>
+                          <dd>
+                            {sourceDetail.source.last_scan_at
+                              ? formatDateTime(sourceDetail.source.last_scan_at)
+                              : 'Not scanned'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Schedule</dt>
+                          <dd>{sourceScheduleLabel(sourceDetail.source.scan_interval_minutes)}</dd>
+                        </div>
+                        <div>
+                          <dt>Next scan</dt>
+                          <dd>
+                            {sourceDetail.source.next_scan_at
+                              ? formatDateTime(sourceDetail.source.next_scan_at)
+                              : 'Manual'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Imported</dt>
+                          <dd>{sourceDetail.source.last_scan_imported ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>Skipped</dt>
+                          <dd>{sourceDetail.source.last_scan_skipped ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>Failed</dt>
+                          <dd>{sourceDetail.source.last_scan_failed ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>Failed docs</dt>
+                          <dd>{sourceDetail.failed_documents}</dd>
+                        </div>
+                      </>
+                    )}
                   </dl>
                   {sourceDetail.scan_summary.total > 0 && (
                     <section className="sourceScanReport" aria-label="Latest scan report">
@@ -4066,6 +4234,16 @@ export function App() {
                         <option value="1440">Daily</option>
                         <option value="10080">Weekly</option>
                       </select>
+                      <SourceConnectorFields
+                        disabled={
+                          sourceDetail.source.status === 'archived' ||
+                          savingSourceID === sourceDetail.source.id
+                        }
+                        form={sourceEditForm}
+                        onChange={(updates) =>
+                          setSourceEditForm((current) => ({ ...current, ...updates }))
+                        }
+                      />
                       <div className="sourcePatternFields">
                         <label>
                           <span>Include</span>
@@ -5434,6 +5612,64 @@ function DocumentSelect({
   );
 }
 
+function SourceConnectorFields({
+  disabled = false,
+  form,
+  onChange,
+}: {
+  disabled?: boolean;
+  form: SourceFormValues;
+  onChange: (updates: Partial<SourceFormValues>) => void;
+}) {
+  if (form.type !== 'connector') {
+    return null;
+  }
+  return (
+    <div className="sourceConnectorFields">
+      <label>
+        <span>Provider</span>
+        <input
+          aria-label="Connector provider"
+          disabled={disabled}
+          onChange={(event) => onChange({ connector_provider: event.target.value })}
+          placeholder="sharepoint"
+          value={form.connector_provider}
+        />
+      </label>
+      <label>
+        <span>Resource</span>
+        <input
+          aria-label="Connector resource"
+          disabled={disabled}
+          onChange={(event) => onChange({ connector_resource_id: event.target.value })}
+          placeholder="tenant/site/library"
+          value={form.connector_resource_id}
+        />
+      </label>
+      <label>
+        <span>Credential ref</span>
+        <input
+          aria-label="Connector credential reference"
+          disabled={disabled}
+          onChange={(event) => onChange({ connector_credential_ref: event.target.value })}
+          placeholder="secret/provider/read-only"
+          value={form.connector_credential_ref}
+        />
+      </label>
+      <label>
+        <span>Notes</span>
+        <textarea
+          aria-label="Connector notes"
+          disabled={disabled}
+          onChange={(event) => onChange({ connector_notes: event.target.value })}
+          placeholder="Reference deployment secrets or setup notes; do not paste credentials."
+          value={form.connector_notes}
+        />
+      </label>
+    </div>
+  );
+}
+
 function SetupWizard({
   apiURL,
   canEnter,
@@ -5765,6 +6001,8 @@ function sourceTypeLabel(value: string) {
 
 function sourcePathPlaceholder(type: string) {
   switch (type) {
+    case 'connector':
+      return 'connector://provider/resource';
     case 'export':
       return '/sources/primary/exports';
     case 'network_share':
@@ -5798,7 +6036,7 @@ function sourceMountDescription(type: string) {
     case 'export':
       return 'Place exports under a mounted source root and scan the export folder.';
     case 'connector':
-      return 'Direct connectors are future work; use a synced folder or export path for now.';
+      return 'Capture connector handoff details now; direct connector workers will resolve these references later.';
     default:
       return 'Use the path the worker container can read, not the browser path.';
   }
@@ -5813,21 +6051,48 @@ function sourcePathExamples(type: string) {
     case 'export':
       return ['/sources/primary/exports', '/sources/primary/tickets', '/sources/primary/cases'];
     case 'connector':
-      return ['/sources/primary/exports', '/sources/primary/synced'];
+      return ['connector://sharepoint/site', 'connector://onedrive/drive', 'connector://tickets/project'];
     default:
       return ['/sources/primary', '/sources/primary/docs'];
   }
 }
 
 function sourceFormFromSource(source: ListDataSourcesResponse['sources'][number]) {
+  const connector = source.connector_config ?? {};
   return {
     type: source.type,
     name: source.name,
     root_path: source.root_path,
+    connector_provider: connector.provider ?? '',
+    connector_resource_id: connector.resource_id ?? '',
+    connector_credential_ref: connector.credential_ref ?? '',
+    connector_notes: connector.notes ?? '',
     include_patterns: (source.include_patterns ?? []).join('\n'),
     exclude_patterns: (source.exclude_patterns ?? []).join('\n'),
     scan_interval_minutes: String(source.scan_interval_minutes ?? 0),
   };
+}
+
+function connectorConfigFromSourceForm(form: SourceFormValues): ConnectorConfig {
+  return {
+    provider: form.connector_provider.trim(),
+    resource_id: form.connector_resource_id.trim(),
+    credential_ref: form.connector_credential_ref.trim(),
+    notes: form.connector_notes.trim(),
+  };
+}
+
+function sourceConnectorConfigured(config: ConnectorConfig = {}) {
+  return Boolean(
+    config.provider?.trim() ||
+      config.resource_id?.trim() ||
+      config.credential_ref?.trim() ||
+      config.notes?.trim(),
+  );
+}
+
+function sourceIsConnector(source: { type: string }) {
+  return source.type === 'connector';
 }
 
 function patternLinesToList(value: string) {
@@ -5838,6 +6103,10 @@ function patternLinesToList(value: string) {
 }
 
 function sourceScanSummary(source: ListDataSourcesResponse['sources'][number]) {
+  if (sourceIsConnector(source)) {
+    const connector = source.connector_config ?? {};
+    return connector.resource_id || connector.provider || source.root_path;
+  }
   if (!source.last_scan_at) {
     return source.root_path;
   }
@@ -6772,6 +7041,9 @@ function sourceListHealthLabel(
   planJob?: ListJobsResponse['jobs'][number],
   scanJob?: ListJobsResponse['jobs'][number],
 ) {
+  if (sourceIsConnector(source)) {
+    return 'Connector handoff';
+  }
   if (preflightJob && isActiveJobState(preflightJob.state)) {
     return 'Checking path';
   }
@@ -6946,7 +7218,7 @@ function sourceBulkActionIsEligible(
   latestPreflightJobs: Map<string, ListJobsResponse['jobs'][number]>,
   latestPlanJobs: Map<string, ListJobsResponse['jobs'][number]>,
 ) {
-  if (source.status === 'archived') {
+  if (source.status === 'archived' || sourceIsConnector(source)) {
     return false;
   }
   const activePreflightJob = activePreflightJobs.get(source.id);

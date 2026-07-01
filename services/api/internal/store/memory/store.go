@@ -509,6 +509,7 @@ func (s *Store) ListDueDataSources(ctx context.Context, now time.Time, limit int
 		if source.ScanIntervalMinutes <= 0 ||
 			source.NextScanAt == nil ||
 			source.NextScanAt.After(now) ||
+			source.Type == domain.DataSourceTypeConnector ||
 			source.Status == domain.DataSourceStatusArchived ||
 			source.Status == domain.DataSourceStatusScanning {
 			continue

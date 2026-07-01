@@ -31,6 +31,7 @@ type CreateDataSourceInput struct {
 	Type                domain.DataSourceType
 	Name                string
 	RootPath            string
+	ConnectorConfig     domain.ConnectorConfig
 	IncludePatterns     []string
 	ExcludePatterns     []string
 	ScanIntervalMinutes int
@@ -42,6 +43,7 @@ type UpdateDataSourceInput struct {
 	Type                domain.DataSourceType
 	Name                string
 	RootPath            string
+	ConnectorConfig     domain.ConnectorConfig
 	IncludePatterns     []string
 	ExcludePatterns     []string
 	ScanIntervalMinutes int
@@ -209,6 +211,7 @@ func (s DataSourceService) Create(ctx context.Context, input CreateDataSourceInp
 		Type:                input.Type,
 		Name:                input.Name,
 		RootPath:            input.RootPath,
+		ConnectorConfig:     input.ConnectorConfig,
 		IncludePatterns:     input.IncludePatterns,
 		ExcludePatterns:     input.ExcludePatterns,
 		ScanIntervalMinutes: input.ScanIntervalMinutes,
@@ -231,7 +234,7 @@ func (s DataSourceService) Update(ctx context.Context, input UpdateDataSourceInp
 	if err != nil {
 		return DataSourceResult{}, err
 	}
-	if err := source.Update(input.Name, input.Type, input.RootPath, input.IncludePatterns, input.ExcludePatterns, input.ScanIntervalMinutes, s.clock.Now()); err != nil {
+	if err := source.Update(input.Name, input.Type, input.RootPath, input.ConnectorConfig, input.IncludePatterns, input.ExcludePatterns, input.ScanIntervalMinutes, s.clock.Now()); err != nil {
 		return DataSourceResult{}, err
 	}
 	if err := s.repos.SaveDataSource(ctx, source); err != nil {

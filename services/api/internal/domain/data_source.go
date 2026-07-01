@@ -41,6 +41,7 @@ type DataSource struct {
 	Type                DataSourceType
 	Name                string
 	RootPath            string
+	ConnectorConfig     ConnectorConfig
 	IncludePatterns     []string
 	ExcludePatterns     []string
 	ScanIntervalMinutes int
@@ -52,6 +53,13 @@ type DataSource struct {
 	LastScanFailed      int
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+}
+
+type ConnectorConfig struct {
+	Provider      string `json:"provider,omitempty"`
+	ResourceID    string `json:"resource_id,omitempty"`
+	CredentialRef string `json:"credential_ref,omitempty"`
+	Notes         string `json:"notes,omitempty"`
 }
 
 type DataSourceScanEntry struct {
@@ -75,6 +83,7 @@ type DataSourceCreate struct {
 	Type                DataSourceType
 	Name                string
 	RootPath            string
+	ConnectorConfig     ConnectorConfig
 	IncludePatterns     []string
 	ExcludePatterns     []string
 	ScanIntervalMinutes int
@@ -112,6 +121,10 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 	if err != nil {
 		return DataSource{}, fmt.Errorf("data source scan interval: %w", err)
 	}
+	connectorConfig, err := NormalizeConnectorConfig(input.ConnectorConfig)
+	if err != nil {
+		return DataSource{}, fmt.Errorf("data source connector config: %w", err)
+	}
 	if emptyID(string(input.ID)) ||
 		emptyID(string(input.TenantID)) ||
 		emptyID(string(input.OwnerID)) ||
@@ -120,6 +133,7 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 		strings.TrimSpace(input.RootPath) == "" {
 		return DataSource{}, fmt.Errorf("data source: %w", ErrInvalidEntity)
 	}
+	scanIntervalMinutes = normalizeDataSourceScheduleForType(sourceType, scanIntervalMinutes)
 	now := input.Now
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -137,6 +151,7 @@ func NewDataSource(input DataSourceCreate) (DataSource, error) {
 		Type:                sourceType,
 		Name:                strings.TrimSpace(input.Name),
 		RootPath:            strings.TrimSpace(input.RootPath),
+		ConnectorConfig:     connectorConfig,
 		IncludePatterns:     includePatterns,
 		ExcludePatterns:     excludePatterns,
 		ScanIntervalMinutes: scanIntervalMinutes,
@@ -176,9 +191,13 @@ func NewDataSourceScanEntry(input DataSourceScanEntryCreate) (DataSourceScanEntr
 	}, nil
 }
 
-func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, includePatterns []string, excludePatterns []string, scanIntervalMinutes int, now time.Time) error {
+func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath string, connectorConfig ConnectorConfig, includePatterns []string, excludePatterns []string, scanIntervalMinutes int, now time.Time) error {
 	if sourceType == "" {
 		sourceType = s.Type
+	}
+	normalizedConnectorConfig, err := NormalizeConnectorConfig(connectorConfig)
+	if err != nil {
+		return fmt.Errorf("data source update connector config: %w", err)
 	}
 	normalizedInclude, err := NormalizeDataSourcePatterns(includePatterns)
 	if err != nil {
@@ -198,12 +217,14 @@ func (s *DataSource) Update(name string, sourceType DataSourceType, rootPath str
 		s.Status == DataSourceStatusArchived {
 		return fmt.Errorf("data source update: %w", ErrInvalidEntity)
 	}
+	normalizedInterval = normalizeDataSourceScheduleForType(sourceType, normalizedInterval)
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 	s.Name = strings.TrimSpace(name)
 	s.Type = sourceType
 	s.RootPath = strings.TrimSpace(rootPath)
+	s.ConnectorConfig = normalizedConnectorConfig
 	s.IncludePatterns = normalizedInclude
 	s.ExcludePatterns = normalizedExclude
 	intervalChanged := s.ScanIntervalMinutes != normalizedInterval
@@ -296,6 +317,13 @@ func (s *DataSource) ScheduleNextScan(now time.Time) {
 	next := now.Add(time.Duration(s.ScanIntervalMinutes) * time.Minute)
 	s.NextScanAt = &next
 	s.UpdatedAt = now
+}
+
+func normalizeDataSourceScheduleForType(sourceType DataSourceType, interval int) int {
+	if sourceType == DataSourceTypeConnector {
+		return 0
+	}
+	return interval
 }
 
 func (t DataSourceType) Valid() bool {
@@ -392,6 +420,42 @@ func NormalizeDataSourcePatterns(patterns []string) ([]string, error) {
 		}
 	}
 	return normalized, nil
+}
+
+const maxConnectorProviderLength = 80
+const maxConnectorResourceIDLength = 320
+const maxConnectorCredentialRefLength = 160
+const maxConnectorNotesLength = 500
+
+func NormalizeConnectorConfig(config ConnectorConfig) (ConnectorConfig, error) {
+	normalized := ConnectorConfig{
+		Provider:      strings.TrimSpace(config.Provider),
+		ResourceID:    strings.TrimSpace(config.ResourceID),
+		CredentialRef: strings.TrimSpace(config.CredentialRef),
+		Notes:         strings.TrimSpace(config.Notes),
+	}
+	if len(normalized.Provider) > maxConnectorProviderLength ||
+		len(normalized.ResourceID) > maxConnectorResourceIDLength ||
+		len(normalized.CredentialRef) > maxConnectorCredentialRefLength ||
+		len(normalized.Notes) > maxConnectorNotesLength {
+		return ConnectorConfig{}, fmt.Errorf("connector config is too long: %w", ErrInvalidEntity)
+	}
+	if containsControlCharacter(normalized.Provider) ||
+		containsControlCharacter(normalized.ResourceID) ||
+		containsControlCharacter(normalized.CredentialRef) ||
+		containsControlCharacter(normalized.Notes) {
+		return ConnectorConfig{}, fmt.Errorf("connector config contains control characters: %w", ErrInvalidEntity)
+	}
+	return normalized, nil
+}
+
+func containsControlCharacter(value string) bool {
+	for _, r := range value {
+		if r < 32 && r != '\n' && r != '\r' && r != '\t' {
+			return true
+		}
+	}
+	return false
 }
 
 func hasParentPathSegment(pattern string) bool {

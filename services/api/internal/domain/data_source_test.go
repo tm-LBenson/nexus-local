@@ -59,6 +59,76 @@ func TestNewDataSourceNormalizesPatterns(t *testing.T) {
 	}
 }
 
+func TestNewDataSourceNormalizesConnectorConfig(t *testing.T) {
+	source, err := NewDataSource(DataSourceCreate{
+		ID:       DataSourceID("src_1"),
+		TenantID: TenantID("tenant_1"),
+		OwnerID:  UserID("user_1"),
+		Type:     DataSourceTypeConnector,
+		Name:     "SharePoint Connector",
+		RootPath: "connector://sharepoint/support",
+		ConnectorConfig: ConnectorConfig{
+			Provider:      " sharepoint ",
+			ResourceID:    " site:team-support ",
+			CredentialRef: " secret/sharepoint/support ",
+			Notes:         " Customer-owned OAuth app ",
+		},
+	})
+	if err != nil {
+		t.Fatalf("new data source: %v", err)
+	}
+	if source.ConnectorConfig.Provider != "sharepoint" ||
+		source.ConnectorConfig.ResourceID != "site:team-support" ||
+		source.ConnectorConfig.CredentialRef != "secret/sharepoint/support" ||
+		source.ConnectorConfig.Notes != "Customer-owned OAuth app" {
+		t.Fatalf("connector config = %#v", source.ConnectorConfig)
+	}
+}
+
+func TestNewDataSourceRejectsInvalidConnectorConfig(t *testing.T) {
+	_, err := NewDataSource(DataSourceCreate{
+		ID:       DataSourceID("src_1"),
+		TenantID: TenantID("tenant_1"),
+		OwnerID:  UserID("user_1"),
+		Type:     DataSourceTypeConnector,
+		Name:     "SharePoint Connector",
+		RootPath: "connector://sharepoint/support",
+		ConnectorConfig: ConnectorConfig{
+			Provider: string([]byte{'b', 'a', 'd', 0}),
+		},
+	})
+	if !errors.Is(err, ErrInvalidEntity) {
+		t.Fatalf("err = %v, want invalid entity", err)
+	}
+}
+
+func TestConnectorDataSourceForcesManualSchedule(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	source, err := NewDataSource(DataSourceCreate{
+		ID:                  DataSourceID("src_1"),
+		TenantID:            TenantID("tenant_1"),
+		OwnerID:             UserID("user_1"),
+		Type:                DataSourceTypeConnector,
+		Name:                "SharePoint Connector",
+		RootPath:            "connector://sharepoint/support",
+		ScanIntervalMinutes: 1440,
+		Now:                 now,
+	})
+	if err != nil {
+		t.Fatalf("new data source: %v", err)
+	}
+	if source.ScanIntervalMinutes != 0 || source.NextScanAt != nil {
+		t.Fatalf("connector schedule = %d/%v, want manual", source.ScanIntervalMinutes, source.NextScanAt)
+	}
+
+	if err := source.Update("OneDrive Connector", DataSourceTypeConnector, "connector://onedrive/drive", ConnectorConfig{}, nil, nil, 60, now.Add(time.Hour)); err != nil {
+		t.Fatalf("update connector: %v", err)
+	}
+	if source.ScanIntervalMinutes != 0 || source.NextScanAt != nil {
+		t.Fatalf("updated connector schedule = %d/%v, want manual", source.ScanIntervalMinutes, source.NextScanAt)
+	}
+}
+
 func TestNewDataSourceCanScheduleScans(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	source, err := NewDataSource(DataSourceCreate{
@@ -143,7 +213,7 @@ func TestDataSourceUpdateAndArchive(t *testing.T) {
 		t.Fatalf("new data source: %v", err)
 	}
 	updatedAt := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
-	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", []string{"**/*.md"}, []string{"archive/**"}, 1440, updatedAt); err != nil {
+	if err := source.Update("Runbooks", DataSourceTypeNetworkShare, "\\\\nas\\runbooks", ConnectorConfig{}, []string{"**/*.md"}, []string{"archive/**"}, 1440, updatedAt); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if source.Name != "Runbooks" || source.Type != DataSourceTypeNetworkShare || source.RootPath != "\\\\nas\\runbooks" {
@@ -162,7 +232,7 @@ func TestDataSourceUpdateAndArchive(t *testing.T) {
 	if source.NextScanAt != nil {
 		t.Fatalf("next scan after archive = %v, want nil", source.NextScanAt)
 	}
-	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", nil, nil, 0, updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
+	if err := source.Update("Again", DataSourceTypeFolder, "C:\\Again", ConnectorConfig{}, nil, nil, 0, updatedAt.Add(2*time.Hour)); !errors.Is(err, ErrInvalidEntity) {
 		t.Fatalf("err = %v, want invalid entity", err)
 	}
 }
