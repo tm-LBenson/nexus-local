@@ -3234,10 +3234,12 @@ export function App() {
                     void openDocument(document);
                   }}
                   onRefresh={() => void refreshWorkspaceOverview()}
+                  onRetryDocument={(document) => void retryDocumentIngestion(document.id)}
                   onViewActivity={() => setActiveView('activity')}
                   onViewLibrary={() => setActiveView('documents')}
                   processingDocumentCount={processingDocumentCount}
                   readyDocumentCount={readyDocumentCount}
+                  retryingDocumentID={retryingDocumentID}
                 />
 
                 {(freshWorkspace ||
@@ -6661,10 +6663,12 @@ function DashboardAttentionPanel({
   onConnectSource,
   onOpenDocument,
   onRefresh,
+  onRetryDocument,
   onViewActivity,
   onViewLibrary,
   processingDocumentCount,
   readyDocumentCount,
+  retryingDocumentID,
 }: {
   activeDocuments: ListDocumentsResponse['documents'];
   activeJobs: ListJobsResponse['jobs'];
@@ -6673,10 +6677,12 @@ function DashboardAttentionPanel({
   onConnectSource: () => void;
   onOpenDocument: (document: ListDocumentsResponse['documents'][number]) => void;
   onRefresh: () => void;
+  onRetryDocument: (document: ListDocumentsResponse['documents'][number]) => void;
   onViewActivity: () => void;
   onViewLibrary: () => void;
   processingDocumentCount: number;
   readyDocumentCount: number;
+  retryingDocumentID: string;
 }) {
   const failedDocumentIDs = new Set(failedDocuments.map((document) => document.id));
   const activeDocumentIDs = new Set(activeDocuments.map((document) => document.id));
@@ -6772,16 +6778,26 @@ function DashboardAttentionPanel({
 
         <div className="attentionFeed">
           {visibleFailedDocuments.map((document) => (
-            <button
+            <div
               className="attentionItem attentionItemFailed"
               key={document.id}
-              onClick={() => onOpenDocument(document)}
-              type="button"
             >
-              <strong>{document.name}</strong>
+              <button
+                className="attentionItemMain"
+                onClick={() => onOpenDocument(document)}
+                type="button"
+              >
+                <strong>{document.name}</strong>
+              </button>
               <span className={stateClass(document.status)}>{document.status}</span>
-              <em>Open</em>
-            </button>
+              <button
+                disabled={retryingDocumentID === document.id}
+                onClick={() => onRetryDocument(document)}
+                type="button"
+              >
+                {retryingDocumentID === document.id ? 'Retrying' : 'Retry'}
+              </button>
+            </div>
           ))}
           {visibleFailedJobs.map((job) => (
             <button
