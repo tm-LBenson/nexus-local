@@ -1004,7 +1004,7 @@ func createDataSourceHandler(service app.DataSourceService, authorizer internala
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1134,7 +1134,7 @@ func updateDataSourceHandler(service app.DataSourceService, authorizer internala
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1162,7 +1162,7 @@ func updateDataSourceHandler(service app.DataSourceService, authorizer internala
 func scanDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1185,7 +1185,7 @@ func scanDataSourceHandler(service app.DataSourceService, authorizer internalaut
 func cancelDataSourceScanHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1208,7 +1208,7 @@ func cancelDataSourceScanHandler(service app.DataSourceService, authorizer inter
 func preflightDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1231,7 +1231,7 @@ func preflightDataSourceHandler(service app.DataSourceService, authorizer intern
 func planDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1254,7 +1254,7 @@ func planDataSourceHandler(service app.DataSourceService, authorizer internalaut
 func reindexDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionImportSources)
 		if !ok {
 			return
 		}
@@ -1283,7 +1283,7 @@ func reindexDataSourceHandler(service app.DataSourceService, authorizer internal
 func retryFailedDataSourceDocumentsHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1312,7 +1312,7 @@ func retryFailedDataSourceDocumentsHandler(service app.DataSourceService, author
 func archiveDataSourceHandler(service app.DataSourceService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1378,7 +1378,7 @@ func createSourceViewHandler(service app.SourceViewService, authorizer internala
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1405,7 +1405,7 @@ func updateSourceViewHandler(service app.SourceViewService, authorizer internala
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1427,7 +1427,7 @@ func updateSourceViewHandler(service app.SourceViewService, authorizer internala
 func deleteSourceViewHandler(service app.SourceViewService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1516,7 +1516,7 @@ func createSourcePolicyProfileHandler(service app.SourcePolicyProfileService, au
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1546,7 +1546,7 @@ func updateSourcePolicyProfileHandler(service app.SourcePolicyProfileService, au
 			return
 		}
 		tenantID := domain.TenantID(req.TenantID)
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}
@@ -1571,7 +1571,7 @@ func updateSourcePolicyProfileHandler(service app.SourcePolicyProfileService, au
 func deleteSourcePolicyProfileHandler(service app.SourcePolicyProfileService, authorizer internalauth.Authorizer, audit app.AuditService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := domain.TenantID(r.URL.Query().Get("tenant_id"))
-		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionUploadDocuments)
+		principal, ok := requireTenantPermission(w, r, authorizer, tenantID, domain.PermissionManageSources)
 		if !ok {
 			return
 		}

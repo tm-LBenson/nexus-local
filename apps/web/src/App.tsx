@@ -586,6 +586,10 @@ export function App() {
   const workspaceLabel = selectedTenant?.tenant.name ?? (tenantID || 'No workspace');
   const canManageTenant = selectedTenant?.role === 'owner' || selectedTenant?.role === 'admin';
   const canManageMembers = canManageTenant;
+  const canWriteKnowledge = roleCanWriteKnowledge(selectedTenant?.role);
+  const canUploadDocuments = canWriteKnowledge;
+  const canManageSources = canWriteKnowledge;
+  const canImportSources = canWriteKnowledge;
   const ownerCount = tenantMembers?.members.filter((member) => member.role === 'owner').length ?? 0;
   const activeJobs = useMemo(
     () => jobs?.jobs.filter((job) => isActiveJobState(job.state)) ?? [],
@@ -1082,6 +1086,10 @@ export function App() {
   }
 
   async function saveSourceView() {
+    if (!canManageSources) {
+      setError('Member access is required to save source views');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1124,6 +1132,10 @@ export function App() {
   }
 
   async function removeSourceView(viewID: string) {
+    if (!canManageSources) {
+      setError('Member access is required to remove source views');
+      return;
+    }
     const view = sourceSavedViews.find((savedView) => savedView.id === viewID);
     setDeletingSourceViewID(viewID);
     setError(null);
@@ -1139,6 +1151,10 @@ export function App() {
   }
 
   async function saveSourcePolicyProfile(form: SourceFormValues) {
+    if (!canManageSources) {
+      setError('Member access is required to save source policies');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1185,6 +1201,10 @@ export function App() {
   }
 
   async function removeSourcePolicyProfile(profileID: string) {
+    if (!canManageSources) {
+      setError('Member access is required to remove source policies');
+      return;
+    }
     const profile = customSourcePolicyProfiles.find((item) => item.id === profileID);
     setDeletingSourcePolicyProfileID(profileID);
     setError(null);
@@ -1466,6 +1486,10 @@ export function App() {
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canUploadDocuments) {
+      setError('Member access is required to upload documents');
+      return;
+    }
     if (!file) {
       setError('Choose a file');
       return;
@@ -1474,6 +1498,10 @@ export function App() {
   }
 
   async function uploadSampleDocument() {
+    if (!canUploadDocuments) {
+      setError('Member access is required to add sample documents');
+      return;
+    }
     await runSampleFlow(tenantID);
   }
 
@@ -1600,6 +1628,10 @@ export function App() {
   }
 
   async function uploadWorkspaceFile(nextFile: File, nextTenantID = tenantID) {
+    if (!canUploadDocuments) {
+      setError('Member access is required to upload documents');
+      return null;
+    }
     if (!nextTenantID) {
       setError('Create a workspace first');
       return null;
@@ -1682,7 +1714,7 @@ export function App() {
         {profile.persisted && (
           <button
             className="sourcePolicyRemove"
-            disabled={removing || savingSourcePolicyProfile}
+            disabled={!canManageSources || removing || savingSourcePolicyProfile}
             onClick={() => void removeSourcePolicyProfile(profile.id)}
             type="button"
           >
@@ -1695,6 +1727,10 @@ export function App() {
 
   async function submitDataSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageSources) {
+      setError('Member access is required to add sources');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1771,6 +1807,10 @@ export function App() {
 
   async function submitSourceUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageSources) {
+      setError('Member access is required to edit sources');
+      return;
+    }
     if (!tenantID || !sourceDetail) {
       setError('Open a source first');
       return;
@@ -1813,6 +1853,10 @@ export function App() {
     source: ListDataSourcesResponse['sources'][number],
     deleteDocuments = false,
   ) {
+    if (!canManageSources) {
+      setError('Member access is required to archive sources');
+      return;
+    }
     const prompt = deleteDocuments
       ? `Archive ${source.name} and delete documents imported from this source?`
       : `Archive ${source.name}?`;
@@ -1847,6 +1891,10 @@ export function App() {
   }
 
   async function requestDataSourcePreflight(source: ListDataSourcesResponse['sources'][number]) {
+    if (!canImportSources) {
+      setError('Member access is required to check source paths');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1877,6 +1925,10 @@ export function App() {
   }
 
   async function requestDataSourcePlan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!canImportSources) {
+      setError('Member access is required to plan imports');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1907,6 +1959,10 @@ export function App() {
   }
 
   async function requestDataSourceScan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!canImportSources) {
+      setError('Member access is required to run source imports');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -1960,6 +2016,10 @@ export function App() {
   }
 
   async function runSourceBulkAction(action: SourceBulkAction) {
+    if (!canImportSources) {
+      setError('Member access is required to run source actions');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -2034,6 +2094,10 @@ export function App() {
   }
 
   async function cancelSourceScan(source: ListDataSourcesResponse['sources'][number]) {
+    if (!canImportSources) {
+      setError('Member access is required to cancel source imports');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -2065,6 +2129,10 @@ export function App() {
   }
 
   async function requestDataSourceReindex(source: ListDataSourcesResponse['sources'][number]) {
+    if (!canImportSources) {
+      setError('Member access is required to reindex source documents');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -2092,6 +2160,10 @@ export function App() {
   async function requestRetryFailedSourceDocuments(
     source: ListDataSourcesResponse['sources'][number],
   ) {
+    if (!canImportSources) {
+      setError('Member access is required to retry failed source documents');
+      return;
+    }
     if (!tenantID) {
       setError('Create a workspace first');
       return;
@@ -2354,6 +2426,10 @@ export function App() {
   }
 
   async function removeDocument(documentID: string, name: string) {
+    if (!canUploadDocuments) {
+      setError('Member access is required to delete documents');
+      return;
+    }
     if (!window.confirm(`Delete ${name}?`)) {
       return;
     }
@@ -2379,6 +2455,10 @@ export function App() {
   }
 
   async function retryDocumentIngestion(documentID: string) {
+    if (!canUploadDocuments) {
+      setError('Member access is required to retry document ingestion');
+      return;
+    }
     setRetryingDocumentID(documentID);
     setError(null);
     try {
@@ -2733,7 +2813,9 @@ export function App() {
                           Boolean(sampleDocument && sampleDocument.status === 'ready'),
                           Boolean(sampleDocument && sampleDocument.status === 'failed'),
                         )}
-                        disabled={submitting || uploadingSample || !workspaceReady}
+                        disabled={
+                          submitting || uploadingSample || !workspaceReady || !canUploadDocuments
+                        }
                         onClick={() => void runSampleFlow(tenantID)}
                         type="button"
                       >
@@ -2949,6 +3031,7 @@ export function App() {
                     accept={supportedDocumentAccept}
                     className="fileInput"
                     id="dashboard-document-upload"
+                    disabled={!canUploadDocuments}
                     type="file"
                     onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                   />
@@ -2957,13 +3040,16 @@ export function App() {
                     <span>{file?.name ?? 'Markdown, text, PDF, CSV, JSON'}</span>
                   </label>
                   <button
-                    disabled={submitting || uploadingSample || !workspaceReady}
+                    disabled={submitting || uploadingSample || !workspaceReady || !canUploadDocuments}
                     onClick={() => void uploadSampleDocument()}
                     type="button"
                   >
                     {uploadingSample ? 'Adding' : 'Sample'}
                   </button>
-                  <button disabled={submitting || uploadingSample || !workspaceReady} type="submit">
+                  <button
+                    disabled={submitting || uploadingSample || !workspaceReady || !canUploadDocuments}
+                    type="submit"
+                  >
                     {submitting ? 'Uploading' : 'Upload'}
                   </button>
                 </form>
@@ -3197,7 +3283,12 @@ export function App() {
                         value={sourcePolicyDetail}
                       />
                       <button
-                        disabled={!tenantID || !sourcePolicyName.trim() || savingSourcePolicyProfile}
+                        disabled={
+                          !canManageSources ||
+                          !tenantID ||
+                          !sourcePolicyName.trim() ||
+                          savingSourcePolicyProfile
+                        }
                         onClick={() => void saveSourcePolicyProfile(sourceForm)}
                         type="button"
                       >
@@ -3207,7 +3298,7 @@ export function App() {
                     </div>
                     <div className="sourcePolicyGrid">
                       {sourcePolicyProfiles.map((profile) =>
-                        renderSourcePolicyProfile(profile, applySourcePolicy),
+                        renderSourcePolicyProfile(profile, applySourcePolicy, !canManageSources),
                       )}
                     </div>
                   </details>
@@ -3312,7 +3403,10 @@ export function App() {
                       />
                     </label>
                   </div>
-                  <button disabled={creatingSource || !workspaceReady} type="submit">
+                  <button
+                    disabled={creatingSource || !workspaceReady || !canManageSources}
+                    type="submit"
+                  >
                     {creatingSource ? 'Adding' : 'Add'}
                   </button>
                 </form>
@@ -3350,7 +3444,12 @@ export function App() {
                         value={sourceViewName}
                       />
                       <button
-                        disabled={!sourceFiltersActive || !sourceViewName.trim() || savingSourceView}
+                        disabled={
+                          !canManageSources ||
+                          !sourceFiltersActive ||
+                          !sourceViewName.trim() ||
+                          savingSourceView
+                        }
                         onClick={() => void saveSourceView()}
                         type="button"
                       >
@@ -3370,7 +3469,7 @@ export function App() {
                             </button>
                             <button
                               aria-label={`Remove ${sourceSavedViewLabel(view)}`}
-                              disabled={deletingSourceViewID === view.id}
+                              disabled={!canManageSources || deletingSourceViewID === view.id}
                               onClick={() => void removeSourceView(view.id)}
                               type="button"
                             >
@@ -3464,7 +3563,11 @@ export function App() {
                       ['preflight', 'plan', 'scan', 'retry_failures', 'reindex'] as SourceBulkAction[]
                     ).map((action) => (
                       <button
-                        disabled={sourceBulkAction !== '' || sourceBulkActionCounts[action] === 0}
+                        disabled={
+                          !canImportSources ||
+                          sourceBulkAction !== '' ||
+                          sourceBulkActionCounts[action] === 0
+                        }
                         key={action}
                         onClick={() => void runSourceBulkAction(action)}
                         type="button"
@@ -3552,6 +3655,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              !canImportSources ||
                               connectorSource ||
                               Boolean(preflightJob) ||
                               preflightingSourceID === source.id ||
@@ -3571,6 +3675,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              !canImportSources ||
                               connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
@@ -3594,6 +3699,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              !canImportSources ||
                               connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
@@ -3619,6 +3725,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              !canImportSources ||
                               connectorSource ||
                               Boolean(planJob) ||
                               Boolean(preflightJob) ||
@@ -3640,6 +3747,7 @@ export function App() {
                           <button
                             className="dangerButton"
                             disabled={
+                              !canManageSources ||
                               archivingSourceID === source.id ||
                               deletingSourceDocumentsID === source.id
                             }
@@ -3694,6 +3802,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          !canImportSources ||
                           sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePreflightJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePreflightJob(sourceDetail) ||
@@ -3713,6 +3822,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          !canImportSources ||
                           sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePlanJob(sourceDetail) ||
@@ -3738,6 +3848,7 @@ export function App() {
                       </button>
                       <button
                         disabled={
+                          !canImportSources ||
                           sourceIsConnector(sourceDetail.source) ||
                           Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                           sourceHasActivePlanJob(sourceDetail) ||
@@ -3771,6 +3882,7 @@ export function App() {
                         <div className="rowMenuActions">
                           <button
                             disabled={
+                              !canImportSources ||
                               sourceIsConnector(sourceDetail.source) ||
                               reindexingSourceID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
@@ -3792,6 +3904,7 @@ export function App() {
                           </button>
                           <button
                             disabled={
+                              !canImportSources ||
                               sourceIsConnector(sourceDetail.source) ||
                               retryingSourceFailuresID === sourceDetail.source.id ||
                               sourceDetail.source.status === 'archived' ||
@@ -3815,6 +3928,7 @@ export function App() {
                           <button
                             className="dangerButton"
                             disabled={
+                              !canManageSources ||
                               sourceDetail.source.status === 'archived' ||
                               archivingSourceID === sourceDetail.source.id ||
                               deletingSourceDocumentsID === sourceDetail.source.id
@@ -3827,6 +3941,7 @@ export function App() {
                           <button
                             className="dangerButton"
                             disabled={
+                              !canManageSources ||
                               sourceIsConnector(sourceDetail.source) ||
                               deletingSourceDocumentsID === sourceDetail.source.id ||
                               Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
@@ -3893,6 +4008,7 @@ export function App() {
                       />
                       <SourceScanRunStatus
                         activeJob={activeSourceScanJobs.get(sourceDetail.source.id)}
+                        cancelDisabled={!canImportSources}
                         canceling={cancelingSourceScanID === sourceDetail.source.id}
                         detail={sourceDetail}
                         onCancel={() => void cancelSourceScan(sourceDetail.source)}
@@ -4057,6 +4173,7 @@ export function App() {
                         </button>
                         <button
                           disabled={
+                            !canImportSources ||
                             Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
                             sourceHasActivePlanJob(sourceDetail) ||
                             sourceScanBlockedByPlan(sourceDetail) ||
@@ -4093,6 +4210,7 @@ export function App() {
                       <div className="sourceRecoveryActions">
                         <button
                           disabled={
+                            !canImportSources ||
                             retryingSourceFailuresID === sourceDetail.source.id ||
                             sourceDetail.source.status === 'archived' ||
                             Boolean(activeSourcePlanJobs.get(sourceDetail.source.id)) ||
@@ -4123,6 +4241,7 @@ export function App() {
                           <input
                             aria-label="Edit policy profile name"
                             disabled={
+                              !canManageSources ||
                               sourceDetail.source.status === 'archived' ||
                               savingSourceID === sourceDetail.source.id
                             }
@@ -4133,6 +4252,7 @@ export function App() {
                           <input
                             aria-label="Edit policy profile note"
                             disabled={
+                              !canManageSources ||
                               sourceDetail.source.status === 'archived' ||
                               savingSourceID === sourceDetail.source.id
                             }
@@ -4142,6 +4262,7 @@ export function App() {
                           />
                           <button
                             disabled={
+                              !canManageSources ||
                               !tenantID ||
                               !sourcePolicyName.trim() ||
                               savingSourcePolicyProfile ||
@@ -4161,7 +4282,8 @@ export function App() {
                               profile,
                               applySourceEditPolicy,
                               sourceDetail.source.status === 'archived' ||
-                                savingSourceID === sourceDetail.source.id,
+                                savingSourceID === sourceDetail.source.id ||
+                                !canManageSources,
                             ),
                           )}
                         </div>
@@ -4169,6 +4291,7 @@ export function App() {
                       <input
                         aria-label="Edit source name"
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4183,6 +4306,7 @@ export function App() {
                       <select
                         aria-label="Edit source type"
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4203,6 +4327,7 @@ export function App() {
                       <input
                         aria-label="Edit source path"
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4217,6 +4342,7 @@ export function App() {
                       <select
                         aria-label="Edit source schedule"
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4236,6 +4362,7 @@ export function App() {
                       </select>
                       <SourceConnectorFields
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4250,6 +4377,7 @@ export function App() {
                           <textarea
                             aria-label="Edit source include patterns"
                             disabled={
+                              !canManageSources ||
                               sourceDetail.source.status === 'archived' ||
                               savingSourceID === sourceDetail.source.id
                             }
@@ -4268,6 +4396,7 @@ export function App() {
                           <textarea
                             aria-label="Edit source exclude patterns"
                             disabled={
+                              !canManageSources ||
                               sourceDetail.source.status === 'archived' ||
                               savingSourceID === sourceDetail.source.id
                             }
@@ -4284,6 +4413,7 @@ export function App() {
                       </div>
                       <button
                         disabled={
+                          !canManageSources ||
                           sourceDetail.source.status === 'archived' ||
                           savingSourceID === sourceDetail.source.id
                         }
@@ -4418,6 +4548,7 @@ export function App() {
                 accept={supportedDocumentAccept}
                 className="fileInput"
                 id="library-document-upload"
+                disabled={!canUploadDocuments}
                 type="file"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
@@ -4426,13 +4557,16 @@ export function App() {
                 <span>{file?.name ?? 'Markdown, text, PDF, CSV, JSON'}</span>
               </label>
               <button
-                disabled={submitting || uploadingSample || !workspaceReady}
+                disabled={submitting || uploadingSample || !workspaceReady || !canUploadDocuments}
                 onClick={() => void uploadSampleDocument()}
                 type="button"
               >
                 {uploadingSample ? 'Adding' : 'Sample'}
               </button>
-              <button disabled={submitting || uploadingSample || !workspaceReady} type="submit">
+              <button
+                disabled={submitting || uploadingSample || !workspaceReady || !canUploadDocuments}
+                type="submit"
+              >
                 {submitting ? 'Uploading' : 'Upload'}
               </button>
             </form>
@@ -4505,7 +4639,7 @@ export function App() {
                       </button>
                       {document.status === 'failed' && (
                         <button
-                          disabled={retryingDocumentID === document.id || active}
+                          disabled={!canUploadDocuments || retryingDocumentID === document.id || active}
                           onClick={() => void retryDocumentIngestion(document.id)}
                           type="button"
                         >
@@ -4521,7 +4655,7 @@ export function App() {
                         <div className="rowMenuActions">
                           <button
                             className="dangerButton"
-                            disabled={deletingDocumentID === document.id || active}
+                            disabled={!canUploadDocuments || deletingDocumentID === document.id || active}
                             onClick={() => void removeDocument(document.id, document.name)}
                             type="button"
                           >
@@ -6091,6 +6225,10 @@ function sourceConnectorConfigured(config: ConnectorConfig = {}) {
   );
 }
 
+function roleCanWriteKnowledge(role?: string) {
+  return role === 'owner' || role === 'admin' || role === 'member';
+}
+
 function sourceIsConnector(source: { type: string }) {
   return source.type === 'connector';
 }
@@ -7374,6 +7512,7 @@ function sourceScheduleFilterValue(source: ListDataSourcesResponse['sources'][nu
 
 function SourceScanRunStatus({
   activeJob,
+  cancelDisabled,
   canceling,
   detail,
   onCancel,
@@ -7381,6 +7520,7 @@ function SourceScanRunStatus({
   refreshing,
 }: {
   activeJob?: ListJobsResponse['jobs'][number];
+  cancelDisabled: boolean;
   canceling: boolean;
   detail: DataSourceDetailResponse;
   onCancel: () => void;
@@ -7425,7 +7565,12 @@ function SourceScanRunStatus({
           {refreshing ? 'Refreshing' : 'Refresh'}
         </button>
         {active && (
-          <button className="dangerButton" disabled={canceling} onClick={onCancel} type="button">
+          <button
+            className="dangerButton"
+            disabled={cancelDisabled || canceling}
+            onClick={onCancel}
+            type="button"
+          >
             {canceling ? 'Canceling' : 'Cancel'}
           </button>
         )}

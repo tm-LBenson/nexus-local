@@ -15,8 +15,12 @@ func TestRolePermissions(t *testing.T) {
 		{RoleAdmin, PermissionManageTenant, true},
 		{RoleMember, PermissionManageTenant, false},
 		{RoleMember, PermissionUseAI, true},
+		{RoleMember, PermissionManageSources, true},
+		{RoleMember, PermissionImportSources, true},
 		{RoleViewer, PermissionUploadDocuments, false},
 		{RoleViewer, PermissionReadDocuments, true},
+		{RoleViewer, PermissionManageSources, false},
+		{RoleViewer, PermissionImportSources, false},
 	}
 
 	for _, tc := range cases {

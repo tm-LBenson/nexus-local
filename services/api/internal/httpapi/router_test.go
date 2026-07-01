@@ -2372,6 +2372,131 @@ func TestTrustedHeaderModeRejectsUserWithoutTenantPermission(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderViewerCanReadButCannotManageSources(t *testing.T) {
+	server := newTestServerWithConfigAndSeed(t, trustedHeaderTestConfig(), func(repos *memory.Store) {
+		seedTenantMembership(t, repos, domain.UserID("viewer_1"), domain.RoleViewer)
+		source, err := domain.NewDataSource(domain.DataSourceCreate{
+			ID:       domain.DataSourceID("src_readonly"),
+			TenantID: domain.TenantID("tenant_1"),
+			OwnerID:  domain.UserID("viewer_1"),
+			Type:     domain.DataSourceTypeFolder,
+			Name:     "Readonly Source",
+			RootPath: "C:\\Docs",
+			Now:      time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("new source: %v", err)
+		}
+		if err := repos.SaveDataSource(context.Background(), source); err != nil {
+			t.Fatalf("save source: %v", err)
+		}
+	})
+
+	listResp := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/data-sources?tenant_id=tenant_1", nil)
+	listReq.Header.Set("X-User-ID", "viewer_1")
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body = %s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+
+	createResp := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "folder",
+		"name": "Blocked Source",
+		"root_path": "C:\\Docs"
+	}`))
+	createReq.Header.Set("X-User-ID", "viewer_1")
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusForbidden {
+		t.Fatalf("create status = %d, want %d, body = %s", createResp.Code, http.StatusForbidden, createResp.Body.String())
+	}
+
+	scanResp := httptest.NewRecorder()
+	scanReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_readonly/scan?tenant_id=tenant_1", nil)
+	scanReq.Header.Set("X-User-ID", "viewer_1")
+	server.ServeHTTP(scanResp, scanReq)
+	if scanResp.Code != http.StatusForbidden {
+		t.Fatalf("scan status = %d, want %d, body = %s", scanResp.Code, http.StatusForbidden, scanResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderMemberCanManageAndImportSources(t *testing.T) {
+	server := newTestServerWithConfigAndSeed(t, trustedHeaderTestConfig(), func(repos *memory.Store) {
+		seedTenantMembership(t, repos, domain.UserID("member_1"), domain.RoleMember)
+	})
+
+	createResp := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"type": "folder",
+		"name": "Member Source",
+		"root_path": "C:\\Docs"
+	}`))
+	createReq.Header.Set("X-User-ID", "member_1")
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body = %s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+
+	scanResp := httptest.NewRecorder()
+	scanReq := httptest.NewRequest(http.MethodPost, "/v1/data-sources/src_http/scan?tenant_id=tenant_1", nil)
+	scanReq.Header.Set("X-User-ID", "member_1")
+	server.ServeHTTP(scanResp, scanReq)
+	if scanResp.Code != http.StatusAccepted {
+		t.Fatalf("scan status = %d, want %d, body = %s", scanResp.Code, http.StatusAccepted, scanResp.Body.String())
+	}
+}
+
+func trustedHeaderTestConfig() config.Config {
+	return config.Config{
+		AuthMode:            internalauth.ModeTrustedHeader,
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	}
+}
+
+func seedTenantMembership(t *testing.T, repos *memory.Store, userID domain.UserID, role domain.Role) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	tenant, err := domain.NewTenant(domain.TenantCreate{
+		ID:   domain.TenantID("tenant_1"),
+		Name: "Test Workspace",
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("new tenant: %v", err)
+	}
+	if err := repos.SaveTenant(ctx, tenant); err != nil {
+		t.Fatalf("save tenant: %v", err)
+	}
+	user, err := domain.NewUser(domain.UserCreate{
+		ID:    userID,
+		Email: fmt.Sprintf("%s@example.test", userID),
+		Name:  string(userID),
+		Now:   now,
+	})
+	if err != nil {
+		t.Fatalf("new user: %v", err)
+	}
+	if err := repos.SaveUser(ctx, user); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+	membership, err := domain.NewMembership(domain.MembershipCreate{
+		TenantID: tenant.ID,
+		UserID:   user.ID,
+		Role:     role,
+	})
+	if err != nil {
+		t.Fatalf("new membership: %v", err)
+	}
+	if err := repos.SaveMembership(ctx, membership); err != nil {
+		t.Fatalf("save membership: %v", err)
+	}
+}
+
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 

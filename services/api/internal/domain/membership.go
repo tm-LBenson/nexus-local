@@ -19,6 +19,8 @@ const (
 	PermissionUseAI           Permission = "ai.use"
 	PermissionUploadDocuments Permission = "documents.upload"
 	PermissionReadDocuments   Permission = "documents.read"
+	PermissionManageSources   Permission = "sources.manage"
+	PermissionImportSources   Permission = "sources.import"
 )
 
 type Membership struct {
@@ -63,11 +65,15 @@ func (r Role) Allows(permission Permission) bool {
 			permission == PermissionManageUsers ||
 			permission == PermissionUseAI ||
 			permission == PermissionUploadDocuments ||
-			permission == PermissionReadDocuments
+			permission == PermissionReadDocuments ||
+			permission == PermissionManageSources ||
+			permission == PermissionImportSources
 	case RoleMember:
 		return permission == PermissionUseAI ||
 			permission == PermissionUploadDocuments ||
-			permission == PermissionReadDocuments
+			permission == PermissionReadDocuments ||
+			permission == PermissionManageSources ||
+			permission == PermissionImportSources
 	case RoleViewer:
 		return permission == PermissionReadDocuments
 	default:

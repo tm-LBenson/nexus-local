@@ -62,6 +62,7 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 | 2.37 | Team-shared source views. | Saved source-list views are persisted per workspace so operators share repeat triage filters across browsers and machines. |
 | 2.38 | Team-shared source policy profiles. | Custom include/exclude/schedule bundles are persisted per workspace so operators share repeat import rules across browsers and machines. |
 | 2.39 | Connector handoff and credential reference scaffolding. | Connector sources preserve provider, resource, credential reference, and deployment notes without storing secrets or triggering filesystem scan jobs. |
+| 2.40 | Source management and import permissions review. | Backend source routes use explicit source permissions and the UI keeps read-only users out of upload, source edit, and import actions. |
 
 ## Current Status
 
@@ -69,7 +70,8 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 - Done: Slice 2.37 team-shared source views backed by the API and persistence layer.
 - Done: Slice 2.38 team-shared source policy profiles backed by the API and persistence layer.
 - Done: Slice 2.39 connector handoff records backed by the API, database, audit log, and Library UI.
-- Next: Direct connector workers or source import permissions review.
+- Done: Slice 2.40 source/import permission split backed by trusted-header authorization tests and read-only-aware UI controls.
+- Next: Direct connector workers or Phase 3 retrieval evaluation fixtures.
 
 ## Dependencies
 
@@ -86,4 +88,4 @@ Real customers will not upload one file at a time. They will have OneDrive, Team
 
 ## First Build Candidate
 
-Slices 2.1 through 2.39 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, richer batch import reporting in the UI, customer-shaped stress fixtures, worker-context source path preflight checks, preflight-guided source onboarding, worker-side source import dry-run planning, plan-guided first scan safety, a paged import-plan review surface, durable source scan run summaries, source scan cancellation, compact source run history, operator source health rollups, source list search/filter controls, filtered source bulk actions, saved source views, filtered source recovery actions, reusable source import policy profiles, team-shared source views, team-shared source policy profiles, and connector handoff records for customer-owned systems. Next, decide whether direct connector workers or source import permissions review should lead the next build slice.
+Slices 2.1 through 2.40 establish the basic managed-source pipeline, source-level observability, unchanged-file scan skips, changed-file replacement, missing-file cleanup, app-owned source management, explicit destructive cleanup, manual reindexing, configurable source filters, scheduled source scans, latest-scan outcome review, paged scan export, first-run source mounting guidance, connector-oriented source templates, source scan recovery actions, live source scan progress, source-level failed document retry, configurable document ingestion concurrency, a repeatable managed-source stress gate, richer batch import reporting in the UI, customer-shaped stress fixtures, worker-context source path preflight checks, preflight-guided source onboarding, worker-side source import dry-run planning, plan-guided first scan safety, a paged import-plan review surface, durable source scan run summaries, source scan cancellation, compact source run history, operator source health rollups, source list search/filter controls, filtered source bulk actions, saved source views, filtered source recovery actions, reusable source import policy profiles, team-shared source views, team-shared source policy profiles, connector handoff records for customer-owned systems, and explicit source/import permissions. Next, decide whether direct connector workers or Phase 3 retrieval evaluation fixtures should lead the next build slice.
