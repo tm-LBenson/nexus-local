@@ -222,6 +222,42 @@ func TestAskRewritesVagueFollowUpForRetrievalOnly(t *testing.T) {
 	}
 }
 
+func TestPromptMessagesRequireGroundingCitationsAndMissingContext(t *testing.T) {
+	messages := promptMessages(nil, "What is the refund approval policy?", nil)
+	if len(messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages))
+	}
+
+	system := strings.ToLower(messages[0].Content)
+	requiredSystemPhrases := []string{
+		"enterprise knowledge-base assistant",
+		"retrieved context",
+		"bracketed citations",
+		"does not have enough context",
+		"do not invent",
+		"pii",
+		"general guidance",
+	}
+	for _, phrase := range requiredSystemPhrases {
+		if !strings.Contains(system, phrase) {
+			t.Fatalf("system prompt missing %q: %q", phrase, messages[0].Content)
+		}
+	}
+
+	userPrompt := messages[1].Content
+	requiredUserPhrases := []string{
+		"Question:\nWhat is the refund approval policy?",
+		"Retrieved context:",
+		"No relevant document chunks were retrieved.",
+		"knowledge base does not contain enough context",
+	}
+	for _, phrase := range requiredUserPhrases {
+		if !strings.Contains(userPrompt, phrase) {
+			t.Fatalf("user prompt missing %q: %q", phrase, userPrompt)
+		}
+	}
+}
+
 func TestAskStreamEmitsDeltasAndStoresFinalMessage(t *testing.T) {
 	ctx := context.Background()
 	repos := memory.New()

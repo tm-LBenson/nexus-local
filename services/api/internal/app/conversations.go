@@ -19,6 +19,8 @@ const (
 	maxHistoryMessages           = 12
 )
 
+const askSystemPrompt = "You are Nexus Local, an enterprise knowledge-base assistant. Answer primarily from the retrieved context and cite source-supported claims with bracketed citations like [1] or [2]. If the retrieved context is empty or does not contain enough evidence, say the knowledge base does not have enough context and ask for the missing documents or details. Do not invent customer-specific facts, policies, account status, credentials, security posture, or PII. You may give brief general guidance only when it is clearly labeled as general guidance and not presented as a sourced Nexus Local answer."
+
 var ErrConversationModelUnavailable = errors.New("conversation model gateway is not configured")
 
 type ConversationIDs interface {
@@ -372,7 +374,7 @@ func promptMessages(history []domain.Message, question string, hits []providers.
 	messages := []providers.ChatMessage{
 		{
 			Role:    "system",
-			Content: "You answer from the retrieved context when it is relevant. If the context does not contain the answer, say what is missing and answer cautiously from general knowledge only when useful.",
+			Content: askSystemPrompt,
 		},
 	}
 
@@ -402,7 +404,7 @@ func questionWithContext(question string, hits []providers.VectorHit) string {
 	builder.WriteString(question)
 	builder.WriteString("\n\nRetrieved context:\n")
 	if len(hits) == 0 {
-		builder.WriteString("No relevant document chunks were retrieved.")
+		builder.WriteString("No relevant document chunks were retrieved. Do not answer as if customer or workspace context exists; explain that the knowledge base does not contain enough context.")
 		return builder.String()
 	}
 	for index, hit := range hits {
