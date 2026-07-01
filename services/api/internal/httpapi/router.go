@@ -470,6 +470,7 @@ type searchRequest struct {
 	Query      string            `json:"query"`
 	Limit      int               `json:"limit"`
 	Filters    map[string]string `json:"filters"`
+	Strategy   string            `json:"strategy"`
 }
 
 type searchHitPayload struct {
@@ -497,6 +498,7 @@ type askConversationRequest struct {
 	ModelTarget    string `json:"model_target"`
 	Question       string `json:"question"`
 	Limit          int    `json:"limit"`
+	Strategy       string `json:"strategy"`
 }
 
 type conversationPayload struct {
@@ -1800,6 +1802,7 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 			Query:      req.Query,
 			Limit:      req.Limit,
 			Filters:    req.Filters,
+			Strategy:   app.SearchStrategy(req.Strategy),
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -1827,6 +1830,7 @@ func searchHandler(service app.SearchService, authorizer internalauth.Authorizer
 				"document_id": req.DocumentID,
 				"hit_count":   strconv.Itoa(len(result.Hits)),
 				"query_len":   strconv.Itoa(len(strings.TrimSpace(req.Query))),
+				"strategy":    req.Strategy,
 			},
 		})
 		writeJSON(w, http.StatusOK, envelope{"hits": hits})
@@ -2063,6 +2067,7 @@ func recordAskAudit(ctx context.Context, audit app.AuditService, tenantID domain
 		"model_target":  req.ModelTarget,
 		"question_len":  strconv.Itoa(len(strings.TrimSpace(req.Question))),
 		"retrieval_lim": strconv.Itoa(req.Limit),
+		"strategy":      req.Strategy,
 		"hit_count":     strconv.Itoa(hitCount),
 	}
 	if model != "" {
@@ -2094,6 +2099,7 @@ func askConversationInput(req askConversationRequest, tenantID domain.TenantID, 
 		ModelTarget:    req.ModelTarget,
 		Question:       req.Question,
 		Limit:          req.Limit,
+		Strategy:       app.SearchStrategy(req.Strategy),
 	}
 }
 

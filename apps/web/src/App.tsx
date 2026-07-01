@@ -17,6 +17,7 @@ import {
   ModelTarget,
   Readiness,
   RegisterDocumentResponse,
+  RetrievalStrategy,
   SearchDocumentsResponse,
   SourcePolicyProfile as PersistedSourcePolicyProfile,
   SourceView,
@@ -199,6 +200,10 @@ const sourcePlanLargeImportFileThreshold = 500;
 const sourcePlanLargeImportBytesThreshold = 500 * 1024 * 1024;
 const sourcePlanSkippedFileThreshold = 100;
 const sourcePlanSkippedRatioThreshold = 0.5;
+const retrievalStrategies: Array<{ value: RetrievalStrategy; label: string }> = [
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'vector', label: 'Vector only' },
+];
 
 const initialAsk = {
   conversation_id: '',
@@ -206,6 +211,7 @@ const initialAsk = {
   model_target: 'general',
   question: '',
   limit: 5,
+  strategy: 'hybrid' as RetrievalStrategy,
 };
 
 const initialMemberForm = {
@@ -516,7 +522,12 @@ export function App() {
   const [conversationMessages, setConversationMessages] =
     useState<ListConversationMessagesResponse | null>(null);
   const [selectedConversationID, setSelectedConversationID] = useState('');
-  const [searchForm, setSearchForm] = useState({ document_id: '', query: '', limit: 5 });
+  const [searchForm, setSearchForm] = useState({
+    document_id: '',
+    query: '',
+    limit: 5,
+    strategy: 'hybrid' as RetrievalStrategy,
+  });
   const [sourceForm, setSourceForm] = useState(initialSourceForm);
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
@@ -2550,6 +2561,7 @@ export function App() {
         document_id: searchForm.document_id || undefined,
         query: searchForm.query,
         limit: Number(searchForm.limit),
+        strategy: searchForm.strategy,
       });
       setSearchResult(result);
       setSelectedSearchSourceKey(result.hits[0] ? resultHitKey(result.hits[0]) : '');
@@ -2615,6 +2627,7 @@ export function App() {
         model_target: askForm.model_target,
         question,
         limit: Number(askForm.limit),
+        strategy: askForm.strategy,
       }, {
         signal: controller.signal,
         onStatus: (message) => {
@@ -2939,6 +2952,25 @@ export function App() {
                                   }))
                                 }
                               />
+                            </label>
+                            <label>
+                              Retrieval
+                              <select
+                                disabled={asking}
+                                value={askForm.strategy}
+                                onChange={(event) =>
+                                  setAskForm((current) => ({
+                                    ...current,
+                                    strategy: event.target.value as RetrievalStrategy,
+                                  }))
+                                }
+                              >
+                                {retrievalStrategies.map((strategy) => (
+                                  <option key={strategy.value} value={strategy.value}>
+                                    {strategy.label}
+                                  </option>
+                                ))}
+                              </select>
                             </label>
                             <label>
                               Conversation
@@ -4905,6 +4937,24 @@ export function App() {
                       }
                     />
                   </label>
+                  <label>
+                    Retrieval
+                    <select
+                      value={searchForm.strategy}
+                      onChange={(event) =>
+                        setSearchForm((current) => ({
+                          ...current,
+                          strategy: event.target.value as RetrievalStrategy,
+                        }))
+                      }
+                    >
+                      {retrievalStrategies.map((strategy) => (
+                        <option key={strategy.value} value={strategy.value}>
+                          {strategy.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               </details>
               <button disabled={searching || !workspaceReady} type="submit">
@@ -6157,7 +6207,9 @@ function sourceMetadataEntries(hit: SearchDocumentsResponse['hits'][number]) {
     'chunk_id',
     'chunk_index',
     'document_name',
+    'lexical_score',
     'storage_key',
+    'vector_score',
   ]);
   return Object.entries(hit.metadata ?? {})
     .filter(([key, value]) => value && !hidden.has(key))

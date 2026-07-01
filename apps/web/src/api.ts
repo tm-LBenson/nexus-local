@@ -324,6 +324,8 @@ export type SearchDocumentsResponse = {
   hits: SearchHit[];
 };
 
+export type RetrievalStrategy = 'vector' | 'hybrid';
+
 export type Conversation = {
   id: string;
   tenant_id: string;
@@ -364,6 +366,7 @@ export type AskConversationInput = {
   model_target: string;
   question: string;
   limit: number;
+  strategy?: RetrievalStrategy;
 };
 
 export type AskConversationStreamHandlers = {
@@ -754,6 +757,7 @@ export async function searchDocuments(input: {
   document_id?: string;
   query: string;
   limit: number;
+  strategy?: RetrievalStrategy;
 }) {
   return request<SearchDocumentsResponse>('/v1/search', {
     method: 'POST',

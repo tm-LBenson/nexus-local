@@ -53,7 +53,7 @@ Use the offline retrieval eval when touching search, chunking, source metadata, 
 .\nexus.ps1 eval-retrieval
 ```
 
-The fixture at `fixtures/eval/retrieval-baseline.json` builds an in-memory index with hash embeddings, runs the normal search service, and verifies that support/governance questions retrieve the expected document chunks within the expected rank. The report includes aggregate recall, mean expected rank, p95 case latency, and no-hit case pass counts. It does not need Docker, a model gateway, or a GPU.
+The fixture at `fixtures/eval/retrieval-baseline.json` builds an in-memory index with hash embeddings, runs the normal search service, and verifies that support/governance questions retrieve the expected document chunks within the expected rank. Cases can select `vector` or `hybrid` retrieval, and the report includes aggregate recall, mean expected rank, p95 case latency, and no-hit case pass counts. It does not need Docker, a model gateway, or a GPU.
 
 ## Answer Eval Gate
 

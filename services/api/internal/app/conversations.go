@@ -42,6 +42,7 @@ type AskInput struct {
 	ModelTarget    string
 	Question       string
 	Limit          int
+	Strategy       SearchStrategy
 }
 
 type AskResult struct {
@@ -254,6 +255,7 @@ func (s ConversationService) prepareAsk(ctx context.Context, input AskInput, emi
 		DocumentID: input.DocumentID,
 		Query:      question,
 		Limit:      input.Limit,
+		Strategy:   input.Strategy,
 	})
 	if err != nil {
 		return askPreparation{}, err

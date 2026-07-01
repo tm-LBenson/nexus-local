@@ -33,9 +33,10 @@ func TestRunRetrievalSuitePassesExpectedHits(t *testing.T) {
 		},
 		Cases: []RetrievalCase{
 			{
-				ID:    "redirect",
-				Query: "OIDC invalid redirect uri",
-				Limit: 2,
+				ID:       "redirect",
+				Query:    "OIDC invalid redirect uri",
+				Limit:    2,
+				Strategy: "hybrid",
 				Expected: RetrievalExpectation{
 					Hits:    []ExpectedHit{{DocumentID: "doc_oidc", ChunkID: "redirect_uri"}},
 					MaxRank: 1,
@@ -59,6 +60,9 @@ func TestRunRetrievalSuitePassesExpectedHits(t *testing.T) {
 	}
 	if report.CaseReports[0].Recall != 1 || len(report.CaseReports[0].ExpectedRanks) != 1 || report.CaseReports[0].ExpectedRanks[0] != 1 {
 		t.Fatalf("case metrics = %#v, want rank 1 recall", report.CaseReports[0])
+	}
+	if report.CaseReports[0].Strategy != "hybrid" {
+		t.Fatalf("strategy = %q, want hybrid", report.CaseReports[0].Strategy)
 	}
 }
 
@@ -167,5 +171,34 @@ func TestLoadRetrievalSuiteRejectsUnknownChunk(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown chunk") {
 		t.Fatalf("err = %v, want unknown chunk", err)
+	}
+}
+
+func TestLoadRetrievalSuiteRejectsUnknownStrategy(t *testing.T) {
+	_, err := LoadRetrievalSuite(strings.NewReader(`{
+		"name": "bad-suite",
+		"documents": [
+			{
+				"id": "doc_1",
+				"name": "Doc.md",
+				"chunks": [{"id": "chunk_1", "text": "hello world"}]
+			}
+		],
+		"cases": [
+			{
+				"id": "bad-case",
+				"query": "hello",
+				"strategy": "keyword-only",
+				"expected": {
+					"hits": [{"document_id": "doc_1", "chunk_id": "chunk_1"}]
+				}
+			}
+		]
+	}`))
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "unknown strategy") {
+		t.Fatalf("err = %v, want unknown strategy", err)
 	}
 }

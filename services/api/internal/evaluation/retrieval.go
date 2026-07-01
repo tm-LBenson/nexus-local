@@ -54,6 +54,7 @@ type RetrievalCase struct {
 	Limit      int                  `json:"limit,omitempty"`
 	DocumentID string               `json:"document_id,omitempty"`
 	Filters    map[string]string    `json:"filters,omitempty"`
+	Strategy   string               `json:"strategy,omitempty"`
 	Expected   RetrievalExpectation `json:"expected"`
 }
 
@@ -109,6 +110,7 @@ type RetrievalCaseReport struct {
 	HitCount        int                `json:"hit_count"`
 	Limit           int                `json:"limit"`
 	MaxRank         int                `json:"max_rank"`
+	Strategy        string             `json:"strategy"`
 	TopHits         []RetrievalHitView `json:"top_hits"`
 }
 
@@ -231,6 +233,10 @@ func runRetrievalCase(ctx context.Context, search app.SearchService, tenantID st
 	if maxRank <= 0 {
 		maxRank = limit
 	}
+	strategy, err := app.NormalizeSearchStrategy(app.SearchStrategy(testCase.Strategy))
+	if err != nil {
+		return RetrievalCaseReport{}, fmt.Errorf("retrieval case %q strategy: %w", testCase.ID, err)
+	}
 	startedAt := time.Now()
 	result, err := search.Search(ctx, app.SearchInput{
 		TenantID:   domain.TenantID(tenantID),
@@ -238,6 +244,7 @@ func runRetrievalCase(ctx context.Context, search app.SearchService, tenantID st
 		Query:      testCase.Query,
 		Limit:      limit,
 		Filters:    testCase.Filters,
+		Strategy:   strategy,
 	})
 	if err != nil {
 		return RetrievalCaseReport{}, err
@@ -251,6 +258,7 @@ func runRetrievalCase(ctx context.Context, search app.SearchService, tenantID st
 		ExpectedTotal: len(testCase.Expected.Hits),
 		NoHitExpected: testCase.Expected.NoHits,
 		LatencyMS:     time.Since(startedAt).Milliseconds(),
+		Strategy:      string(strategy),
 		TopHits:       hitViews(result.Hits),
 	}
 	evaluation := evaluateHits(result.Hits, testCase.Expected, maxRank)
@@ -425,6 +433,9 @@ func validateRetrievalSuite(suite RetrievalSuite) error {
 	for _, testCase := range suite.Cases {
 		if strings.TrimSpace(testCase.ID) == "" || strings.TrimSpace(testCase.Query) == "" {
 			return fmt.Errorf("retrieval case id and query are required")
+		}
+		if _, err := app.NormalizeSearchStrategy(app.SearchStrategy(testCase.Strategy)); err != nil {
+			return fmt.Errorf("retrieval case %q has unknown strategy %q", testCase.ID, testCase.Strategy)
 		}
 		if testCase.DocumentID != "" && !documentIDs[testCase.DocumentID] {
 			return fmt.Errorf("retrieval case %q scopes to unknown document %q", testCase.ID, testCase.DocumentID)

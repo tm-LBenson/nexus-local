@@ -138,6 +138,7 @@ func writeTextReport(report evaluation.RetrievalReport) {
 		}
 		fmt.Printf("[%s] %s\n", caseStatus, testCase.ID)
 		fmt.Printf("  Query: %s\n", testCase.Query)
+		fmt.Printf("  Strategy: %s\n", testCase.Strategy)
 		fmt.Printf("  Expected: %d/%d matched within rank %d\n", testCase.ExpectedMatched, testCase.ExpectedTotal, testCase.MaxRank)
 		fmt.Printf("  Metrics: recall %.2f, latency %dms", testCase.Recall, testCase.LatencyMS)
 		if len(testCase.ExpectedRanks) > 0 {

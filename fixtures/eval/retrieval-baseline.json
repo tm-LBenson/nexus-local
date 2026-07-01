@@ -110,6 +110,7 @@
       "id": "governance_pii_redaction",
       "query": "PII redaction customer identifiers email account numbers",
       "limit": 3,
+      "strategy": "hybrid",
       "expected": {
         "hits": [
           {
@@ -124,6 +125,7 @@
       "id": "governance_mfa_status",
       "query": "MFA identity checks before sharing paperwork status updates",
       "limit": 3,
+      "strategy": "hybrid",
       "expected": {
         "hits": [
           {

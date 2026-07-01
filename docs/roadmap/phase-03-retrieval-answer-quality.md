@@ -26,7 +26,7 @@ The product is not useful just because a model answers. It is useful when retrie
 | 3.2 | Retrieval metrics: hit recall, source rank, empty result behavior, and latency. | Done: fixture set establishes baseline metrics. |
 | 3.3 | Answer metrics: citation presence, unsupported-claim checks, refusal behavior, and latency. | Done: Ask path can be evaluated without manual screenshots. |
 | 3.4 | Source preview UX for answers and search hits. | Done: user can inspect cited passages quickly. |
-| 3.5 | Hybrid retrieval strategy option. | Lexical plus vector retrieval beats vector-only on fixture set. |
+| 3.5 | Hybrid retrieval strategy option. | Done: vector-only and hybrid strategies are selectable; hybrid reranks wider vector candidates with lexical overlap and is covered by eval fixtures plus a regression test where hybrid beats vector-only. |
 | 3.6 | Model target performance panel. | Admin can compare model latency, errors, and timeout behavior. |
 
 ## Dependencies
@@ -44,7 +44,7 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slices 3.1 through 3.4 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, and a source-preview UI for Ask/search passages.
+- Slices 3.1 through 3.5 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, and selectable vector-only or hybrid retrieval.
 - Retrieval metrics cover aggregate recall, expected rank, latency, and explicit no-hit filter behavior.
 - Answer metrics cover expected source grounding, citation text, required/forbidden phrases, refusal wording, prompt context, conversation history, and latency.
 - Ask and search results now share selectable source rows with a compact preview panel for the full passage, document/chunk identifiers, score, storage key, and useful metadata.
@@ -52,4 +52,4 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Next Build Candidate
 
-Move to Slice 3.5. Add a hybrid retrieval strategy option and compare lexical plus vector retrieval against vector-only on the fixture set.
+Move to Slice 3.6. Add a model target performance panel so admins can compare model latency, timeout behavior, and recent gateway errors from one place.
