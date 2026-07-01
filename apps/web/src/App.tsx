@@ -534,9 +534,11 @@ export function App() {
   const [sourceBulkAction, setSourceBulkAction] = useState<SourceBulkAction | ''>('');
   const [sourceBulkResult, setSourceBulkResult] = useState('');
   const [searchResult, setSearchResult] = useState<SearchDocumentsResponse | null>(null);
+  const [selectedSearchSourceKey, setSelectedSearchSourceKey] = useState('');
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [askForm, setAskForm] = useState(initialAsk);
   const [askResult, setAskResult] = useState<AskConversationResponse | null>(null);
+  const [selectedAskSourceKey, setSelectedAskSourceKey] = useState('');
   const [streamAnswer, setStreamAnswer] = useState('');
   const [streamStatus, setStreamStatus] = useState('');
   const [askPhase, setAskPhase] = useState<AskPhase>('idle');
@@ -800,6 +802,14 @@ export function App() {
   const showAskProgress = asking || askPhase === 'failed';
   const showAskResult = Boolean(askResult || visibleAskAnswer || showAskProgress || streamStatus);
   const askRetryAvailable = askPhase === 'failed' && Boolean(currentAskQuestion) && workspaceReady;
+  const selectedAskSource = useMemo(
+    () => selectedResultHit(askResult?.hits ?? [], selectedAskSourceKey),
+    [askResult, selectedAskSourceKey],
+  );
+  const selectedSearchSource = useMemo(
+    () => selectedResultHit(searchResult?.hits ?? [], selectedSearchSourceKey),
+    [searchResult, selectedSearchSourceKey],
+  );
   const askProgressDetail = askProgressDetailLabel({
     answer: visibleAskAnswer,
     elapsedSeconds: askElapsedSeconds,
@@ -1426,6 +1436,7 @@ export function App() {
     setSourceSavedViews([]);
     setCustomSourcePolicyProfiles([]);
     setSearchResult(null);
+    setSelectedSearchSourceKey('');
     setTenantMembers(null);
     setAuditEvents(null);
     setSelectedConversationID('');
@@ -1559,7 +1570,9 @@ export function App() {
   function configureSampleWorkspace(documentID: string) {
     setActiveView('ask');
     setSearchResult(null);
+    setSelectedSearchSourceKey('');
     setAskResult(null);
+    setSelectedAskSourceKey('');
     setStreamAnswer('');
     setStreamStatus('');
     setAskPhase('idle');
@@ -1607,14 +1620,14 @@ export function App() {
         query: sampleSearchPhrase,
         limit: 5,
       }));
-      setSearchResult(
-        await searchDocuments({
-          tenant_id: nextTenantID,
-          document_id: documentID,
-          query: sampleSearchPhrase,
-          limit: 5,
-        }),
-      );
+      const result = await searchDocuments({
+        tenant_id: nextTenantID,
+        document_id: documentID,
+        query: sampleSearchPhrase,
+        limit: 5,
+      });
+      setSearchResult(result);
+      setSelectedSearchSourceKey(result.hits[0] ? resultHitKey(result.hits[0]) : '');
       if (canManageTenant && nextTenantID === tenantID) {
         await refreshAuditEvents(nextTenantID);
       }
@@ -2509,6 +2522,7 @@ export function App() {
       if (askForm.conversation_id === conversation.id) {
         setAskForm((current) => ({ ...current, conversation_id: '' }));
         setAskResult(null);
+        setSelectedAskSourceKey('');
         setStreamAnswer('');
       }
     } catch (err) {
@@ -2531,14 +2545,14 @@ export function App() {
     setSearching(true);
     setError(null);
     try {
-      setSearchResult(
-        await searchDocuments({
-          tenant_id: tenantID,
-          document_id: searchForm.document_id || undefined,
-          query: searchForm.query,
-          limit: Number(searchForm.limit),
-        }),
-      );
+      const result = await searchDocuments({
+        tenant_id: tenantID,
+        document_id: searchForm.document_id || undefined,
+        query: searchForm.query,
+        limit: Number(searchForm.limit),
+      });
+      setSearchResult(result);
+      setSelectedSearchSourceKey(result.hits[0] ? resultHitKey(result.hits[0]) : '');
       if (canManageTenant) {
         await refreshAuditEvents(tenantID);
       }
@@ -2582,6 +2596,7 @@ export function App() {
     setAsking(true);
     setError(null);
     setAskResult(null);
+    setSelectedAskSourceKey('');
     setStreamAnswer('');
     setCurrentAskQuestion(question);
     setAskPhase('connecting');
@@ -2614,6 +2629,7 @@ export function App() {
         onDone: (response) => {
           streamedResult = response;
           setAskResult(response);
+          setSelectedAskSourceKey(response.hits[0] ? resultHitKey(response.hits[0]) : '');
           setStreamAnswer(response.assistant_message.content);
           setAskPhase('complete');
         },
@@ -2623,6 +2639,7 @@ export function App() {
       }
       const result = streamedResult;
       setAskResult(result);
+      setSelectedAskSourceKey(result.hits[0] ? resultHitKey(result.hits[0]) : '');
       setAskForm((current) => ({
         ...current,
         conversation_id: result.conversation.id,
@@ -3001,19 +3018,14 @@ export function App() {
                       </div>
                     )}
                     {askResult && (
-                      <details className="inlineDetails">
-                        <summary>Sources</summary>
-                        <div className="resultStack">
-                          {askResult.hits.map((hit, index) => (
-                            <ResultHit
-                              hit={hit}
-                              index={index}
-                              key={`${hit.document_id}:${hit.chunk_id}`}
-                            />
-                          ))}
-                          {askResult.hits.length === 0 && <p className="muted">No sources</p>}
-                        </div>
-                      </details>
+                      <SourcePreviewLayout
+                        emptyLabel="No sources"
+                        hits={askResult.hits}
+                        label="Sources"
+                        onSelect={(hit) => setSelectedAskSourceKey(resultHitKey(hit))}
+                        selectedHit={selectedAskSource}
+                        selectedKey={selectedAskSourceKey}
+                      />
                     )}
                   </div>
                 )}
@@ -3136,16 +3148,14 @@ export function App() {
                       </button>
                     </form>
                     {searchResult && (
-                      <div className="resultStack">
-                        {searchResult.hits.map((hit, index) => (
-                          <ResultHit
-                            hit={hit}
-                            index={index}
-                            key={`${hit.document_id}:${hit.chunk_id}`}
-                          />
-                        ))}
-                        {searchResult.hits.length === 0 && <p className="muted">No matches</p>}
-                      </div>
+                      <SourcePreviewLayout
+                        emptyLabel="No matches"
+                        hits={searchResult.hits}
+                        label="Matches"
+                        onSelect={(hit) => setSelectedSearchSourceKey(resultHitKey(hit))}
+                        selectedHit={selectedSearchSource}
+                        selectedKey={selectedSearchSourceKey}
+                      />
                     )}
                   </section>
 
@@ -4902,20 +4912,14 @@ export function App() {
               </button>
             </form>
             {searchResult && (
-              <div className="resultStack">
-                <div className="resultToolbar">
-                  <strong>{searchResult.hits.length} passages</strong>
-                  <span>{searchForm.query}</span>
-                </div>
-                {searchResult.hits.map((hit, index) => (
-                  <ResultHit
-                    hit={hit}
-                    index={index}
-                    key={`${hit.document_id}:${hit.chunk_id}`}
-                  />
-                ))}
-                {searchResult.hits.length === 0 && <p className="muted">No matches</p>}
-              </div>
+              <SourcePreviewLayout
+                emptyLabel="No matches"
+                hits={searchResult.hits}
+                label={searchForm.query}
+                onSelect={(hit) => setSelectedSearchSourceKey(resultHitKey(hit))}
+                selectedHit={selectedSearchSource}
+                selectedKey={selectedSearchSourceKey}
+              />
             )}
           </div>
         )}
@@ -5487,19 +5491,70 @@ export function App() {
   );
 }
 
+function SourcePreviewLayout({
+  emptyLabel,
+  hits,
+  label,
+  onSelect,
+  selectedHit,
+  selectedKey,
+}: {
+  emptyLabel: string;
+  hits: SearchDocumentsResponse['hits'];
+  label: string;
+  onSelect: (hit: SearchDocumentsResponse['hits'][number]) => void;
+  selectedHit: SearchDocumentsResponse['hits'][number] | null;
+  selectedKey: string;
+}) {
+  const activeKey = selectedHit ? resultHitKey(selectedHit) : selectedKey;
+
+  return (
+    <div className="sourcePreviewLayout">
+      <div className="sourcePreviewList">
+        <div className="resultToolbar">
+          <strong>{hits.length} passages</strong>
+          <span>{label}</span>
+        </div>
+        <div className="resultStack">
+          {hits.map((hit, index) => (
+            <ResultHit
+              active={activeKey === resultHitKey(hit)}
+              hit={hit}
+              index={index}
+              key={resultHitKey(hit)}
+              onSelect={() => onSelect(hit)}
+            />
+          ))}
+          {hits.length === 0 && <p className="muted">{emptyLabel}</p>}
+        </div>
+      </div>
+      <SourcePreviewPanel hit={selectedHit} />
+    </div>
+  );
+}
+
 function ResultHit({
+  active,
   hit,
   index,
+  onSelect,
 }: {
+  active: boolean;
   hit: SearchDocumentsResponse['hits'][number];
   index: number;
+  onSelect: () => void;
 }) {
   const documentName = hit.source?.document_name || hit.metadata.document_name || hit.document_id;
   const chunkLabel = formatChunkLabel(hit);
   const sourceTitle = `${hit.document_id} / ${hit.chunk_id}`;
 
   return (
-    <div className="searchHit" title={sourceTitle}>
+    <button
+      className={active ? 'searchHit searchHitActive' : 'searchHit'}
+      onClick={onSelect}
+      title={sourceTitle}
+      type="button"
+    >
       <div className="sourceHeader">
         <span>#{index + 1}</span>
         <strong>{documentName}</strong>
@@ -5510,7 +5565,56 @@ function ResultHit({
         <span>{hit.score.toFixed(3)}</span>
         <span>{chunkLabel}</span>
       </div>
-    </div>
+    </button>
+  );
+}
+
+function SourcePreviewPanel({ hit }: { hit: SearchDocumentsResponse['hits'][number] | null }) {
+  if (!hit) {
+    return (
+      <aside className="sourcePreview emptyPreview">
+        <strong>Preview</strong>
+        <span>No passage selected</span>
+      </aside>
+    );
+  }
+
+  const documentName = hit.source?.document_name || hit.metadata.document_name || hit.document_id;
+  const chunkLabel = formatChunkLabel(hit);
+  const storageKey = hit.source?.storage_key || hit.metadata.storage_key || '';
+  const metadata = sourceMetadataEntries(hit);
+
+  return (
+    <aside className="sourcePreview">
+      <div className="sourcePreviewHeader">
+        <span>{chunkLabel}</span>
+        <strong>{documentName}</strong>
+        <em>{hit.score.toFixed(3)}</em>
+      </div>
+      <p>{hit.text}</p>
+      <dl>
+        <div>
+          <dt>Document</dt>
+          <dd>{hit.document_id}</dd>
+        </div>
+        <div>
+          <dt>Chunk</dt>
+          <dd>{hit.chunk_id}</dd>
+        </div>
+        {storageKey && (
+          <div>
+            <dt>Storage</dt>
+            <dd>{storageKey}</dd>
+          </div>
+        )}
+        {metadata.map(([key, value]) => (
+          <div key={key}>
+            <dt>{titleCase(key.replace(/_/g, ' '))}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </aside>
   );
 }
 
@@ -6032,6 +6136,32 @@ function formatChunkLabel(hit: SearchDocumentsResponse['hits'][number]) {
     return `Chunk ${chunkIndex}`;
   }
   return hit.source?.chunk_id || hit.chunk_id;
+}
+
+function resultHitKey(hit: SearchDocumentsResponse['hits'][number]) {
+  return `${hit.document_id}:${hit.chunk_id}`;
+}
+
+function selectedResultHit(
+  hits: SearchDocumentsResponse['hits'],
+  selectedKey: string,
+): SearchDocumentsResponse['hits'][number] | null {
+  if (hits.length === 0) {
+    return null;
+  }
+  return hits.find((hit) => resultHitKey(hit) === selectedKey) ?? hits[0];
+}
+
+function sourceMetadataEntries(hit: SearchDocumentsResponse['hits'][number]) {
+  const hidden = new Set([
+    'chunk_id',
+    'chunk_index',
+    'document_name',
+    'storage_key',
+  ]);
+  return Object.entries(hit.metadata ?? {})
+    .filter(([key, value]) => value && !hidden.has(key))
+    .slice(0, 6);
 }
 
 function StatusTile({

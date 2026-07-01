@@ -1823,6 +1823,104 @@ h3 {
   white-space: nowrap;
 }
 
+.sourcePreviewLayout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.92fr) minmax(300px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.sourcePreviewList {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sourcePreview {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #dce6e6;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fbfdfc;
+}
+
+.sourcePreviewHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.sourcePreviewHeader span,
+.sourcePreviewHeader em {
+  color: #69777d;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sourcePreviewHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172026;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourcePreview p {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  color: #25343b;
+  font-size: 0.9rem;
+  line-height: 1.52;
+  white-space: pre-wrap;
+}
+
+.sourcePreview dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.sourcePreview dl div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.sourcePreview dt {
+  color: #69777d;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sourcePreview dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #31414a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.emptyPreview {
+  min-height: 150px;
+  align-content: center;
+  color: #69777d;
+}
+
+.emptyPreview strong {
+  color: #172026;
+}
+
 .dataTable {
   display: grid;
   border: 1px solid #e2e9e9;
@@ -2012,8 +2110,25 @@ h3 {
 }
 
 .searchHit {
+  width: 100%;
+  border: 1px solid #e2e9e9;
+  border-radius: 6px;
+  padding: 10px;
+  color: #172026;
   gap: 10px;
   background: #ffffff;
+  text-align: left;
+}
+
+.searchHit:hover,
+.searchHitActive {
+  border-color: #8db1b7;
+  background: #f2f8f7;
+}
+
+.searchHit:focus-visible {
+  outline: 2px solid #1d5262;
+  outline-offset: 2px;
 }
 
 .sourceHeader {
@@ -3779,6 +3894,12 @@ strong {
   background: #fbfcfd;
 }
 
+.searchHitActive,
+.searchHitActive:hover {
+  border-color: #8db1b7;
+  background: #eef7f5;
+}
+
 .selectedRow,
 .contextDocActive {
   border-color: var(--accent-line);
@@ -4001,6 +4122,14 @@ strong {
     display: grid;
     grid-template-columns: 1fr 1fr;
     width: 100%;
+  }
+
+  .sourcePreviewLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .sourcePreview p {
+    max-height: 220px;
   }
 
   .answerProgress {
