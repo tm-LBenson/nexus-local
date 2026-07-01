@@ -28,7 +28,7 @@ The product is not useful just because a model answers. It is useful when retrie
 | 3.4 | Source preview UX for answers and search hits. | Done: user can inspect cited passages quickly. |
 | 3.5 | Hybrid retrieval strategy option. | Done: vector-only and hybrid strategies are selectable; hybrid reranks wider vector candidates with lexical overlap and is covered by eval fixtures plus a regression test where hybrid beats vector-only. |
 | 3.6 | Model target performance panel. | Done: Settings shows per-target probe status, recent Ask counts, success rate, p95 latency, and latest error class backed by audit metadata. |
-| 3.7 | Query rewriting for vague user questions. | Rewritten retrieval query improves source rank without changing the original user-visible question. |
+| 3.7 | Query rewriting for vague user questions. | Done: vague follow-up questions can expand retrieval with recent user context while preserving the original chat message. |
 
 ## Dependencies
 
@@ -45,12 +45,13 @@ The product is not useful just because a model answers. It is useful when retrie
 
 ## Current Status
 
-- Slices 3.1 through 3.6 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, selectable vector-only or hybrid retrieval, and an audit-backed model performance panel.
+- Slices 3.1 through 3.7 now have checked-in retrieval and answer fixtures, Go eval runners, `.\nexus.ps1 eval-retrieval`, `.\nexus.ps1 eval-answer`, release-check coverage, a source-preview UI for Ask/search passages, selectable vector-only or hybrid retrieval, an audit-backed model performance panel, and deterministic query rewriting for vague follow-up questions.
 - Retrieval metrics cover aggregate recall, expected rank, latency, and explicit no-hit filter behavior.
 - Answer metrics cover expected source grounding, citation text, required/forbidden phrases, refusal wording, prompt context, conversation history, and latency.
+- Answer fixtures can seed conversation history so follow-up questions such as "How do I fix it?" prove that retrieval uses prior user context without changing the stored question.
 - Ask and search results now share selectable source rows with a compact preview panel for the full passage, document/chunk identifiers, score, storage key, and useful metadata.
 - The baselines focus on enterprise support and governance behavior: OIDC troubleshooting, HAR diagnostics, PII redaction, MFA-gated status workflows, and scoped empty-result behavior.
 
 ## Next Build Candidate
 
-Move to Slice 3.7. Add query rewriting so vague user questions can be expanded into stronger retrieval queries without changing the original question shown in chat history.
+Move to the default prompt and refusal-behavior slice: make the assistant more explicit about when it is grounded in retrieved sources, when context is missing, and how citations should be used.

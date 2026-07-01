@@ -127,6 +127,59 @@ func TestRunAnswerSuitePassesNoContextRefusal(t *testing.T) {
 	}
 }
 
+func TestRunAnswerSuiteUsesSeededHistoryForFollowUpRetrieval(t *testing.T) {
+	suite := AnswerSuite{
+		Name: "answer-suite",
+		Documents: []RetrievalDocument{
+			{
+				ID:   "doc_oidc",
+				Name: "OIDC.md",
+				Chunks: []RetrievalChunk{
+					{ID: "redirect_uri", Text: "OIDC invalid redirect uri callback mismatch exact match scheme host port path trailing slash"},
+				},
+			},
+			{
+				ID:   "doc_password",
+				Name: "Password.md",
+				Chunks: []RetrievalChunk{
+					{ID: "status", Text: "Fix password reset status by verifying MFA enrollment and account recovery state"},
+				},
+			},
+		},
+		Cases: []AnswerCase{
+			{
+				ID:       "follow-up",
+				Question: "How do I fix it?",
+				Strategy: "hybrid",
+				Limit:    1,
+				History: []AnswerHistory{
+					{Role: "user", Content: "Why does OIDC fail with invalid redirect uri callback mismatch?"},
+					{Role: "assistant", Content: "The callback URL must exactly match the configured redirect URI."},
+				},
+				Answer: "Make the callback URL exactly match the configured redirect URI, including scheme, host, port, path, and trailing slash [1].",
+				Expected: AnswerExpectation{
+					ExpectedSources:  []ExpectedHit{{DocumentID: "doc_oidc", ChunkID: "redirect_uri"}},
+					MaxSourceRank:    1,
+					RequireCitations: []string{"[1]"},
+					RequirePhrases:   []string{"exactly match", "trailing slash"},
+					MinSources:       1,
+				},
+			},
+		},
+	}
+
+	report, err := RunAnswerSuite(context.Background(), suite)
+	if err != nil {
+		t.Fatalf("run suite: %v", err)
+	}
+	if !report.Passed || report.SourceRecall != 1 || report.HistoryPassedCount != 1 {
+		t.Fatalf("report = %#v, want passing follow-up answer metrics", report)
+	}
+	if len(report.CaseReports[0].TopSources) != 1 || report.CaseReports[0].TopSources[0].DocumentID != "doc_oidc" {
+		t.Fatalf("top sources = %#v, want OIDC source", report.CaseReports[0].TopSources)
+	}
+}
+
 func TestLoadAnswerSuiteRejectsUnknownSource(t *testing.T) {
 	_, err := LoadAnswerSuite(strings.NewReader(`{
 		"name": "bad-answer-suite",

@@ -39,8 +39,15 @@ type AnswerCase struct {
 	DocumentID  string            `json:"document_id,omitempty"`
 	ModelTarget string            `json:"model_target,omitempty"`
 	Limit       int               `json:"limit,omitempty"`
+	Strategy    string            `json:"strategy,omitempty"`
+	History     []AnswerHistory   `json:"history,omitempty"`
 	Answer      string            `json:"answer"`
 	Expected    AnswerExpectation `json:"expected"`
+}
+
+type AnswerHistory struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type AnswerExpectation struct {
@@ -187,7 +194,7 @@ func RunAnswerSuite(ctx context.Context, suite AnswerSuite) (AnswerReport, error
 	return report, nil
 }
 
-func runAnswerCase(ctx context.Context, service app.ConversationService, repos answerMessageStore, gateway *scriptedAnswerGateway, tenantID domain.TenantID, ownerID domain.UserID, testCase AnswerCase) (AnswerCaseReport, error) {
+func runAnswerCase(ctx context.Context, service app.ConversationService, repos answerCaseStore, gateway *scriptedAnswerGateway, tenantID domain.TenantID, ownerID domain.UserID, testCase AnswerCase) (AnswerCaseReport, error) {
 	limit := testCase.Limit
 	if limit <= 0 {
 		limit = defaultRetrievalLimit
@@ -196,14 +203,24 @@ func runAnswerCase(ctx context.Context, service app.ConversationService, repos a
 	if modelTarget == "" {
 		modelTarget = defaultAnswerTarget
 	}
+	strategy, err := app.NormalizeSearchStrategy(app.SearchStrategy(testCase.Strategy))
+	if err != nil {
+		return AnswerCaseReport{}, fmt.Errorf("answer case %q strategy: %w", testCase.ID, err)
+	}
+	conversationID, err := seedAnswerHistory(ctx, repos, tenantID, ownerID, modelTarget, testCase)
+	if err != nil {
+		return AnswerCaseReport{}, err
+	}
 	startedAt := time.Now()
 	result, err := service.Ask(ctx, app.AskInput{
-		TenantID:    tenantID,
-		OwnerID:     ownerID,
-		DocumentID:  domain.DocumentID(testCase.DocumentID),
-		ModelTarget: modelTarget,
-		Question:    testCase.Question,
-		Limit:       limit,
+		TenantID:       tenantID,
+		OwnerID:        ownerID,
+		ConversationID: conversationID,
+		DocumentID:     domain.DocumentID(testCase.DocumentID),
+		ModelTarget:    modelTarget,
+		Question:       testCase.Question,
+		Limit:          limit,
+		Strategy:       strategy,
 	})
 	if err != nil {
 		return AnswerCaseReport{}, err
@@ -251,9 +268,9 @@ func runAnswerCase(ctx context.Context, service app.ConversationService, repos a
 		if err != nil {
 			return AnswerCaseReport{}, err
 		}
-		report.HistoryPassed = len(messages) == 2 && messages[0].Content == testCase.Question && messages[1].Content == result.AssistantMessage.Content
+		report.HistoryPassed = answerHistoryPassed(messages, testCase, result.AssistantMessage.Content)
 		if !report.HistoryPassed {
-			report.Failures = append(report.Failures, "conversation history was not stored as user/assistant pair")
+			report.Failures = append(report.Failures, "conversation history did not preserve seeded history plus user/assistant turn")
 		}
 	}
 	report.PromptContextPassed = true
@@ -267,8 +284,79 @@ func runAnswerCase(ctx context.Context, service app.ConversationService, repos a
 	return report, nil
 }
 
-type answerMessageStore interface {
+type answerCaseStore interface {
+	SaveConversation(ctx context.Context, conversation domain.Conversation) error
+	SaveMessage(ctx context.Context, message domain.Message) error
 	ListMessages(ctx context.Context, tenantID domain.TenantID, conversationID domain.ConversationID) ([]domain.Message, error)
+}
+
+func seedAnswerHistory(ctx context.Context, repos answerCaseStore, tenantID domain.TenantID, ownerID domain.UserID, modelTarget string, testCase AnswerCase) (domain.ConversationID, error) {
+	if len(testCase.History) == 0 {
+		return "", nil
+	}
+	conversationID := domain.ConversationID("conv_history_" + sanitizeEvalID(testCase.ID))
+	startedAt := answerEvalClock{}.Now().Add(-time.Duration(len(testCase.History)+1) * time.Second)
+	conversation, err := domain.NewConversation(domain.ConversationCreate{
+		ID:          conversationID,
+		TenantID:    tenantID,
+		OwnerID:     ownerID,
+		Title:       testCase.ID,
+		ModelTarget: modelTarget,
+		Now:         startedAt,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := repos.SaveConversation(ctx, conversation); err != nil {
+		return "", err
+	}
+	for index, item := range testCase.History {
+		message, err := domain.NewMessage(domain.MessageCreate{
+			ID:             domain.MessageID(fmt.Sprintf("msg_history_%s_%03d", sanitizeEvalID(testCase.ID), index+1)),
+			TenantID:       tenantID,
+			ConversationID: conversationID,
+			Role:           domain.MessageRole(strings.TrimSpace(item.Role)),
+			Content:        item.Content,
+			Now:            startedAt.Add(time.Duration(index+1) * time.Second),
+		})
+		if err != nil {
+			return "", err
+		}
+		if err := repos.SaveMessage(ctx, message); err != nil {
+			return "", err
+		}
+	}
+	return conversationID, nil
+}
+
+func answerHistoryPassed(messages []domain.Message, testCase AnswerCase, answer string) bool {
+	expectedLen := len(testCase.History) + 2
+	if len(messages) != expectedLen {
+		return false
+	}
+	for index, expected := range testCase.History {
+		if string(messages[index].Role) != strings.TrimSpace(expected.Role) ||
+			messages[index].Content != strings.TrimSpace(expected.Content) {
+			return false
+		}
+	}
+	return messages[expectedLen-2].Role == domain.MessageRoleUser &&
+		messages[expectedLen-2].Content == testCase.Question &&
+		messages[expectedLen-1].Role == domain.MessageRoleAssistant &&
+		messages[expectedLen-1].Content == answer
+}
+
+func sanitizeEvalID(id string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(id)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			builder.WriteRune(r)
+		}
+	}
+	if builder.Len() == 0 {
+		return "case"
+	}
+	return builder.String()
 }
 
 func expectedSourceMetrics(hits []providers.VectorHit, expectation AnswerExpectation) (int, []int) {
@@ -424,6 +512,15 @@ func validateAnswerSuite(suite AnswerSuite) error {
 		}
 		if strings.TrimSpace(testCase.Answer) == "" {
 			return fmt.Errorf("answer case %q needs a scripted answer", testCase.ID)
+		}
+		if _, err := app.NormalizeSearchStrategy(app.SearchStrategy(testCase.Strategy)); err != nil {
+			return fmt.Errorf("answer case %q has unknown strategy %q", testCase.ID, testCase.Strategy)
+		}
+		for index, item := range testCase.History {
+			role := domain.MessageRole(strings.TrimSpace(item.Role))
+			if !role.Valid() || strings.TrimSpace(item.Content) == "" {
+				return fmt.Errorf("answer case %q has invalid history item %d", testCase.ID, index+1)
+			}
 		}
 		for _, expected := range testCase.Expected.ExpectedSources {
 			if !documentIDs[expected.DocumentID] {

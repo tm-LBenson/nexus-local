@@ -107,7 +107,7 @@ Current audited actions:
 - `search.completed`
 - `conversation.ask`
 
-`GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows.
+`GET /v1/conversations?tenant_id=<tenant_id>` lists recent tenant conversations, and `GET /v1/conversations/<conversation_id>/messages?tenant_id=<tenant_id>` reads the ordered transcript for resume/review flows. Ask requests preserve the original user-visible question in conversation history; for vague follow-up questions, retrieval may use a bounded internal query that includes recent user context, recorded in model metadata as `retrieval_query`.
 
 `POST /v1/model-targets/check` routes a configured model target and performs a short non-persistent completion to verify first-run model gateway connectivity. It returns the resolved route, model, finish reason, and latency when the gateway responds. Failure responses include `error_class`, `retryable`, and `check_state` so setup clients can distinguish a warming gateway from a URL, model, host, or auth configuration issue.
 

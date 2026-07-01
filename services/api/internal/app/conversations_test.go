@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tm-lbenson/nexus-local/services/api/internal/domain"
 	"github.com/tm-lbenson/nexus-local/services/api/internal/providers"
@@ -135,6 +137,88 @@ func TestAskCanScopeRetrievalToDocument(t *testing.T) {
 	lastPrompt := gateway.request.Messages[len(gateway.request.Messages)-1].Content
 	if !strings.Contains(lastPrompt, "Omega Notes.md") || strings.Contains(lastPrompt, "Alpha Plan.md") {
 		t.Fatalf("prompt did not use scoped context: %q", lastPrompt)
+	}
+}
+
+func TestAskRewritesVagueFollowUpForRetrievalOnly(t *testing.T) {
+	ctx := context.Background()
+	repos := memory.New()
+	embedder := embeddinghash.New("test", 64)
+	vectorIndex := vectormemory.New()
+	search := NewSearchService(embedder, vectorIndex)
+	gateway := &stubModelGateway{response: providers.ChatCompletion{Content: "Use the retrieved source."}}
+
+	oidcVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"OIDC invalid redirect uri callback mismatch exact match scheme host port path trailing slash"}})
+	if err != nil {
+		t.Fatalf("embed oidc text: %v", err)
+	}
+	passwordVector, err := embedder.Embed(ctx, providers.EmbeddingRequest{Texts: []string{"Fix password reset status by verifying MFA enrollment and account recovery state"}})
+	if err != nil {
+		t.Fatalf("embed password text: %v", err)
+	}
+	if err := vectorIndex.Upsert(ctx, []providers.Vector{
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_oidc"),
+			ChunkID:    "redirect_uri",
+			Values:     oidcVector.Vectors[0],
+			Text:       "OIDC invalid redirect uri callback mismatch exact match scheme host port path trailing slash",
+			Metadata:   map[string]string{"document_name": "OIDC Troubleshooting.md"},
+		},
+		{
+			TenantID:   domain.TenantID("tenant_1"),
+			DocumentID: domain.DocumentID("doc_password"),
+			ChunkID:    "password_status",
+			Values:     passwordVector.Vectors[0],
+			Text:       "Fix password reset status by verifying MFA enrollment and account recovery state",
+			Metadata:   map[string]string{"document_name": "Password Status.md"},
+		},
+	}); err != nil {
+		t.Fatalf("upsert seed: %v", err)
+	}
+
+	service := NewConversationService(repos, &sequenceAskIDs{}, &sequenceClock{}, search, gateway)
+	first, err := service.Ask(ctx, AskInput{
+		TenantID: domain.TenantID("tenant_1"),
+		OwnerID:  domain.UserID("user_1"),
+		Question: "Why does OIDC fail with invalid redirect uri callback mismatch?",
+		Limit:    1,
+		Strategy: SearchStrategyHybrid,
+	})
+	if err != nil {
+		t.Fatalf("first ask: %v", err)
+	}
+
+	second, err := service.Ask(ctx, AskInput{
+		TenantID:       domain.TenantID("tenant_1"),
+		OwnerID:        domain.UserID("user_1"),
+		ConversationID: first.Conversation.ID,
+		Question:       "How do I fix it?",
+		Limit:          1,
+		Strategy:       SearchStrategyHybrid,
+	})
+	if err != nil {
+		t.Fatalf("follow-up ask: %v", err)
+	}
+
+	if len(second.Hits) != 1 || second.Hits[0].DocumentID != domain.DocumentID("doc_oidc") {
+		t.Fatalf("hits = %#v, want OIDC source from rewritten follow-up", second.Hits)
+	}
+	retrievalQuery := gateway.request.Metadata["retrieval_query"]
+	if !strings.Contains(retrievalQuery, "OIDC fail with invalid redirect uri") || !strings.Contains(retrievalQuery, "How do I fix it?") {
+		t.Fatalf("retrieval query = %q, want previous topic plus current question", retrievalQuery)
+	}
+	lastPrompt := gateway.request.Messages[len(gateway.request.Messages)-1].Content
+	if !strings.Contains(lastPrompt, "Question:\nHow do I fix it?") || !strings.Contains(lastPrompt, "OIDC Troubleshooting.md") {
+		t.Fatalf("prompt = %q, want original question with OIDC context", lastPrompt)
+	}
+
+	messages, err := repos.ListMessages(ctx, domain.TenantID("tenant_1"), first.Conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 4 || messages[2].Content != "How do I fix it?" {
+		t.Fatalf("messages = %#v, want original follow-up stored as user message", messages)
 	}
 }
 
@@ -427,4 +511,28 @@ func (g *askIDs) NewMessageID() domain.MessageID {
 		return domain.MessageID("msg_user")
 	}
 	return domain.MessageID("msg_assistant")
+}
+
+type sequenceAskIDs struct {
+	conversation int
+	message      int
+}
+
+func (g *sequenceAskIDs) NewConversationID() domain.ConversationID {
+	g.conversation++
+	return domain.ConversationID(fmt.Sprintf("conv_sequence_%d", g.conversation))
+}
+
+func (g *sequenceAskIDs) NewMessageID() domain.MessageID {
+	g.message++
+	return domain.MessageID(fmt.Sprintf("msg_sequence_%d", g.message))
+}
+
+type sequenceClock struct {
+	tick int
+}
+
+func (c *sequenceClock) Now() time.Time {
+	c.tick++
+	return time.Date(2026, 6, 23, 12, 0, c.tick, 0, time.UTC)
 }

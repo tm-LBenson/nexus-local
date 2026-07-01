@@ -250,18 +250,18 @@ func (s ConversationService) prepareAsk(ctx context.Context, input AskInput, emi
 		}
 	}
 
-	searchResult, err := s.search.Search(ctx, SearchInput{
-		TenantID:   input.TenantID,
-		DocumentID: input.DocumentID,
-		Query:      question,
-		Limit:      input.Limit,
-		Strategy:   input.Strategy,
-	})
+	history, err := s.repos.ListMessages(ctx, conversation.TenantID, conversation.ID)
 	if err != nil {
 		return askPreparation{}, err
 	}
-
-	history, err := s.repos.ListMessages(ctx, conversation.TenantID, conversation.ID)
+	retrievalQuery := rewriteRetrievalQuery(question, history)
+	searchResult, err := s.search.Search(ctx, SearchInput{
+		TenantID:   input.TenantID,
+		DocumentID: input.DocumentID,
+		Query:      retrievalQuery,
+		Limit:      input.Limit,
+		Strategy:   input.Strategy,
+	})
 	if err != nil {
 		return askPreparation{}, err
 	}
@@ -293,6 +293,7 @@ func (s ConversationService) prepareAsk(ctx context.Context, input AskInput, emi
 			Metadata: map[string]string{
 				"tenant_id":       string(conversation.TenantID),
 				"conversation_id": string(conversation.ID),
+				"retrieval_query": retrievalQuery,
 			},
 		},
 	}, nil

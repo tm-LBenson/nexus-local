@@ -63,7 +63,7 @@ Use the offline answer eval when touching prompts, citation/source UX, model tar
 .\nexus.ps1 eval-answer
 ```
 
-The fixture at `fixtures/eval/answer-baseline.json` seeds the same in-memory index, runs the normal Ask service with a deterministic model stub, and verifies expected sources, citation text, required phrases, forbidden phrases, refusal wording, prompt context, and conversation history. It does not need Docker, a model gateway, or a GPU.
+The fixture at `fixtures/eval/answer-baseline.json` seeds the same in-memory index, runs the normal Ask service with a deterministic model stub, and verifies expected sources, citation text, required phrases, forbidden phrases, refusal wording, prompt context, and conversation history. Cases can also seed prior conversation messages to exercise follow-up retrieval rewriting without changing the stored user question. It does not need Docker, a model gateway, or a GPU.
 
 ## Backup/Restore Gate
 

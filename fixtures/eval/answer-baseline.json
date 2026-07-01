@@ -120,6 +120,36 @@
       }
     },
     {
+      "id": "oidc_redirect_followup_answer",
+      "question": "How do I fix it?",
+      "strategy": "hybrid",
+      "limit": 3,
+      "history": [
+        {
+          "role": "user",
+          "content": "Why does OIDC fail with invalid redirect uri callback mismatch?"
+        },
+        {
+          "role": "assistant",
+          "content": "The callback URL must exactly match the configured redirect URI."
+        }
+      ],
+      "answer": "Make the callback URL in the application request exactly match the redirect URI configured on the identity provider, including scheme, host, port, path, and trailing slash [1].",
+      "expected": {
+        "expected_sources": [
+          {
+            "document_id": "doc_oidc_troubleshooting",
+            "chunk_id": "redirect_uri"
+          }
+        ],
+        "max_source_rank": 1,
+        "min_sources": 1,
+        "require_citations": ["[1]"],
+        "require_phrases": ["exactly match", "trailing slash"],
+        "forbidden_phrases": ["rotate the client secret"]
+      }
+    },
+    {
       "id": "no_context_refusal",
       "document_id": "doc_missing",
       "question": "What is the refund approval policy for enterprise invoices?",
