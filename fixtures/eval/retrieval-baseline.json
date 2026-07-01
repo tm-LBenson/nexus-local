@@ -1,0 +1,138 @@
+{
+  "name": "retrieval-baseline-v1",
+  "description": "Small offline retrieval fixture for support and governance knowledge-base behavior.",
+  "tenant_id": "tenant_eval",
+  "embedding_model": "eval-hash",
+  "embedding_dimensions": 256,
+  "documents": [
+    {
+      "id": "doc_oidc_troubleshooting",
+      "name": "OIDC Troubleshooting.md",
+      "metadata": {
+        "source": "support-runbook",
+        "topic": "identity"
+      },
+      "chunks": [
+        {
+          "id": "redirect_uri",
+          "text": "OIDC invalid redirect uri errors happen when the callback URL in the application request does not exactly match the redirect URI configured on the identity provider. Check scheme host port path and trailing slash."
+        },
+        {
+          "id": "client_secret",
+          "text": "OIDC client secret rotation failures usually show invalid client credentials. Replace the expired client secret in the service configuration and verify the token endpoint can authenticate the client."
+        }
+      ]
+    },
+    {
+      "id": "doc_har_diagnostics",
+      "name": "HAR Diagnostics.md",
+      "metadata": {
+        "source": "case-library",
+        "topic": "support"
+      },
+      "chunks": [
+        {
+          "id": "cors_preflight",
+          "text": "A HAR file with repeated 401 responses during CORS preflight usually means the OPTIONS request is being challenged. Allow unauthenticated OPTIONS responses and confirm access-control-allow-origin headers match the browser origin."
+        },
+        {
+          "id": "cookie_scope",
+          "text": "Session cookie scope issues in a HAR file often show login succeeded but subsequent API requests omit the cookie. Check SameSite Secure domain and path attributes."
+        }
+      ]
+    },
+    {
+      "id": "doc_governance_policy",
+      "name": "Governance Policy.md",
+      "metadata": {
+        "source": "policy",
+        "topic": "governance"
+      },
+      "chunks": [
+        {
+          "id": "pii_redaction",
+          "text": "PII redaction policy requires customer identifiers account numbers social security numbers and email addresses to be minimized before an answer is shown to users without elevated permission."
+        },
+        {
+          "id": "mfa_status",
+          "text": "Workflow status automation must verify MFA identity checks before sharing paperwork status password status or account-specific process updates with a requester."
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "oidc_redirect_uri",
+      "query": "OIDC invalid redirect uri callback mismatch",
+      "limit": 3,
+      "expected": {
+        "hits": [
+          {
+            "document_id": "doc_oidc_troubleshooting",
+            "chunk_id": "redirect_uri"
+          }
+        ],
+        "max_rank": 1
+      }
+    },
+    {
+      "id": "oidc_client_secret",
+      "query": "OIDC invalid client credentials expired secret token endpoint",
+      "limit": 3,
+      "expected": {
+        "hits": [
+          {
+            "document_id": "doc_oidc_troubleshooting",
+            "chunk_id": "client_secret"
+          }
+        ],
+        "max_rank": 1
+      }
+    },
+    {
+      "id": "har_cors_preflight",
+      "query": "HAR 401 CORS preflight OPTIONS access control allow origin",
+      "limit": 3,
+      "filters": {
+        "topic": "support"
+      },
+      "expected": {
+        "hits": [
+          {
+            "document_id": "doc_har_diagnostics",
+            "chunk_id": "cors_preflight"
+          }
+        ],
+        "max_rank": 1
+      }
+    },
+    {
+      "id": "governance_pii_redaction",
+      "query": "PII redaction customer identifiers email account numbers",
+      "limit": 3,
+      "expected": {
+        "hits": [
+          {
+            "document_id": "doc_governance_policy",
+            "chunk_id": "pii_redaction"
+          }
+        ],
+        "max_rank": 1
+      }
+    },
+    {
+      "id": "governance_mfa_status",
+      "query": "MFA identity checks before sharing paperwork status updates",
+      "limit": 3,
+      "expected": {
+        "hits": [
+          {
+            "document_id": "doc_governance_policy",
+            "chunk_id": "mfa_status"
+          }
+        ],
+        "max_rank": 1
+      }
+    }
+  ]
+}

@@ -43,7 +43,17 @@ Use the release check before tagging, demoing, or handing a build to another mac
 .\nexus.ps1 release-check
 ```
 
-This command runs API and launcher tests, the web production build, the end-to-end smoke gate, and the backup/restore round trip. It finishes by printing the manual UI checklist that still needs human eyes: setup blocking, first-run sample, dashboard, library, activity, settings, and slow-model answer states.
+This command runs API and launcher tests, the retrieval eval gate, the web production build, the end-to-end smoke gate, and the backup/restore round trip. It finishes by printing the manual UI checklist that still needs human eyes: setup blocking, first-run sample, dashboard, library, activity, settings, and slow-model answer states.
+
+## Retrieval Eval Gate
+
+Use the offline retrieval eval when touching search, chunking, source metadata, filters, embeddings, or answer grounding:
+
+```powershell
+.\nexus.ps1 eval-retrieval
+```
+
+The fixture at `fixtures/eval/retrieval-baseline.json` builds an in-memory index with hash embeddings, runs the normal search service, and verifies that support/governance questions retrieve the expected document chunks within the expected rank. It does not need Docker, a model gateway, or a GPU.
 
 ## Backup/Restore Gate
 

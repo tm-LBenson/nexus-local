@@ -127,6 +127,14 @@ Run the Phase 1 release gate before tagging or calling a build demo-ready:
 
 This runs API/launcher tests, the web production build, the end-to-end smoke gate, and the backup/restore round trip, then prints the manual UI checklist for setup, dashboard, library, activity, settings, and slow-model answer states.
 
+Run the offline retrieval quality gate after changing search, chunking, metadata filters, or embeddings:
+
+```powershell
+.\nexus.ps1 eval-retrieval
+```
+
+This builds a small in-memory fixture index and verifies that support/governance questions retrieve the expected sources. It does not require Docker or a model gateway.
+
 Run a managed-source stress check:
 
 ```powershell

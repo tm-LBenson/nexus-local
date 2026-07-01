@@ -167,3 +167,11 @@ Before a release candidate or serious demo, run the full release gate:
 ```
 
 That gate runs tests, the production web build, smoke, backup/restore, and then prints the remaining manual UI checklist.
+
+For search/retrieval changes, run the offline eval gate:
+
+```powershell
+.\nexus.ps1 eval-retrieval
+```
+
+It uses checked-in fixtures and does not require Docker or a model gateway.

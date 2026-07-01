@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $devCheckScript = Join-Path $PSScriptRoot "dev-check.ps1"
+$evalRetrievalScript = Join-Path $PSScriptRoot "eval-retrieval.ps1"
 $testScript = Join-Path $PSScriptRoot "test.ps1"
 
 function Invoke-ReleaseStep($name, [scriptblock]$block) {
@@ -38,6 +39,10 @@ $skippedGates = [System.Collections.Generic.List[string]]::new()
 
 Invoke-ReleaseStep "API and launcher tests" {
   & $testScript
+}
+
+Invoke-ReleaseStep "Retrieval eval gate" {
+  & $evalRetrievalScript
 }
 
 Invoke-ReleaseStep "Web production build" {
