@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ApiError,
   AuditEventFilters,
   AskConversationResponse,
   ConnectorConfig,
@@ -141,11 +142,13 @@ type SourceHealthItem = {
 };
 
 type TargetCheckState = {
-  state: 'ok' | 'failed';
+  state: 'ok' | 'loading' | 'failed';
   detail: string;
   checked_at?: string;
+  error_class?: string;
   latency_ms?: number;
   model?: string;
+  retryable?: boolean;
 };
 
 type ModelPerformanceRow = {
@@ -914,13 +917,16 @@ export function App() {
   );
   const showSetupWizard = !setupCanEnter || setupAcknowledgedKey !== setupFingerprint;
   const gatewaySetupCheck = setupChecks.find((check) => check.id === 'gateway');
-  const setupGatewayOnlyBlocker =
-    gatewaySetupCheck?.status === 'blocked' &&
+  const setupGatewayOnlyPending =
+    (gatewaySetupCheck?.status === 'blocked' || gatewaySetupCheck?.status === 'checking') &&
     setupChecks.every(
       (check) => check.id === 'gateway' || !check.blocking || check.status === 'ok',
     );
   const setupShouldAutoRecheck =
-    showSetupWizard && setupGatewayOnlyBlocker && !setupChecking && setupGatewayCheck?.state !== 'ok';
+    showSetupWizard &&
+    setupGatewayOnlyPending &&
+    !setupChecking &&
+    setupGatewayCheck?.state === 'loading';
   const setupAutoRecheckSeconds =
     setupAutoRecheckAt === null
       ? null
@@ -1141,9 +1147,12 @@ export function App() {
         detail: `${result.model || result.route.model} ${result.latency_ms}ms`,
       });
     } catch (err) {
+      const apiError = err instanceof ApiError ? err : null;
       setSetupGatewayCheck({
-        state: 'failed',
+        state: apiError?.checkState === 'loading' || apiError?.retryable ? 'loading' : 'failed',
         detail: messageFromError(err),
+        error_class: apiError?.errorClass,
+        retryable: apiError?.retryable,
       });
     } finally {
       setSetupChecking(false);
@@ -1161,10 +1170,16 @@ export function App() {
       await checkSetupGateway(result.targets);
     } catch (err) {
       const message = messageFromError(err);
+      const apiError = err instanceof ApiError ? err : null;
       if (!options.silent) {
         setError(message);
       }
-      setSetupGatewayCheck({ state: 'failed', detail: message });
+      setSetupGatewayCheck({
+        state: apiError?.checkState === 'loading' || apiError?.retryable ? 'loading' : 'failed',
+        detail: message,
+        error_class: apiError?.errorClass,
+        retryable: apiError?.retryable,
+      });
       setSetupLastChecked(new Date().toISOString());
     } finally {
       setSetupChecking(false);
@@ -6292,13 +6307,19 @@ function SetupWizard({
               <dt>Model</dt>
               <dd>{primaryTarget?.model ?? 'Not configured'}</dd>
             </div>
+            {gatewayCheck && (
+              <div>
+                <dt>Status</dt>
+                <dd>{gatewayStateLabel(gatewayCheck.state)}</dd>
+              </div>
+            )}
             <div>
               <dt>Result</dt>
               <dd>{gatewayCheck?.detail ?? 'Waiting for check'}</dd>
             </div>
           </dl>
 
-          <details className="inlineDetails" open={!canEnter}>
+          <details className="inlineDetails" open={!canEnter && gatewayCheck?.state !== 'loading'}>
             <summary>Configure</summary>
             <pre className="setupCode">{`.\\scripts\\setup.ps1 -Profile ${commandProfile} -ProviderPreset ${readiness?.provider_preset || 'starter'} -ModelGatewayBaseUrl "${commandGateway}" -GeneralModelId "${commandModel}" -Force`}</pre>
           </details>
@@ -6353,6 +6374,8 @@ function buildSetupChecks({
   const gatewayStatus: SetupCheckStatus =
     gatewayCheck?.state === 'ok'
       ? 'ok'
+      : gatewayCheck?.state === 'loading'
+        ? 'checking'
       : checking && gatewayCheck === null
         ? 'checking'
         : 'blocked';
@@ -6425,6 +6448,17 @@ function setupStatusLabel(status: SetupCheckStatus) {
       return 'Checking';
     case 'blocked':
       return 'Blocked';
+  }
+}
+
+function gatewayStateLabel(state: TargetCheckState['state']) {
+  switch (state) {
+    case 'ok':
+      return 'Ready';
+    case 'loading':
+      return 'Loading';
+    case 'failed':
+      return 'Needs configuration';
   }
 }
 
@@ -6903,13 +6937,34 @@ function titleCase(value: string) {
 
 function messageFromError(err: unknown) {
   const message = err instanceof Error ? err.message : 'Unknown API error';
-  return friendlyErrorMessage(message);
+  return friendlyErrorMessage(message, err instanceof ApiError ? err : null);
 }
 
-function friendlyErrorMessage(message: string) {
+function friendlyErrorMessage(message: string, apiError: ApiError | null = null) {
+  switch (apiError?.errorClass) {
+    case 'starting':
+      return 'Model gateway is starting. Nexus will keep checking automatically.';
+    case 'loading_timeout':
+      return 'Model gateway is still loading or compiling. Nexus will keep checking automatically.';
+    case 'gateway_loading':
+      return 'Model gateway answered but is not ready yet. Nexus will keep checking automatically.';
+    case 'rate_limited':
+      return 'Model gateway is rate limited right now. Nexus will retry shortly.';
+    case 'not_found':
+      return 'Model gateway answered, but the route or model was not found. Check the provider URL and model in Settings.';
+    case 'host_not_found':
+      return 'Model gateway host was not found. Check the gateway URL for this machine.';
+    case 'auth':
+      return 'Model gateway rejected the request. Check the gateway API key in Settings.';
+    case 'unknown_target':
+      return 'Model target was not found. Check the configured default target.';
+    case 'invalid_target':
+      return 'Model target is invalid. Check the configured target name and model.';
+  }
+
   const lower = message.toLowerCase();
   if (lower.includes('model gateway') && lower.includes('404')) {
-    return 'Model gateway answered, but the route or model is not ready/found. It may still be loading; check Settings if this does not clear.';
+    return 'Model gateway answered, but the route or model was not found. Check the provider URL and model in Settings.';
   }
   if (lower.includes('model gateway') && lower.includes('status')) {
     return 'Model gateway answered with an error. It may still be loading; check Settings if this does not clear.';

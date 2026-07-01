@@ -213,6 +213,68 @@ func TestModelTargetCheckEndpointMapsGatewayFailure(t *testing.T) {
 	if resp.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusBadGateway, resp.Body.String())
 	}
+
+	var body struct {
+		Error      string `json:"error"`
+		ErrorClass string `json:"error_class"`
+		Retryable  bool   `json:"retryable"`
+		CheckState string `json:"check_state"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.ErrorClass != "gateway_loading" || !body.Retryable || body.CheckState != "loading" {
+		t.Fatalf("body = %#v, want retryable loading gateway error", body)
+	}
+	if !strings.Contains(body.Error, "gateway unavailable") {
+		t.Fatalf("error = %q, want gateway detail", body.Error)
+	}
+}
+
+func TestModelTargetCheckEndpointClassifiesNotFoundAsConfigFailure(t *testing.T) {
+	router, err := providers.NewModelRouter([]providers.TargetConfig{
+		{Name: "general", Provider: "openai-compatible", BaseURL: "http://gpu.local:8000/v1", Model: "missing-model"},
+	}, "general")
+	if err != nil {
+		t.Fatalf("model router: %v", err)
+	}
+	cfg := config.Config{
+		Env:                 "test",
+		Version:             "test",
+		CORSAllowedOrigin:   "http://localhost:5173",
+		AuthMode:            internalauth.ModeDev,
+		DevUserID:           "user_1",
+		DevUserEmail:        "dev@example.local",
+		TrustedUserIDHeader: "X-User-ID",
+		TrustedEmailHeader:  "X-User-Email",
+	}
+
+	server := NewRouter(cfg, Dependencies{
+		ModelRouter:   router,
+		ModelGateway:  notFoundModelGateway{},
+		Authenticator: internalauth.NewAuthenticator(cfg),
+		Authorizer:    internalauth.NewAuthorizer(cfg, memory.New()),
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/model-targets/check", bytes.NewBufferString(`{"target":"general"}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusBadGateway, resp.Body.String())
+	}
+
+	var body struct {
+		ErrorClass string `json:"error_class"`
+		Retryable  bool   `json:"retryable"`
+		CheckState string `json:"check_state"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.ErrorClass != "not_found" || body.Retryable || body.CheckState != "failed" {
+		t.Fatalf("body = %#v, want non-retryable not_found error", body)
+	}
 }
 
 func TestCurrentUserEndpoint(t *testing.T) {
@@ -2768,6 +2830,15 @@ func (failingModelGateway) Complete(ctx context.Context, input providers.ChatCom
 		return providers.ChatCompletion{}, err
 	}
 	return providers.ChatCompletion{}, fmt.Errorf("gateway unavailable")
+}
+
+type notFoundModelGateway struct{}
+
+func (notFoundModelGateway) Complete(ctx context.Context, input providers.ChatCompletionRequest) (providers.ChatCompletion, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatCompletion{}, err
+	}
+	return providers.ChatCompletion{}, fmt.Errorf("model gateway status 404: model not found")
 }
 
 type capturingModelGateway struct {

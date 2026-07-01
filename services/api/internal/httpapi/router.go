@@ -190,7 +190,7 @@ func modelTargetCheckHandler(modelRouter *providers.ModelRouter, modelGateway pr
 			},
 		})
 		if err != nil {
-			writeError(w, modelTargetCheckStatus(err), fmt.Sprintf("model target check: %v", err))
+			writeModelTargetCheckError(w, err)
 			return
 		}
 
@@ -253,6 +253,77 @@ func modelTargetCheckStatus(err error) int {
 		return http.StatusBadRequest
 	}
 	return http.StatusBadGateway
+}
+
+func writeModelTargetCheckError(w http.ResponseWriter, err error) {
+	errorClass := modelTargetCheckErrorClass(err)
+	retryable := modelTargetCheckRetryable(errorClass)
+	checkState := "failed"
+	if retryable {
+		checkState = "loading"
+	}
+	writeJSON(w, modelTargetCheckStatus(err), envelope{
+		"error":       fmt.Sprintf("model target check: %v", err),
+		"error_class": errorClass,
+		"retryable":   retryable,
+		"check_state": checkState,
+	})
+}
+
+func modelTargetCheckErrorClass(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "loading_timeout"
+	case errors.Is(err, providers.ErrUnknownTarget):
+		return "unknown_target"
+	case errors.Is(err, providers.ErrEmptyTarget), errors.Is(err, domain.ErrInvalidEntity):
+		return "invalid_target"
+	}
+
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "status 401") || strings.Contains(lower, "status 403"):
+		return "auth"
+	case strings.Contains(lower, "status 404") ||
+		strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "route was not found"):
+		return "not_found"
+	case strings.Contains(lower, "no such host") ||
+		strings.Contains(lower, "name resolution") ||
+		strings.Contains(lower, "lookup "):
+		return "host_not_found"
+	case strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "actively refused") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "connection was closed") ||
+		strings.Contains(lower, "unexpected eof"):
+		return "starting"
+	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline"):
+		return "loading_timeout"
+	case strings.Contains(lower, "status 429"):
+		return "rate_limited"
+	case strings.Contains(lower, "status 500") ||
+		strings.Contains(lower, "status 502") ||
+		strings.Contains(lower, "status 503") ||
+		strings.Contains(lower, "status 504") ||
+		strings.Contains(lower, "loading") ||
+		strings.Contains(lower, "starting") ||
+		strings.Contains(lower, "unavailable"):
+		return "gateway_loading"
+	case strings.Contains(lower, "model gateway"):
+		return "gateway"
+	default:
+		return "unknown"
+	}
+}
+
+func modelTargetCheckRetryable(errorClass string) bool {
+	switch errorClass {
+	case "starting", "loading_timeout", "gateway_loading", "rate_limited":
+		return true
+	default:
+		return false
+	}
 }
 
 type registerDocumentRequest struct {

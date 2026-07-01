@@ -46,6 +46,30 @@ export type ModelTargetCheckResponse = {
   latency_ms: number;
 };
 
+export class ApiError extends Error {
+  status: number;
+  errorClass: string;
+  retryable: boolean;
+  checkState: string;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      errorClass?: string;
+      retryable?: boolean;
+      checkState?: string;
+    },
+  ) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = options.status;
+    this.errorClass = options.errorClass ?? '';
+    this.retryable = options.retryable ?? false;
+    this.checkState = options.checkState ?? '';
+  }
+}
+
 export type CurrentUser = {
   id: string;
   email: string;
@@ -970,7 +994,12 @@ async function errorFromResponse(response: Response) {
     try {
       const parsed: unknown = JSON.parse(body);
       if (isRecord(parsed) && typeof parsed.error === 'string') {
-        return new Error(parsed.error);
+        return new ApiError(parsed.error, {
+          status: response.status,
+          errorClass: typeof parsed.error_class === 'string' ? parsed.error_class : '',
+          retryable: parsed.retryable === true,
+          checkState: typeof parsed.check_state === 'string' ? parsed.check_state : '',
+        });
       }
     } catch {
       return new Error(body);

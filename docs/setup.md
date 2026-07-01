@@ -146,7 +146,9 @@ For the default CPU profile:
 .\scripts\dev-up.ps1
 ```
 
-For `split-nas-gpu`, `gpu-local`, and `prod-auth`, use the command printed by the setup script. The `dev-up.ps1` helper is intentionally the simple local CPU-stack helper; it automatically passes the root `.env` file and starts optional embedding overlays, but it does not start the bundled GPU model gateway.
+`dev-up.ps1` reads `DEPLOYMENT_PROFILE` and optional overlays from the root `.env`, so it can start CPU, split, local GPU, source mount, and embedding profiles without extra flags. The command printed by `setup.ps1` is still useful for seeing the exact Compose files and profiles that will be used.
+
+When the web setup screen is waiting on a model gateway, it polls `POST /v1/model-targets/check`. Startup, timeout, rate-limit, and temporary gateway failures are treated as loading states and rechecked automatically. Host, auth, missing-model, or missing-route failures stay blocked until the operator changes the configured gateway URL, API key, or model.
 
 After the stack is running, use the end-to-end smoke gate:
 
