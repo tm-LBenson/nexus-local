@@ -62,6 +62,7 @@ import {
   retryDocument,
   scanDataSource,
   searchDocuments,
+  shutdownRuntime,
   updateSourcePolicyProfile,
   updateSourceView,
   updateDataSource,
@@ -627,6 +628,8 @@ export function App() {
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [ingestionSyncing, setIngestionSyncing] = useState(false);
   const [lastIngestionSync, setLastIngestionSync] = useState('');
+  const [shuttingDown, setShuttingDown] = useState(false);
+  const [shutdownNotice, setShutdownNotice] = useState('');
 
   const selectedTenant = useMemo(
     () => currentUser?.memberships.find((membership) => membership.tenant.id === tenantID),
@@ -1561,6 +1564,44 @@ export function App() {
       setModelAuditEvents(modelAuditResult);
     } catch (err) {
       setError(messageFromError(err));
+    }
+  }
+
+  async function requestRuntimeShutdown() {
+    if (!tenantID) {
+      setError('Open a workspace first');
+      return;
+    }
+    if (!canManageTenant) {
+      setError('Owner or admin access is required to shut down the stack');
+      return;
+    }
+    if (!readiness?.shutdown_available) {
+      setError('UI shutdown is not available for this deployment');
+      return;
+    }
+    const confirmation = window.prompt('Type SHUTDOWN to stop Nexus Local containers.');
+    if (confirmation !== 'SHUTDOWN') {
+      return;
+    }
+
+    setShuttingDown(true);
+    setShutdownNotice('');
+    setError(null);
+    try {
+      const result = await shutdownRuntime({
+        tenant_id: tenantID,
+        confirmation,
+      });
+      const count = result.containers?.length ?? 0;
+      setShutdownNotice(
+        count > 0
+          ? `${count} containers are stopping. This page will disconnect.`
+          : result.message,
+      );
+    } catch (err) {
+      setError(messageFromError(err));
+      setShuttingDown(false);
     }
   }
 
@@ -5993,6 +6034,49 @@ export function App() {
                   </div>
                 </details>
               )}
+
+              <details className="settingsDetails">
+                <summary>
+                  <span>Operator</span>
+                  <em>
+                    {readiness?.shutdown_available
+                      ? 'shutdown ready'
+                      : readiness?.shutdown_enabled
+                        ? 'setup needed'
+                        : 'disabled'}
+                  </em>
+                </summary>
+                <div className="settingsDetailsBody">
+                  <div className="operatorPanel">
+                    <div>
+                      <strong>Shutdown stack</strong>
+                      <span>
+                        Stop Nexus Local containers for {readiness?.shutdown_project ?? 'this project'}.
+                        Volumes stay intact.
+                      </span>
+                    </div>
+                    <button
+                      className="dangerButton"
+                      disabled={
+                        shuttingDown ||
+                        !workspaceReady ||
+                        !canManageTenant ||
+                        !readiness?.shutdown_available
+                      }
+                      onClick={() => void requestRuntimeShutdown()}
+                      type="button"
+                    >
+                      {shuttingDown ? 'Stopping' : 'Shut down'}
+                    </button>
+                  </div>
+                  {shutdownNotice && <div className="setupNotice">{shutdownNotice}</div>}
+                  {!readiness?.shutdown_available && (
+                    <p className="muted">
+                      Enable local operator controls from guided setup to use this button.
+                    </p>
+                  )}
+                </div>
+              </details>
 
               <details className="settingsDetails">
                 <summary>

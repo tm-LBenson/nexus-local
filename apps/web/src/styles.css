@@ -3759,6 +3759,40 @@ h3 {
   justify-content: flex-end;
 }
 
+.operatorPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #efd4cf;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fff8f7;
+}
+
+.operatorPanel div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.operatorPanel strong,
+.operatorPanel span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.operatorPanel strong {
+  color: #172026;
+}
+
+.operatorPanel span {
+  color: #76514b;
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
 .auditToolbar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
@@ -4645,7 +4679,8 @@ strong {
   .sourceMountStatus,
   .contextSourceQuick,
   .contextSourceForm,
-  .contextAdvancedGrid {
+  .contextAdvancedGrid,
+  .operatorPanel {
     grid-template-columns: 1fr;
   }
 

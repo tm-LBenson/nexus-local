@@ -26,6 +26,9 @@ export type Readiness = {
   model_gateway_auth: boolean;
   source_host_configured: boolean;
   source_container_path: string;
+  shutdown_enabled: boolean;
+  shutdown_available: boolean;
+  shutdown_project: string;
 };
 
 export type ModelTarget = {
@@ -114,6 +117,18 @@ export type ListTenantMembersResponse = {
 export type AddTenantMemberResponse = {
   tenant: Tenant;
   member: TenantMember;
+};
+
+export type RuntimeShutdownResponse = {
+  status: string;
+  message: string;
+  project: string;
+  containers?: Array<{
+    id: string;
+    name: string;
+    service: string;
+    state: string;
+  }>;
 };
 
 export type DocumentRegistration = {
@@ -449,6 +464,16 @@ export async function createTenant(input: { name: string }) {
 export async function deleteTenant(tenantId: string) {
   return request<{ tenant: Tenant }>(`/v1/tenants/${encodeURIComponent(tenantId)}`, {
     method: 'DELETE',
+  });
+}
+
+export async function shutdownRuntime(input: {
+  tenant_id: string;
+  confirmation: string;
+}) {
+  return request<RuntimeShutdownResponse>('/v1/runtime/shutdown', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 

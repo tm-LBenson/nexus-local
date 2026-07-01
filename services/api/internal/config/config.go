@@ -45,6 +45,10 @@ type Config struct {
 	GeneralModelID            string
 	SourceHostPath            string
 	SourceContainerPath       string
+	UIShutdownEnabled         bool
+	UIShutdownDockerSocket    string
+	UIShutdownComposeProject  string
+	UIShutdownStopTimeout     time.Duration
 	WorkerPollInterval        time.Duration
 	WorkerDocumentConcurrency int
 }
@@ -89,6 +93,10 @@ func Load() Config {
 		GeneralModelID:            env("GENERAL_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct"),
 		SourceHostPath:            env("NEXUS_SOURCE_HOST_PATH", ""),
 		SourceContainerPath:       env("NEXUS_SOURCE_CONTAINER_PATH", "/sources/primary"),
+		UIShutdownEnabled:         envBool("UI_SHUTDOWN_ENABLED", false),
+		UIShutdownDockerSocket:    env("UI_SHUTDOWN_DOCKER_SOCKET", "/var/run/docker.sock"),
+		UIShutdownComposeProject:  env("UI_SHUTDOWN_COMPOSE_PROJECT", "nexus-local"),
+		UIShutdownStopTimeout:     envDuration("UI_SHUTDOWN_STOP_TIMEOUT", 10*time.Second),
 		WorkerPollInterval:        envDuration("WORKER_POLL_INTERVAL", 2*time.Second),
 		WorkerDocumentConcurrency: envBoundedInt("WORKER_DOCUMENT_CONCURRENCY", 1, 1, 32),
 	}

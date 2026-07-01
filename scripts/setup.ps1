@@ -27,7 +27,8 @@ param(
   [string]$ObjectStorageAccessKey = "",
   [string]$ObjectStorageSecretKey = "",
   [string]$SourceHostPath = "",
-  [string]$SourceContainerPath = ""
+  [string]$SourceContainerPath = "",
+  [string]$UIShutdownEnabled = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -116,6 +117,20 @@ function Normalize-SourceContainerPath($path) {
     throw "Source container path must start with '/', for example /sources/primary."
   }
   return $normalized.TrimEnd("/")
+}
+
+function Normalize-BoolText($value, $default = "false") {
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = $default
+  }
+  $normalized = $value.Trim().ToLowerInvariant()
+  if ($normalized -in @("1", "true", "yes", "y", "on")) {
+    return "true"
+  }
+  if ($normalized -in @("0", "false", "no", "n", "off")) {
+    return "false"
+  }
+  throw "Expected a boolean value, got '$value'."
 }
 
 function Select-SetupProfile {
@@ -332,6 +347,11 @@ function Write-EnvFile($path, $values) {
         "NEXUS_SOURCE_HOST_PATH", "NEXUS_SOURCE_CONTAINER_PATH"
       )
     },
+    @{ Title = "Operator Controls"; Keys = @(
+        "UI_SHUTDOWN_ENABLED", "UI_SHUTDOWN_DOCKER_SOCKET", "UI_SHUTDOWN_COMPOSE_PROJECT",
+        "UI_SHUTDOWN_STOP_TIMEOUT"
+      )
+    },
     @{ Title = "Models"; Keys = @(
         "PROVIDER_PRESET", "MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_PORT", "MODEL_GATEWAY_API_KEY", "MODEL_GATEWAY_TIMEOUT",
         "DEFAULT_MODEL_TARGET", "GENERAL_MODEL_ID", "VLLM_GPU_MEMORY_UTILIZATION",
@@ -397,9 +417,9 @@ function Test-SourceMountEnabled($values) {
   return $values.Contains("NEXUS_SOURCE_HOST_PATH") -and -not [string]::IsNullOrWhiteSpace($values["NEXUS_SOURCE_HOST_PATH"])
 }
 
-function Get-ComposeCommand($selectedProfile, $envPath, $includeSourceMounts) {
+function Get-ComposeCommand($selectedProfile, $envPath, $includeSourceMounts, $includeOperatorControls) {
   $envArg = "--env-file `"$envPath`""
-  $fileArgs = (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts | ForEach-Object { "-f $_" }) -join " "
+  $fileArgs = (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts $includeOperatorControls | ForEach-Object { "-f $_" }) -join " "
   $profileArg = ""
   if ($selectedProfile -eq "gpu-local") {
     $profileArg = " --profile gpu"
@@ -407,7 +427,7 @@ function Get-ComposeCommand($selectedProfile, $envPath, $includeSourceMounts) {
   return "docker compose $envArg $fileArgs$profileArg up -d --build"
 }
 
-function Get-ComposeFiles($selectedProfile, $embeddingRuntime, $includeSourceMounts = $false) {
+function Get-ComposeFiles($selectedProfile, $embeddingRuntime, $includeSourceMounts = $false, $includeOperatorControls = $false) {
   $files = [System.Collections.Generic.List[string]]::new()
   switch ($selectedProfile) {
     "cpu-lite" {
@@ -434,12 +454,15 @@ function Get-ComposeFiles($selectedProfile, $embeddingRuntime, $includeSourceMou
   if ($includeSourceMounts) {
     $files.Add("deploy/compose/compose.sources.yml")
   }
+  if ($includeOperatorControls) {
+    $files.Add("deploy/compose/compose.control.yml")
+  }
   return $files
 }
 
-function Test-ComposeConfig($selectedProfile, $envPath, $includeSourceMounts) {
+function Test-ComposeConfig($selectedProfile, $envPath, $includeSourceMounts, $includeOperatorControls) {
   $args = @("--env-file", $envPath)
-  foreach ($file in (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts)) {
+  foreach ($file in (Get-ComposeFiles $selectedProfile $embeddingRuntimeValue $includeSourceMounts $includeOperatorControls)) {
     $args += @("-f", (Join-Path $root $file))
   }
   if ($selectedProfile -eq "gpu-local") {
@@ -572,6 +595,16 @@ $sourceContainerPathValue = $sourceContainerDefault
 if (-not [string]::IsNullOrWhiteSpace($sourceHostPathValue)) {
   $sourceContainerPathValue = Normalize-SourceContainerPath (Read-SetupValue "Source container path" (Get-ProvidedOrDefault $SourceContainerPath $sourceContainerDefault) $SourceContainerPath)
 }
+$shutdownDefault = Get-EnvDefault $existingValues "UI_SHUTDOWN_ENABLED" "false"
+$shutdownDefaultForProfile = $shutdownDefault
+if ([string]::IsNullOrWhiteSpace($UIShutdownEnabled) -and -not $existingValues.Contains("UI_SHUTDOWN_ENABLED") -and $selectedProfile -ne "prod-auth") {
+  $shutdownDefaultForProfile = "true"
+}
+$uiShutdownValue = Normalize-BoolText (Read-SetupValue "Enable UI shutdown button" (Get-ProvidedOrDefault $UIShutdownEnabled $shutdownDefaultForProfile) $UIShutdownEnabled) $shutdownDefaultForProfile
+$shutdownProjectDefault = "nexus-local"
+if ($selectedProfile -eq "prod-auth") {
+  $shutdownProjectDefault = "nexus-local-prod-auth"
+}
 $autheliaValue = "http://authelia:9091"
 if ($selectedProfile -eq "prod-auth") {
   $autheliaValue = Read-SetupValue "Forward-auth internal URL" (Get-ProvidedOrDefault $AutheliaInternalUrl "http://authelia:9091") $AutheliaInternalUrl
@@ -625,6 +658,10 @@ Set-EnvValue $values "QUEUE_URL" "nats://nats:4222"
 Set-EnvValue $values "CACHE_URL" "redis://valkey:6379/0"
 Set-EnvValue $values "NEXUS_SOURCE_HOST_PATH" $sourceHostPathValue
 Set-EnvValue $values "NEXUS_SOURCE_CONTAINER_PATH" $sourceContainerPathValue
+Set-EnvValue $values "UI_SHUTDOWN_ENABLED" $uiShutdownValue
+Set-EnvValue $values "UI_SHUTDOWN_DOCKER_SOCKET" (Get-EnvDefault $existingValues "UI_SHUTDOWN_DOCKER_SOCKET" "/var/run/docker.sock")
+Set-EnvValue $values "UI_SHUTDOWN_COMPOSE_PROJECT" (Get-EnvDefault $existingValues "UI_SHUTDOWN_COMPOSE_PROJECT" $shutdownProjectDefault)
+Set-EnvValue $values "UI_SHUTDOWN_STOP_TIMEOUT" (Get-EnvDefault $existingValues "UI_SHUTDOWN_STOP_TIMEOUT" "10s")
 Set-EnvValue $values "PROVIDER_PRESET" $providerPresetValue
 Set-EnvValue $values "MODEL_GATEWAY_BASE_URL" $modelGatewayValue
 Set-EnvValue $values "MODEL_GATEWAY_PORT" $modelGatewayPortValue
@@ -672,13 +709,14 @@ if (-not [string]::IsNullOrWhiteSpace($sourceHostPathValue) -and -not (Test-Path
 Test-Ports $portsToCheck
 $hasCompose = Test-SetupTools
 $includeSourceMounts = Test-SourceMountEnabled $values
+$includeOperatorControls = (Normalize-BoolText $uiShutdownValue) -eq "true"
 if ($hasCompose) {
-  Test-ComposeConfig $selectedProfile $OutputPath $includeSourceMounts
+  Test-ComposeConfig $selectedProfile $OutputPath $includeSourceMounts $includeOperatorControls
   Write-Host "Compose config validated for $selectedProfile."
 }
 
 $displayOutput = Get-DisplayPath $OutputPath
-$nextCommand = Get-ComposeCommand $selectedProfile $displayOutput $includeSourceMounts
+$nextCommand = Get-ComposeCommand $selectedProfile $displayOutput $includeSourceMounts $includeOperatorControls
 
 Write-Host ""
 Write-Host "Next command:"
@@ -687,6 +725,10 @@ if ($includeSourceMounts) {
   Write-Host ""
   Write-Host "Mounted source:"
   Write-Host "$sourceHostPathValue -> $sourceContainerPathValue"
+}
+if ($includeOperatorControls) {
+  Write-Host ""
+  Write-Host "UI shutdown is enabled. The API can stop Nexus Local containers through the Docker socket."
 }
 
 if ($selectedProfile -eq "prod-auth") {

@@ -73,6 +73,30 @@ func TestReadinessIncludesPersistenceBackend(t *testing.T) {
 	if body["source_container_path"] != "/sources/primary" {
 		t.Fatalf("source_container_path = %v, want /sources/primary", body["source_container_path"])
 	}
+	if body["shutdown_enabled"] != false {
+		t.Fatalf("shutdown_enabled = %v, want false", body["shutdown_enabled"])
+	}
+	if body["shutdown_available"] != false {
+		t.Fatalf("shutdown_available = %v, want false", body["shutdown_available"])
+	}
+	if body["shutdown_project"] != "nexus-local" {
+		t.Fatalf("shutdown_project = %v, want nexus-local", body["shutdown_project"])
+	}
+}
+
+func TestRuntimeShutdownDisabledByDefault(t *testing.T) {
+	server := newTestServer(t)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/shutdown", bytes.NewBufferString(`{
+		"tenant_id": "tenant_1",
+		"confirmation": "SHUTDOWN"
+	}`))
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body = %s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
 }
 
 func TestModelRouteEndpoint(t *testing.T) {

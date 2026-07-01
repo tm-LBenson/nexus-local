@@ -41,6 +41,7 @@ $apiHostPort = Read-NexusEnvValue $envFile "API_HOST_PORT"
 $webHostPort = Read-NexusEnvValue $envFile "WEB_HOST_PORT"
 $sourceHostPath = Read-NexusEnvValue $envFile "NEXUS_SOURCE_HOST_PATH"
 $sourceContainerPath = Read-NexusEnvValue $envFile "NEXUS_SOURCE_CONTAINER_PATH"
+$uiShutdownEnabled = (Read-NexusEnvValue $envFile "UI_SHUTDOWN_ENABLED").Trim().ToLowerInvariant()
 if (-not $apiHostPort) {
   $apiHostPort = "8080"
 }
@@ -84,6 +85,11 @@ if ($composeConfig.SourceMounts) {
     $sourceContainerPath = "/sources/primary"
   }
   Write-Host "Source:      $sourceHostPath -> $sourceContainerPath"
+}
+if ($composeConfig.OperatorControls) {
+  Write-Host "UI shutdown: enabled"
+} elseif ($uiShutdownEnabled -in @("1", "true", "yes", "y", "on")) {
+  Write-Host "UI shutdown: requested but control overlay was not included"
 }
 Write-Host ""
 Write-Host "Run scripts\dev-check.ps1 for a service check."

@@ -48,6 +48,7 @@ func NewRouter(cfg config.Config, deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /healthz", healthHandler(cfg))
 	mux.HandleFunc("GET /readyz", readinessHandler(cfg))
 	mux.HandleFunc("GET /v1/me", currentUserHandler(deps.Tenants))
+	mux.HandleFunc("POST /v1/runtime/shutdown", runtimeShutdownHandler(cfg, deps.Authorizer))
 	mux.HandleFunc("POST /v1/tenants", createTenantHandler(deps.Tenants))
 	mux.HandleFunc("DELETE /v1/tenants/{tenant_id}", deleteTenantHandler(deps.Tenants, deps.Authorizer))
 	mux.HandleFunc("GET /v1/tenants/{tenant_id}/members", listTenantMembersHandler(deps.Tenants, deps.Authorizer))
@@ -133,6 +134,9 @@ func readinessHandler(cfg config.Config) http.HandlerFunc {
 			"model_gateway_auth":      cfg.ModelGatewayAPIKey != "",
 			"source_host_configured":  strings.TrimSpace(cfg.SourceHostPath) != "",
 			"source_container_path":   sourceContainerPath,
+			"shutdown_enabled":        cfg.UIShutdownEnabled,
+			"shutdown_available":      runtimeShutdownAvailable(cfg),
+			"shutdown_project":        shutdownComposeProject(cfg),
 		})
 	}
 }

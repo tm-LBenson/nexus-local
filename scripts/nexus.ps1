@@ -55,6 +55,7 @@ function Show-EnvironmentSummary {
   $model = Read-EnvValue "GENERAL_MODEL_ID"
   $sourceHostPath = Read-EnvValue "NEXUS_SOURCE_HOST_PATH"
   $sourceContainerPath = Read-EnvValue "NEXUS_SOURCE_CONTAINER_PATH"
+  $uiShutdownEnabled = Read-EnvValue "UI_SHUTDOWN_ENABLED"
 
   if (-not $profile) { $profile = "cpu-lite (default)" }
   if (-not $providerPreset) { $providerPreset = "not configured" }
@@ -70,6 +71,9 @@ function Show-EnvironmentSummary {
       $sourceContainerPath = "/sources/primary"
     }
     Write-Host "Source:  $sourceHostPath -> $sourceContainerPath"
+  }
+  if ($uiShutdownEnabled -and $uiShutdownEnabled.Trim().ToLowerInvariant() -in @("1", "true", "yes", "y", "on")) {
+    Write-Host "Control: UI shutdown enabled"
   }
   Write-Host "Web:     $webUrl"
   Write-Host ""
@@ -301,6 +305,7 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     $existingGatewayPort = Read-EnvValue "MODEL_GATEWAY_PORT"
     $existingWebPort = Read-EnvValue "WEB_HOST_PORT"
     $existingApiPort = Read-EnvValue "API_HOST_PORT"
+    $existingUiShutdown = Read-EnvValue "UI_SHUTDOWN_ENABLED"
     if (-not $existingGatewayPort) {
       $existingGatewayPort = "8000"
     }
@@ -315,7 +320,11 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     $parsedApiPort = 0
     $existingDefault = "use"
     $useDetail = "Start or manage the current .env."
-    if (-not [int]::TryParse($existingWebPort, [ref]$parsedWebPort)) {
+    if ([string]::IsNullOrWhiteSpace($existingUiShutdown)) {
+      Write-Host "[WARN] UI shutdown control is not configured yet."
+      $existingDefault = "reconfigure"
+      $useDetail = "Reconfigure to choose whether Settings can stop the stack."
+    } elseif (-not [int]::TryParse($existingWebPort, [ref]$parsedWebPort)) {
       Write-Host "[WARN] WEB_HOST_PORT is not a valid number: $existingWebPort"
       $existingDefault = "reconfigure"
       $useDetail = "Reconfigure to write valid web/API host ports."
@@ -403,6 +412,9 @@ function Invoke-GuidedLaunch($startDefault = $true) {
     }
   }
 
+  $shutdownDefault = $profile -ne "prod-auth"
+  $uiShutdownEnabled = if (Read-YesNo "Enable Settings shutdown button?" $shutdownDefault) { "true" } else { "false" }
+
   $webHostPort = ""
   $apiHostPort = ""
   if ($profile -ne "prod-auth") {
@@ -441,6 +453,7 @@ function Invoke-GuidedLaunch($startDefault = $true) {
   Add-SetupArgument $setupArgs "-EmbeddingBaseUrl" $embeddingGateway
   Add-SetupArgument $setupArgs "-SourceHostPath" $sourceHostPath
   Add-SetupArgument $setupArgs "-SourceContainerPath" $sourceContainerPath
+  Add-SetupArgument $setupArgs "-UIShutdownEnabled" $uiShutdownEnabled
 
   if (Test-Path $envFile) {
     if (-not (Read-YesNo "Overwrite the current .env?" $true)) {

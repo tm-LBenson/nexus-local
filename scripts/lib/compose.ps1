@@ -66,11 +66,24 @@ function Test-NexusSourceMountEnabled {
   return -not [string]::IsNullOrWhiteSpace($hostPath)
 }
 
+function Test-NexusUIShutdownEnabled {
+  param(
+    [string]$EnvFile = ""
+  )
+
+  if ([string]::IsNullOrWhiteSpace($EnvFile)) {
+    return $false
+  }
+  $value = (Read-NexusEnvValue $EnvFile "UI_SHUTDOWN_ENABLED").Trim().ToLowerInvariant()
+  return $value -in @("1", "true", "yes", "y", "on")
+}
+
 function Get-NexusComposeFiles {
   param(
     [string]$Profile,
     [string]$EmbeddingRuntime,
-    [bool]$IncludeSourceMounts = $false
+    [bool]$IncludeSourceMounts = $false,
+    [bool]$IncludeOperatorControls = $false
   )
 
   $files = [System.Collections.Generic.List[string]]::new()
@@ -100,6 +113,9 @@ function Get-NexusComposeFiles {
   if ($IncludeSourceMounts) {
     $files.Add("deploy/compose/compose.sources.yml")
   }
+  if ($IncludeOperatorControls) {
+    $files.Add("deploy/compose/compose.control.yml")
+  }
   return [string[]]$files
 }
 
@@ -113,7 +129,8 @@ function Get-NexusComposeConfig {
   $selectedProfile = Resolve-NexusDeploymentProfile -Profile $Profile -EnvFile $EnvFile
   $embeddingRuntime = Resolve-NexusEmbeddingRuntime -EnvFile $EnvFile
   $includeSourceMounts = Test-NexusSourceMountEnabled -EnvFile $EnvFile
-  $files = Get-NexusComposeFiles -Profile $selectedProfile -EmbeddingRuntime $embeddingRuntime -IncludeSourceMounts $includeSourceMounts
+  $includeOperatorControls = Test-NexusUIShutdownEnabled -EnvFile $EnvFile
+  $files = Get-NexusComposeFiles -Profile $selectedProfile -EmbeddingRuntime $embeddingRuntime -IncludeSourceMounts $includeSourceMounts -IncludeOperatorControls $includeOperatorControls
   $composeArgs = @("compose")
 
   if (Test-Path $EnvFile) {
@@ -131,6 +148,7 @@ function Get-NexusComposeConfig {
     Profile = $selectedProfile
     EmbeddingRuntime = $embeddingRuntime
     SourceMounts = $includeSourceMounts
+    OperatorControls = $includeOperatorControls
     Files = [string[]]$files
   }
 }

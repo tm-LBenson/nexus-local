@@ -98,6 +98,8 @@ The launcher opens a guided terminal UI. It walks through deployment target, sea
 
 Direct commands still exist for automation. Run `.\nexus.ps1 menu`, `.\nexus.ps1 help`, `./nexus menu`, or `./nexus help` when you want the management menu or scriptable commands.
 
+Guided local setup can enable a Settings shutdown button. When enabled, the API gets access to the Docker socket through an optional Compose overlay and can stop the Nexus Local containers from the web UI without deleting Postgres, MinIO, Qdrant, NATS, or Valkey volumes. Production auth profiles leave this disabled by default.
+
 You can still run the underlying scripts directly. Start the full local stack:
 
 ```powershell
