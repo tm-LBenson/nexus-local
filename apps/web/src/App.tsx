@@ -148,6 +148,18 @@ type SourceHealthItem = {
   state: SourceHealthState;
 };
 
+type ContextDataMode = 'upload' | 'source';
+
+type FolderImportSelectionSummary = {
+  bytes: number;
+  label: string;
+  root: string;
+  samplePaths: string[];
+  skipped: number;
+  supported: number;
+  total: number;
+};
+
 type TargetCheckState = {
   state: 'ok' | 'loading' | 'failed';
   detail: string;
@@ -542,7 +554,9 @@ export function App() {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [folderFiles, setFolderFiles] = useState<File[]>([]);
   const [folderImporting, setFolderImporting] = useState(false);
+  const [folderImportCompleted, setFolderImportCompleted] = useState(0);
   const [folderImportProgress, setFolderImportProgress] = useState('');
+  const [folderImportTotal, setFolderImportTotal] = useState(0);
   const [registration, setRegistration] = useState<RegisterDocumentResponse | null>(null);
   const [documents, setDocuments] = useState<ListDocumentsResponse | null>(null);
   const [dataSources, setDataSources] = useState<ListDataSourcesResponse | null>(null);
@@ -571,6 +585,7 @@ export function App() {
   const [sourceEditForm, setSourceEditForm] = useState(initialSourceForm);
   const [sourceFilters, setSourceFilters] = useState(initialSourceFilters);
   const [sourceSavedViews, setSourceSavedViews] = useState<SourceSavedView[]>([]);
+  const [contextDataMode, setContextDataMode] = useState<ContextDataMode>('upload');
   const [customSourcePolicyProfiles, setCustomSourcePolicyProfiles] = useState<SourcePolicyProfile[]>([]);
   const [sourcePolicyName, setSourcePolicyName] = useState('');
   const [sourcePolicyDetail, setSourcePolicyDetail] = useState('');
@@ -744,6 +759,14 @@ export function App() {
     [customSourcePolicyProfiles],
   );
   const sourceContainerRoot = sourceRootPath(readiness);
+  const folderImportSelection = useMemo(
+    () => folderImportSelectionSummary(folderFiles),
+    [folderFiles],
+  );
+  const folderImportProgressPercent =
+    folderImportTotal > 0
+      ? Math.min(100, Math.round((folderImportCompleted / folderImportTotal) * 100))
+      : 0;
   const quickSourceTemplates = useMemo(
     () => dashboardSourceTemplates(sourceContainerRoot),
     [sourceContainerRoot],
@@ -1958,11 +1981,14 @@ export function App() {
     }
 
     setFolderImporting(true);
+    setFolderImportCompleted(0);
+    setFolderImportTotal(uploadableFiles.length);
     setFolderImportProgress(`Starting 0/${uploadableFiles.length}`);
     setSourceConnectNotice('');
     setError(null);
 
     let nextIndex = 0;
+    let completedCount = 0;
     let uploadedCount = 0;
     let failedCount = 0;
     let firstError = '';
@@ -1988,6 +2014,12 @@ export function App() {
           if (!firstError) {
             firstError = messageFromError(err);
           }
+        } finally {
+          completedCount += 1;
+          setFolderImportCompleted(completedCount);
+          setFolderImportProgress(
+            `${completedCount}/${uploadableFiles.length} ${displayName}`,
+          );
         }
       }
     }
@@ -2028,7 +2060,9 @@ export function App() {
       }
     } finally {
       setFolderImporting(false);
+      setFolderImportCompleted(0);
       setFolderImportProgress('');
+      setFolderImportTotal(0);
     }
   }
 
@@ -2049,6 +2083,7 @@ export function App() {
 
   function openContextSourcePanel() {
     setContextSourceOpen(true);
+    setContextDataMode('source');
     setSourceConnectNotice('');
     if (!sourceForm.root_path.trim() && quickSourceTemplates[0]) {
       applySourceTemplate(quickSourceTemplates[0]);
@@ -3492,194 +3527,257 @@ export function App() {
                     </small>
                   </summary>
                   <div className="contextSourceBody">
-                    <form className="folderImportForm" onSubmit={submitFolderImport}>
-                      <input
-                        aria-label="Import folder"
-                        accept={supportedDocumentAccept}
-                        className="fileInput"
-                        disabled={folderImporting || !canUploadDocuments}
-                        multiple
-                        ref={folderInputRef}
-                        type="file"
-                        onChange={(event) =>
-                          setFolderFiles(Array.from(event.target.files ?? []))
-                        }
-                      />
+                    <div className="contextDataMode" role="tablist" aria-label="Add data mode">
                       <button
-                        className="folderPicker"
-                        onClick={() => folderInputRef.current?.click()}
+                        aria-selected={contextDataMode === 'upload'}
+                        className={contextDataMode === 'upload' ? 'active' : ''}
+                        onClick={() => setContextDataMode('upload')}
                         type="button"
                       >
-                        <strong>Import folder</strong>
-                        <span>
-                          {folderFiles.length > 0
-                            ? `${folderFiles.length} selected`
-                            : 'One-time upload'}
-                        </span>
+                        Upload
                       </button>
                       <button
-                        disabled={
-                          folderImporting ||
-                          folderFiles.length === 0 ||
-                          !workspaceReady ||
-                          !canUploadDocuments
-                        }
-                        type="submit"
+                        aria-selected={contextDataMode === 'source'}
+                        className={contextDataMode === 'source' ? 'active' : ''}
+                        onClick={() => {
+                          setContextDataMode('source');
+                          if (!sourceForm.root_path.trim() && quickSourceTemplates[0]) {
+                            applySourceTemplate(quickSourceTemplates[0]);
+                          }
+                        }}
+                        type="button"
                       >
-                        {folderImporting ? 'Importing' : 'Import'}
+                        Source
                       </button>
-                    </form>
+                    </div>
 
-                    {folderImportProgress && (
-                      <div className="sourceConnectNotice">
-                        <span className="spinner" aria-hidden="true"></span>
-                        <strong>{folderImportProgress}</strong>
+                    {contextDataMode === 'upload' ? (
+                      <div className="contextDataPane">
+                        <form className="folderImportForm" onSubmit={submitFolderImport}>
+                          <input
+                            aria-label="Import folder"
+                            accept={supportedDocumentAccept}
+                            className="fileInput"
+                            disabled={folderImporting || !canUploadDocuments}
+                            multiple
+                            ref={folderInputRef}
+                            type="file"
+                            onChange={(event) => {
+                              setFolderFiles(Array.from(event.target.files ?? []));
+                              setSourceConnectNotice('');
+                            }}
+                          />
+                          <button
+                            className="folderPicker"
+                            disabled={folderImporting || !canUploadDocuments}
+                            onClick={() => folderInputRef.current?.click()}
+                            type="button"
+                          >
+                            <strong>Folder upload</strong>
+                            <span>{folderImportSelection.label}</span>
+                          </button>
+                          <button
+                            disabled={
+                              folderImporting ||
+                              folderImportSelection.supported === 0 ||
+                              !workspaceReady ||
+                              !canUploadDocuments
+                            }
+                            type="submit"
+                          >
+                            {folderImporting ? 'Importing' : 'Import'}
+                          </button>
+                        </form>
+
+                        {folderFiles.length > 0 && (
+                          <div className="folderImportSummary">
+                            <div className="folderImportStats">
+                              <strong>{folderImportSelection.root || 'Selected folder'}</strong>
+                              <span>{folderImportSelection.supported} docs</span>
+                              <span>{formatBytes(folderImportSelection.bytes)}</span>
+                              {folderImportSelection.skipped > 0 && (
+                                <span>{folderImportSelection.skipped} skipped</span>
+                              )}
+                            </div>
+                            <div className="folderImportSample">
+                              {folderImportSelection.samplePaths.map((path) => (
+                                <span key={path} title={path}>
+                                  {path}
+                                </span>
+                              ))}
+                            </div>
+                            <button
+                              disabled={folderImporting}
+                              onClick={() => {
+                                setFolderFiles([]);
+                                if (folderInputRef.current) {
+                                  folderInputRef.current.value = '';
+                                }
+                              }}
+                              type="button"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        )}
+
+                        {folderImportProgress && (
+                          <div className="sourceConnectNotice folderImportProgress">
+                            <span className="spinner" aria-hidden="true"></span>
+                            <strong>{folderImportProgress}</strong>
+                            <div className="folderImportMeter" aria-hidden="true">
+                              <span style={{ width: `${folderImportProgressPercent}%` }} />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-
-                    <div
-                      className={
-                        readiness?.source_host_configured
-                          ? 'sourceMountStatus'
-                          : 'sourceMountStatus sourceMountStatusWarning'
-                      }
-                    >
-                      <strong>
-                        {readiness?.source_host_configured
-                          ? 'Mounted source ready'
-                          : 'No mounted source root'}
-                      </strong>
-                      <span>
-                        {readiness?.source_host_configured
-                          ? `${sourceContainerRoot} is available to source scans.`
-                          : 'Use folder import now, or choose a source folder in setup for repeat scans.'}
-                      </span>
-                    </div>
-
-                    <div className="contextSourceQuick">
-                      {quickSourceTemplates.map((template) => (
-                        <button
-                          key={template.id}
-                          onClick={() => applySourceTemplate(template)}
-                          type="button"
+                    ) : (
+                      <div className="contextDataPane">
+                        <div
+                          className={
+                            readiness?.source_host_configured
+                              ? 'sourceMountStatus'
+                              : 'sourceMountStatus sourceMountStatusWarning'
+                          }
                         >
-                          <strong>{template.label}</strong>
-                          <span>{template.detail}</span>
-                        </button>
-                      ))}
-                    </div>
+                          <strong>
+                            {readiness?.source_host_configured
+                              ? 'Mounted source ready'
+                              : 'No mounted source root'}
+                          </strong>
+                          <span>
+                            {readiness?.source_host_configured
+                              ? `${sourceContainerRoot} is available to source scans.`
+                              : 'Use upload now, or choose a source folder in setup for repeat scans.'}
+                          </span>
+                        </div>
 
-                    <form
-                      className="contextSourceForm"
-                      onSubmit={(event) =>
-                        void submitDataSource(event, {
-                          closePanel: true,
-                          scanAfterCreate: true,
-                        })
-                      }
-                    >
-                      <label>
-                        <span>Name</span>
-                        <input
-                          aria-label="Source name"
-                          onChange={(event) =>
-                            setSourceForm((current) => ({
-                              ...current,
-                              name: event.target.value,
-                            }))
+                        <div className="contextSourceQuick">
+                          {quickSourceTemplates.map((template) => (
+                            <button
+                              key={template.id}
+                              onClick={() => applySourceTemplate(template)}
+                              type="button"
+                            >
+                              <strong>{template.label}</strong>
+                              <span>{template.detail}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <form
+                          className="contextSourceForm"
+                          onSubmit={(event) =>
+                            void submitDataSource(event, {
+                              closePanel: true,
+                              scanAfterCreate: true,
+                            })
                           }
-                          placeholder="Knowledge folder"
-                          value={sourceForm.name}
-                        />
-                      </label>
-                      <label className="contextSourcePath">
-                        <span>Path</span>
-                        <input
-                          aria-label="Source path"
-                          onChange={(event) =>
-                            setSourceForm((current) => ({
-                              ...current,
-                              root_path: event.target.value,
-                            }))
-                          }
-                          placeholder={sourceContainerRoot}
-                          value={sourceForm.root_path}
-                        />
-                      </label>
-                      <label>
-                        <span>Schedule</span>
-                        <select
-                          aria-label="Source schedule"
-                          onChange={(event) =>
-                            setSourceForm((current) => ({
-                              ...current,
-                              scan_interval_minutes: event.target.value,
-                            }))
-                          }
-                          value={sourceForm.scan_interval_minutes}
                         >
-                          <option value="0">Manual</option>
-                          <option value="60">Hourly</option>
-                          <option value="1440">Daily</option>
-                          <option value="10080">Weekly</option>
-                        </select>
-                      </label>
-                      <details className="inlineDetails contextSourceAdvanced">
-                        <summary>Advanced</summary>
-                        <div className="contextAdvancedGrid">
                           <label>
-                            <span>Type</span>
-                            <select
-                              aria-label="Source type"
+                            <span>Name</span>
+                            <input
+                              aria-label="Source name"
                               onChange={(event) =>
                                 setSourceForm((current) => ({
                                   ...current,
-                                  type: event.target.value,
+                                  name: event.target.value,
                                 }))
                               }
-                              value={sourceForm.type}
+                              placeholder="Knowledge folder"
+                              value={sourceForm.name}
+                            />
+                          </label>
+                          <label className="contextSourcePath">
+                            <span>Path</span>
+                            <input
+                              aria-label="Source path"
+                              onChange={(event) =>
+                                setSourceForm((current) => ({
+                                  ...current,
+                                  root_path: event.target.value,
+                                }))
+                              }
+                              placeholder={sourceContainerRoot}
+                              value={sourceForm.root_path}
+                            />
+                          </label>
+                          <label>
+                            <span>Schedule</span>
+                            <select
+                              aria-label="Source schedule"
+                              onChange={(event) =>
+                                setSourceForm((current) => ({
+                                  ...current,
+                                  scan_interval_minutes: event.target.value,
+                                }))
+                              }
+                              value={sourceForm.scan_interval_minutes}
                             >
-                              <option value="synced_folder">Synced folder</option>
-                              <option value="folder">Local folder</option>
-                              <option value="network_share">Network share</option>
-                              <option value="export">Export</option>
+                              <option value="0">Manual</option>
+                              <option value="60">Hourly</option>
+                              <option value="1440">Daily</option>
+                              <option value="10080">Weekly</option>
                             </select>
                           </label>
-                          <label>
-                            <span>Include</span>
-                            <textarea
-                              aria-label="Source include patterns"
-                              onChange={(event) =>
-                                setSourceForm((current) => ({
-                                  ...current,
-                                  include_patterns: event.target.value,
-                                }))
-                              }
-                              value={sourceForm.include_patterns}
-                            />
-                          </label>
-                          <label>
-                            <span>Exclude</span>
-                            <textarea
-                              aria-label="Source exclude patterns"
-                              onChange={(event) =>
-                                setSourceForm((current) => ({
-                                  ...current,
-                                  exclude_patterns: event.target.value,
-                                }))
-                              }
-                              value={sourceForm.exclude_patterns}
-                            />
-                          </label>
-                        </div>
-                      </details>
-                      <button
-                        disabled={creatingSource || !workspaceReady || !canManageSources}
-                        type="submit"
-                      >
-                        {creatingSource ? 'Connecting' : 'Connect + scan'}
-                      </button>
-                    </form>
+                          <details className="inlineDetails contextSourceAdvanced">
+                            <summary>Advanced</summary>
+                            <div className="contextAdvancedGrid">
+                              <label>
+                                <span>Type</span>
+                                <select
+                                  aria-label="Source type"
+                                  onChange={(event) =>
+                                    setSourceForm((current) => ({
+                                      ...current,
+                                      type: event.target.value,
+                                    }))
+                                  }
+                                  value={sourceForm.type}
+                                >
+                                  <option value="synced_folder">Synced folder</option>
+                                  <option value="folder">Local folder</option>
+                                  <option value="network_share">Network share</option>
+                                  <option value="export">Export</option>
+                                </select>
+                              </label>
+                              <label>
+                                <span>Include</span>
+                                <textarea
+                                  aria-label="Source include patterns"
+                                  onChange={(event) =>
+                                    setSourceForm((current) => ({
+                                      ...current,
+                                      include_patterns: event.target.value,
+                                    }))
+                                  }
+                                  value={sourceForm.include_patterns}
+                                />
+                              </label>
+                              <label>
+                                <span>Exclude</span>
+                                <textarea
+                                  aria-label="Source exclude patterns"
+                                  onChange={(event) =>
+                                    setSourceForm((current) => ({
+                                      ...current,
+                                      exclude_patterns: event.target.value,
+                                    }))
+                                  }
+                                  value={sourceForm.exclude_patterns}
+                                />
+                              </label>
+                            </div>
+                          </details>
+                          <button
+                            disabled={creatingSource || !workspaceReady || !canManageSources}
+                            type="submit"
+                          >
+                            {creatingSource ? 'Connecting' : 'Connect + scan'}
+                          </button>
+                        </form>
+                      </div>
+                    )}
 
                     {sourceConnectNotice && (
                       <div className="sourceConnectNotice">
@@ -7431,6 +7529,38 @@ function patternLinesToList(value: string) {
 
 function folderRelativeName(file: File) {
   return (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+}
+
+function folderImportSelectionSummary(files: File[]): FolderImportSelectionSummary {
+  if (files.length === 0) {
+    return {
+      bytes: 0,
+      label: 'Select a folder',
+      root: '',
+      samplePaths: [],
+      skipped: 0,
+      supported: 0,
+      total: 0,
+    };
+  }
+
+  const supportedFiles = files.filter(isSupportedUploadFile);
+  const bytes = supportedFiles.reduce((total, file) => total + file.size, 0);
+  const firstPath = folderRelativeName(files[0]);
+  const root = firstPath.includes('/') ? firstPath.split('/')[0] : 'Selected files';
+  const samplePaths = supportedFiles.slice(0, 3).map(folderRelativeName);
+  return {
+    bytes,
+    label:
+      supportedFiles.length > 0
+        ? `${supportedFiles.length} docs / ${formatBytes(bytes)}`
+        : 'No supported docs',
+    root,
+    samplePaths,
+    skipped: files.length - supportedFiles.length,
+    supported: supportedFiles.length,
+    total: files.length,
+  };
 }
 
 function isSupportedUploadFile(file: File) {

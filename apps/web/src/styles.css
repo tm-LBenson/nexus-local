@@ -1483,6 +1483,35 @@ h3 {
   padding: 10px;
 }
 
+.contextDataMode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid #dbe4e4;
+  border-radius: 7px;
+  padding: 4px;
+  background: #f5f9f8;
+}
+
+.contextDataMode button {
+  min-height: 34px;
+  border: 0;
+  color: #52616a;
+  background: transparent;
+}
+
+.contextDataMode button.active,
+.contextDataMode button[aria-selected='true'] {
+  color: #163942;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(23, 32, 38, 0.1);
+}
+
+.contextDataPane {
+  display: grid;
+  gap: 10px;
+}
+
 .contextSourcePanel .fileInput {
   position: absolute;
   width: 1px;
@@ -1536,6 +1565,82 @@ h3 {
   color: #64727d;
   font-size: 0.76rem;
   font-weight: 740;
+}
+
+.folderImportSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #dbe4e4;
+  border-radius: 7px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.folderImportStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.folderImportStats strong,
+.folderImportStats span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderImportStats strong {
+  flex-basis: 100%;
+  color: #172026;
+  font-size: 0.82rem;
+}
+
+.folderImportStats span {
+  border: 1px solid #e2e9e9;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #64727d;
+  background: #fbfdfc;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.folderImportSample {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.folderImportSample span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64727d;
+  font-size: 0.73rem;
+  font-weight: 710;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderImportMeter {
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfe9e8;
+}
+
+.folderImportMeter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1b5968;
+  transition: width 180ms ease;
 }
 
 .sourceMountStatus,
@@ -4767,6 +4872,7 @@ strong {
 
   .contextSourcePanel summary,
   .folderImportForm,
+  .folderImportSummary,
   .contextSourceMonitorRow,
   .sourceMountStatus,
   .contextSourceQuick,
